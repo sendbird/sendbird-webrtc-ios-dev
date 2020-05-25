@@ -1,3 +1,11 @@
+This repository is a private branch of [Google's WebRTC Source](https://chromium.googlesource.com/external/webrtc.git).
+
+This repository is used to compile [SendBirdWebRTC](https://github.com/sendbird/sendbird-webrtc-ios), and keep track of SendBird's changes.
+
+In order to use this repository as a reflection of Google's Public WebRTC source, refer to this [medium guide](https://medium.com/@bilalbayasut/github-how-to-make-a-fork-of-public-repository-private-6ee8cacaf9d3) to fork public repository into this private repository. 
+
+---
+
 **WebRTC is a free, open software project** that provides browsers and mobile
 applications with Real-Time Communications (RTC) capabilities via simple APIs.
 The WebRTC components have been optimized to best serve this purpose.
