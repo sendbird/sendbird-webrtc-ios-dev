@@ -343,6 +343,7 @@ RTC_OBJC_EXPORT
 
 typedef void (^RTCStatisticsCompletionHandler)(RTC_OBJC_TYPE(RTCStatisticsReport) *);
 
+RTC_OBJC_EXPORT
 @interface RTC_OBJC_TYPE (RTCPeerConnection)
 (Stats)
 
