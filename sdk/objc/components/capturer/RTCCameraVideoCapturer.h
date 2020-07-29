@@ -10,6 +10,7 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
+#import <CoreMedia/CoreMedia.h>
 
 #import "RTCMacros.h"
 #import "RTCVideoCapturer.h"
@@ -20,7 +21,7 @@ RTC_OBJC_EXPORT
 // Camera capture that implements RTCVideoCapturer. Delivers frames to a
 // RTCVideoCapturerDelegate (usually RTCVideoSource).
 NS_EXTENSION_UNAVAILABLE_IOS("Camera not available in app extensions.")
-@interface RTC_OBJC_TYPE (RTCCameraVideoCapturer) : RTC_OBJC_TYPE(RTCVideoCapturer)
+@interface RTC_OBJC_TYPE (RTCCameraVideoCapturer) : RTC_OBJC_TYPE(RTCVideoCapturer) <AVCaptureVideoDataOutputSampleBufferDelegate>
 
 // Capture session that is used for capturing. Valid from initialization to dealloc.
 @property(readonly, nonatomic) AVCaptureSession *captureSession;
@@ -50,6 +51,9 @@ NS_EXTENSION_UNAVAILABLE_IOS("Camera not available in app extensions.")
                            fps:(NSInteger)fps;
 // Stops the capture session asynchronously.
 - (void)stopCapture;
+
+- (void)captureOutput:(AVCaptureOutput *)captureOutput didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
+       fromConnection:(AVCaptureConnection *)connection;
 
 @end
 

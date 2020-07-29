@@ -25,9 +25,8 @@
 
 const int64_t kNanosecondsPerSecond = 1000000000;
 
-@interface RTC_OBJC_TYPE (RTCCameraVideoCapturer)
-()<AVCaptureVideoDataOutputSampleBufferDelegate> @property(nonatomic,
-                                                           readonly) dispatch_queue_t frameQueue;
+@interface RTC_OBJC_TYPE (RTCCameraVideoCapturer) ()
+@property(nonatomic, readonly) dispatch_queue_t frameQueue;
 @property(nonatomic, strong) AVCaptureDevice *currentDevice;
 @property(nonatomic, assign) BOOL hasRetriedOnFatalError;
 @property(nonatomic, assign) BOOL isRunning;
@@ -194,6 +193,11 @@ const int64_t kNanosecondsPerSecond = 1000000000;
                       }
                     }];
 }
+
+//- (void)registerCustomFrameHandler:(id<RTC_OBJC_TYPE(AVCaptureVideoDataOutputSampleBufferDelegate)>)delegate {
+//
+//}
+
 
 - (void)stopCaptureWithCompletionHandler:(nullable void (^)(void))completionHandler {
   _willBeRunning = NO;
