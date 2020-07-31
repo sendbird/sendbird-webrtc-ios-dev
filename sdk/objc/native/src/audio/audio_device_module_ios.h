@@ -32,6 +32,7 @@ class AudioDeviceModuleIOS : public AudioDeviceModule {
   int32_t AttachAudioBuffer();
 
   AudioDeviceModuleIOS();
+  AudioDeviceModuleIOS(RTCAudioSink *sink);
   ~AudioDeviceModuleIOS() override;
 
   // Retrieve the currently utilized audio layer
@@ -76,7 +77,7 @@ class AudioDeviceModuleIOS : public AudioDeviceModule {
   int32_t StartRecording() override;
   int32_t StopRecording() override;
   bool Recording() const override;
-
+  void AddAudioSink(RTCAudioSink* sink);
   // Audio mixer initialization
   int32_t InitSpeaker() override;
   bool SpeakerIsInitialized() const override;

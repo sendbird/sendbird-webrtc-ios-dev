@@ -14,10 +14,13 @@
 #include <memory>
 
 #include "modules/audio_device/include/audio_device.h"
+#include "sdk/objc/components/audio/RTCAudioSink.h"
+
+#include "sdk/objc/native/src/audio/audio_device_module_ios.h"
 
 namespace webrtc {
 
-rtc::scoped_refptr<AudioDeviceModule> CreateAudioDeviceModule();
+rtc::scoped_refptr<ios_adm::AudioDeviceModuleIOS> CreateAudioDeviceModule(RTCAudioSink* sink);
 
 }  // namespace webrtc
 

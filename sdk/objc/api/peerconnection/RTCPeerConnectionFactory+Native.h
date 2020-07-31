@@ -80,15 +80,45 @@ NS_ASSUME_NONNULL_BEGIN
                     audioDeviceModule:(nullable webrtc::AudioDeviceModule *)audioDeviceModule
                 audioProcessingModule:
                     (rtc::scoped_refptr<webrtc::AudioProcessing>)audioProcessingModule
+                mediaTransportFactory:
+                    (std::unique_ptr<webrtc::MediaTransportFactory>)mediaTransportFactory
+                audioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink;
+
+- (instancetype)initWithNativeAudioEncoderFactory:
+                    (rtc::scoped_refptr<webrtc::AudioEncoderFactory>)audioEncoderFactory
+                        nativeAudioDecoderFactory:
+                            (rtc::scoped_refptr<webrtc::AudioDecoderFactory>)audioDecoderFactory
+                        nativeVideoEncoderFactory:
+                            (std::unique_ptr<webrtc::VideoEncoderFactory>)videoEncoderFactory
+                        nativeVideoDecoderFactory:
+                            (std::unique_ptr<webrtc::VideoDecoderFactory>)videoDecoderFactory
+                                audioDeviceModule:(webrtc::AudioDeviceModule *)audioDeviceModule
+                            audioProcessingModule:
+                                (rtc::scoped_refptr<webrtc::AudioProcessing>)audioProcessingModule;
+
+- (instancetype)
+    initWithNativeAudioEncoderFactory:
+        (rtc::scoped_refptr<webrtc::AudioEncoderFactory>)audioEncoderFactory
+            nativeAudioDecoderFactory:
+                (rtc::scoped_refptr<webrtc::AudioDecoderFactory>)audioDecoderFactory
+            nativeVideoEncoderFactory:
+                (std::unique_ptr<webrtc::VideoEncoderFactory>)videoEncoderFactory
+            nativeVideoDecoderFactory:
+                (std::unique_ptr<webrtc::VideoDecoderFactory>)videoDecoderFactory
+                    audioDeviceModule:(nullable webrtc::AudioDeviceModule *)audioDeviceModule
+                audioProcessingModule:
+                    (rtc::scoped_refptr<webrtc::AudioProcessing>)audioProcessingModule
              networkControllerFactory:(std::unique_ptr<webrtc::NetworkControllerFactoryInterface>)
                                           networkControllerFactory
                 mediaTransportFactory:
-                    (std::unique_ptr<webrtc::MediaTransportFactory>)mediaTransportFactory;
+                    (std::unique_ptr<webrtc::MediaTransportFactory>)mediaTransportFactory
+                audioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink;
 
 - (instancetype)
     initWithEncoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
             decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)decoderFactory
-     mediaTransportFactory:(std::unique_ptr<webrtc::MediaTransportFactory>)mediaTransportFactory;
+     mediaTransportFactory:(std::unique_ptr<webrtc::MediaTransportFactory>)mediaTransportFactory
+                 audioSink:(nullable RTCAudioSink *)audioSink;
 
 /** Initialize an RTCPeerConnection with a configuration, constraints, and
  *  dependencies.

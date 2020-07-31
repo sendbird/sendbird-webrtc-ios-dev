@@ -21,8 +21,10 @@
 #include "rtc_base/thread_checker.h"
 #include "sdk/objc/base/RTCMacros.h"
 #include "voice_processing_audio_unit.h"
+#include "sdk/objc/components/audio/RTCAudioSink.h"
 
 RTC_FWD_DECL_OBJC_CLASS(RTCNativeAudioSessionDelegateAdapter);
+RTC_FWD_DECL_OBJC_CLASS(RTCAudioSink);
 
 namespace webrtc {
 
@@ -49,6 +51,7 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
                        public rtc::MessageHandler {
  public:
   AudioDeviceIOS();
+  AudioDeviceIOS(RTCAudioSink *sink);
   ~AudioDeviceIOS() override;
 
   void AttachAudioBuffer(AudioDeviceBuffer* audioBuffer) override;
@@ -163,6 +166,8 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
 
   bool IsInterrupted();
 
+  void AddAudioSink(RTCAudioSink* sink);
+
  private:
   // Called by the relevant AudioSessionObserver methods on |thread_|.
   void HandleInterruptionBegin();
@@ -273,6 +278,8 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
 
   // Set to true if audio session is interrupted, false otherwise.
   bool is_interrupted_;
+
+  RTCAudioSink* sink_;
 
   // Audio interruption observer instance.
   RTCNativeAudioSessionDelegateAdapter* audio_session_observer_

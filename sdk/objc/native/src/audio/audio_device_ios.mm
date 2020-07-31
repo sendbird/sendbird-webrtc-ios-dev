@@ -122,6 +122,28 @@ AudioDeviceIOS::AudioDeviceIOS()
   audio_session_observer_ = [[RTCNativeAudioSessionDelegateAdapter alloc] initWithObserver:this];
 }
 
+AudioDeviceIOS::AudioDeviceIOS(RTCAudioSink *sink)
+    : audio_device_buffer_(nullptr),
+      audio_unit_(nullptr),
+      recording_(0),
+      playing_(0),
+      initialized_(false),
+      audio_is_initialized_(false),
+      is_interrupted_(false),
+      has_configured_session_(false),
+      num_detected_playout_glitches_(0),
+      last_playout_time_(0),
+      num_playout_callbacks_(0),
+      last_output_volume_change_time_(0) {
+  LOGI() << "ctor" << ios::GetCurrentThreadDescription();
+  io_thread_checker_.Detach();
+  thread_checker_.Detach();
+  thread_ = rtc::Thread::Current();
+  sink_ = sink;
+
+  audio_session_observer_ = [[RTCNativeAudioSessionDelegateAdapter alloc] initWithObserver:this];
+}
+
 AudioDeviceIOS::~AudioDeviceIOS() {
   RTC_DCHECK(thread_checker_.IsCurrent());
   LOGI() << "~dtor" << ios::GetCurrentThreadDescription();
@@ -361,6 +383,10 @@ void AudioDeviceIOS::OnCanPlayOrRecordChange(bool can_play_or_record) {
                 new rtc::TypedMessageData<bool>(can_play_or_record));
 }
 
+void AudioDeviceIOS::AddAudioSink(RTCAudioSink* sink) {
+  sink_ = sink;
+}
+
 void AudioDeviceIOS::OnChangedOutputVolume() {
   RTC_DCHECK(thread_);
   thread_->Post(RTC_FROM_HERE, this, kMessageOutputVolumeChange);
@@ -371,6 +397,8 @@ OSStatus AudioDeviceIOS::OnDeliverRecordedData(AudioUnitRenderActionFlags* flags
                                                UInt32 bus_number,
                                                UInt32 num_frames,
                                                AudioBufferList* /* io_data */) {
+ 
+  RTC_LOG(LS_INFO) << "MINI: DeliverRecordedData";
   RTC_DCHECK_RUN_ON(&io_thread_checker_);
   OSStatus result = noErr;
   // Simply return if recording is not enabled.
@@ -419,6 +447,7 @@ OSStatus AudioDeviceIOS::OnGetPlayoutData(AudioUnitRenderActionFlags* flags,
                                           UInt32 bus_number,
                                           UInt32 num_frames,
                                           AudioBufferList* io_data) {
+  RTC_LOG(LS_INFO) << "MINI: OnGetPlayoutData";
   RTC_DCHECK_RUN_ON(&io_thread_checker_);
   // Verify 16-bit, noninterleaved mono PCM signal format.
   RTC_DCHECK_EQ(1, io_data->mNumberBuffers);
@@ -470,6 +499,8 @@ OSStatus AudioDeviceIOS::OnGetPlayoutData(AudioUnitRenderActionFlags* flags,
   fine_audio_buffer_->GetPlayoutData(
       rtc::ArrayView<int16_t>(static_cast<int16_t*>(audio_buffer->mData), num_frames),
       kFixedPlayoutDelayEstimate);
+   
+  [sink_ onAudioBuffer:num_frames];
   return noErr;
 }
 

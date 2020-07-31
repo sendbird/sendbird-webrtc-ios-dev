@@ -41,7 +41,7 @@
   [builder setVideoDecoderFactory:std::move(videoDecoderFactory)];
 
 #if defined(WEBRTC_IOS)
-  [builder setAudioDeviceModule:webrtc::CreateAudioDeviceModule()];
+  [builder setAudioDeviceModule:webrtc::CreateAudioDeviceModule(nullptr)];
 #endif
   return builder;
 }

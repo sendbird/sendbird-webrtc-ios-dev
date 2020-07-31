@@ -46,6 +46,13 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS()
   RTC_LOG(INFO) << "iPhone Audio APIs will be utilized.";
 }
 
+AudioDeviceModuleIOS::AudioDeviceModuleIOS(RTCAudioSink *sink)
+    : task_queue_factory_(CreateDefaultTaskQueueFactory()) {
+  RTC_LOG(INFO) << "current platform is IOS";
+  RTC_LOG(INFO) << "iPhone Audio APIs will be utilized.";
+  this->AddAudioSink(sink);
+}
+
   int32_t AudioDeviceModuleIOS::AttachAudioBuffer() {
     RTC_LOG(INFO) << __FUNCTION__;
     audio_device_->AttachAudioBuffer(audio_device_buffer_.get());
@@ -87,6 +94,10 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS()
     }
     initialized_ = true;
     return 0;
+  }
+
+  void AudioDeviceModuleIOS::AddAudioSink(RTCAudioSink* sink) {
+    audio_device_->AddAudioSink(sink);
   }
 
   int32_t AudioDeviceModuleIOS::Terminate() {
