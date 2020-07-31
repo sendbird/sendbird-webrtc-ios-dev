@@ -317,7 +317,7 @@ if (is_ios || is_mac) {
           "objc/components/audio/RTCAudioSession.h",
           "objc/components/audio/RTCAudioSession.mm",
           "objc/components/audio/RTCAudioSink.h",
-          "objc/components/audio/RTCAudioSink.mm",
+          "objc/components/audio/RTCAudioSink.m",
           "objc/components/audio/RTCAudioSessionConfiguration.h",
           "objc/components/audio/RTCAudioSessionConfiguration.m",
         ]

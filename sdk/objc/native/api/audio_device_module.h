@@ -14,7 +14,7 @@
 #include <memory>
 
 #include "modules/audio_device/include/audio_device.h"
-#include "sdk/objc/components/audio/RTCAudioSink.h"
+// #include "sdk/objc/components/audio/RTCAudioSink.h"
 
 #include "sdk/objc/native/src/audio/audio_device_module_ios.h"
 

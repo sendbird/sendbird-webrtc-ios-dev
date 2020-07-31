@@ -8,10 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+// #if defined(WEBRTC_IOS)
 #import <Foundation/Foundation.h>
-#import <AVFoundation/AVFoundation.h>
 
-#import "sdk/objc/base/RTCMacros.h"
+#import "RTCMacros.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -26,3 +26,4 @@ RTC_OBJC_EXPORT
 @end
 
 NS_ASSUME_NONNULL_END
+// #endif
