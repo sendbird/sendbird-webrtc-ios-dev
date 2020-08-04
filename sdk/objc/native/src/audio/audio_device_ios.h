@@ -24,7 +24,7 @@
 #include "sdk/objc/components/audio/RTCAudioSink.h"
 
 RTC_FWD_DECL_OBJC_CLASS(RTCNativeAudioSessionDelegateAdapter);
-// RTC_FWD_DECL_OBJC_CLASS(RTCAudioSink);
+RTC_FWD_DECL_OBJC_CLASS(RTCAudioSink);
 
 namespace webrtc {
 

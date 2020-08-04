@@ -9,9 +9,14 @@
  */
 
 // #if defined(WEBRTC_IOS)
+#ifndef SDK_OBJC_NATIVE_SRC_AUDIO_SINK_H_
+#define SDK_OBJC_NATIVE_SRC_AUDIO_SINK_H_
+
+#ifdef __OBJC__
 #import <Foundation/Foundation.h>
 
-#import "RTCMacros.h"
+
+#import "sdk/objc/base/RTCMacros.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -26,4 +31,6 @@ RTC_OBJC_EXPORT
 @end
 
 NS_ASSUME_NONNULL_END
-// #endif
+#endif 
+
+#endif
