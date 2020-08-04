@@ -20,6 +20,7 @@
 #include "modules/audio_device/include/audio_device.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/critical_section.h"
+#import "sdk/objc/components/audio/RTCAudioSink.h"
 
 namespace webrtc {
 

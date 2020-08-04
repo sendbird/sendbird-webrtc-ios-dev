@@ -45,7 +45,8 @@
 
 #if defined(WEBRTC_IOS)
 #import "sdk/objc/native/api/audio_device_module.h"
-#include "sdk/objc/native/src/audio/audio_device_module_ios.h"
+#import "sdk/objc/components/audio/RTCAudioSink.h"//"sdk/objc/native/src/audio/audio_device_module_ios.h"
+#import "sdk/objc/native/src/audio/audio_device_module_ios.h"
 #endif
 
 // Adding the nogncheck to disable the including header check.

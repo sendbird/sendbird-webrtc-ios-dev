@@ -15,7 +15,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@class RTCAudioSink;
+@class RTC_OBJC_TYPE(RTCAudioSink);
 
 RTC_OBJC_EXPORT
 @interface RTC_OBJC_TYPE (RTCAudioSink) : NSObject
