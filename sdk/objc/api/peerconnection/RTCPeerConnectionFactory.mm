@@ -45,6 +45,7 @@
 
 #if defined(WEBRTC_IOS)
 #import "sdk/objc/native/api/audio_device_module.h"
+#import "sdk/objc/native/src/audio/audio_source_sink.h"
 #import "RTCAudioSink.h"
 #endif
 
@@ -68,6 +69,15 @@
 - (rtc::scoped_refptr<webrtc::AudioDeviceModule>)audioDeviceModule {
 #if defined(WEBRTC_IOS)
   return webrtc::CreateAudioDeviceModule();
+#else
+  return nullptr;
+#endif
+}
+
+- (rtc::scoped_refptr<webrtc::AudioDeviceModule>)audioDeviceModuleWithAudioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink { 
+#if defined(WEBRTC_IOS)
+  webrtc::AudioSourceSink *sink = new webrtc::AudioSourceSink(audioSink);
+  return webrtc::CreateAudioDeviceModule(sink);
 #else
   return nullptr;
 #endif
@@ -110,7 +120,7 @@
                        nativeAudioDecoderFactory:webrtc::CreateBuiltinAudioDecoderFactory()
                        nativeVideoEncoderFactory:std::move(native_encoder_factory)
                        nativeVideoDecoderFactory:std::move(native_decoder_factory)
-                               audioDeviceModule:[self audioDeviceModule]
+                               audioDeviceModule:[self audioDeviceModuleWithAudioSink:audioSink]
                            audioProcessingModule:nullptr
                            mediaTransportFactory:std::move(mediaTransportFactory)];
 #endif
