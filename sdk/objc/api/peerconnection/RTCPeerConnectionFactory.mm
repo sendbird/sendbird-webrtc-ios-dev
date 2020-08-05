@@ -45,6 +45,7 @@
 
 #if defined(WEBRTC_IOS)
 #import "sdk/objc/native/api/audio_device_module.h"
+#import "RTCAudioSink.h"
 #endif
 
 // Adding the nogncheck to disable the including header check.
@@ -92,6 +93,7 @@
 - (instancetype)
     initWithEncoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
             decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)decoderFactory
+                 audioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink
      mediaTransportFactory:(std::unique_ptr<webrtc::MediaTransportFactory>)mediaTransportFactory {
 #ifdef HAVE_NO_MEDIA
   return [self initWithNoMedia];
@@ -113,11 +115,23 @@
                            mediaTransportFactory:std::move(mediaTransportFactory)];
 #endif
 }
+
 - (instancetype)
     initWithEncoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
             decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)decoderFactory {
   return [self initWithEncoderFactory:encoderFactory
                        decoderFactory:decoderFactory
+                       audioSink:nullptr
+                mediaTransportFactory:nullptr];
+}
+
+- (instancetype)
+    initWithEncoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
+            decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)decoderFactory
+            audioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink {
+  return [self initWithEncoderFactory:encoderFactory
+                       decoderFactory:decoderFactory
+                       audioSink:audioSink
                 mediaTransportFactory:nullptr];
 }
 
