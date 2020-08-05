@@ -7,7 +7,7 @@ namespace webrtc {
             sink_ = sink;
         }
 
-        void AudioSourceSink::onAudioFrame(int frame) {
+        void AudioSourceSink::OnAudioFrame(int frame) {
             [sink_ onAudioFrame:frame];
         }
 

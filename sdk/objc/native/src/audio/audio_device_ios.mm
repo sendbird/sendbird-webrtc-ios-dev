@@ -35,6 +35,8 @@
 #import "components/audio/RTCAudioSessionConfiguration.h"
 #import "components/audio/RTCNativeAudioSessionDelegateAdapter.h"
 
+#import "audio_source_sink.h"
+
 namespace webrtc {
 namespace ios_adm {
 
@@ -470,6 +472,8 @@ OSStatus AudioDeviceIOS::OnGetPlayoutData(AudioUnitRenderActionFlags* flags,
   fine_audio_buffer_->GetPlayoutData(
       rtc::ArrayView<int16_t>(static_cast<int16_t*>(audio_buffer->mData), num_frames),
       kFixedPlayoutDelayEstimate);
+  audioSink_->OnAudioFrame(num_frames);
+  
   return noErr;
 }
 
@@ -1125,6 +1129,10 @@ int32_t AudioDeviceIOS::PlayoutIsAvailable(bool& available) {
 int32_t AudioDeviceIOS::RecordingIsAvailable(bool& available) {
   available = true;
   return 0;
+}
+
+void AudioDeviceIOS::AddAudioSourceSink(webrtc::AudioSourceSink* audioSink) {
+  audioSink_ = audioSink;
 }
 
 }  // namespace ios_adm

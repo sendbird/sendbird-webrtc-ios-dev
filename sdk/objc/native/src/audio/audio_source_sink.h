@@ -8,7 +8,7 @@ namespace webrtc {
     class AudioSourceSink {
         public: 
         AudioSourceSink(RTCAudioSink* sink);
-        void onAudioFrame(int frame);
+        void OnAudioFrame(int frame);
         
         private:
         __weak RTCAudioSink *sink_;

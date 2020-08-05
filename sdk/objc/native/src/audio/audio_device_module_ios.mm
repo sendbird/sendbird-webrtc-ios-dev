@@ -51,6 +51,7 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS(AudioSourceSink* audioSink)
     : task_queue_factory_(CreateDefaultTaskQueueFactory()) {
   RTC_LOG(INFO) << "current platform is IOS";
   RTC_LOG(INFO) << "iPhone Audio APIs will be utilized.";
+  audio_sink_ = audioSink;
 }
 
   int32_t AudioDeviceModuleIOS::AttachAudioBuffer() {
@@ -82,6 +83,8 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS(AudioSourceSink* audioSink)
     audio_device_.reset(new ios_adm::AudioDeviceIOS());
     RTC_CHECK(audio_device_);
 
+    audio_device_->AddAudioSourceSink(audio_sink_);
+    
     this->AttachAudioBuffer();
 
     AudioDeviceGeneric::InitStatus status = audio_device_->Init();

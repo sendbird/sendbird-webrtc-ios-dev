@@ -138,6 +138,7 @@ class AudioDeviceModuleIOS : public AudioDeviceModule {
   const std::unique_ptr<TaskQueueFactory> task_queue_factory_;
   std::unique_ptr<AudioDeviceIOS> audio_device_;
   std::unique_ptr<AudioDeviceBuffer> audio_device_buffer_;
+  AudioSourceSink* audio_sink_;
 };
 }  // namespace ios_adm
 }  // namespace webrtc
