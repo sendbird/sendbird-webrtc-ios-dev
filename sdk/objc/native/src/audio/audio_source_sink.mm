@@ -4,17 +4,12 @@
 #import "rtc_base/logging.h"
 
 namespace webrtc {
-        // public: 
-        AudioSourceSink::AudioSourceSink(RTCAudioSink *sink) {
-            sink_ = sink;
-        }
+  AudioSourceSink::AudioSourceSink(RTCAudioSink *sink) {
+    sink_ = sink;
+  }
 
-        void AudioSourceSink::OnAudioFrame(int frame) {
-            RTC_LOG(LS_VERBOSE) << "AudioSourceSink Audio" << frame << (sink_ == nil);
-            [sink_ onAudioFrame:frame];
-        }
-
-        // private:
-        // __weak RTCAudioSink *sink_;
-    // };
+  void AudioSourceSink::OnAudioFrame(int frame) {
+    RTC_LOG(LS_VERBOSE) << __FUNCTION__;
+    [sink_ onAudioFrame:frame];
+  }
 }

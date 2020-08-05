@@ -19,8 +19,6 @@
   return self;
 }
 
-- (void)onAudioFrame:(int32_t)frame {
-  RTCLogError(@"onAudioFrame%d", frame);
-}
+- (void)onAudioFrame:(int32_t)frame { }
 
 @end

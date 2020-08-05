@@ -51,7 +51,6 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS(AudioSourceSink* audioSink)
     : task_queue_factory_(CreateDefaultTaskQueueFactory()) {
   RTC_LOG(INFO) << "current platform is IOS";
   RTC_LOG(INFO) << "iPhone Audio APIs will be utilized.";
-  RTC_LOG(INFO) << "Initializing AudioDeviceModuleIOS with AudioSink";
   audio_sink_ = audioSink;
 }
 

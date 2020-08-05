@@ -78,13 +78,8 @@
 
 - (rtc::scoped_refptr<webrtc::AudioDeviceModule>)audioDeviceModuleWithAudioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink { 
 #if defined(WEBRTC_IOS)
-  webrtc::AudioSourceSink *sink = new webrtc::AudioSourceSink(audioSink);
   RTCLogInfo(@"Creating AudioDeviceModule with AudioSourceSink");
-  // rtc::scoped_refptr<webrtc::AudioDeviceModuleIOS> audioDeviceModule = webrtc::CreateAudioDeviceModule(sink);
-  // audioDeviceModule.audio_sink_ = audioSink;
-  // auto audioDeviceModule = webrtc::CreateAudioDeviceModule(sink);
-  // static_cast<webrtc::ios_adm::AudioDeviceModuleIOS*>(audioDeviceModule.get())->audio_sink_ = sink;
-  // return audioDeviceModule;
+  webrtc::AudioSourceSink *sink = new webrtc::AudioSourceSink(audioSink);
   return webrtc::CreateAudioDeviceModule(sink);
 #else
   return nullptr;
@@ -124,7 +119,6 @@
   if (decoderFactory) {
     native_decoder_factory = webrtc::ObjCToNativeVideoDecoderFactory(decoderFactory);
   }
-  RTCLogInfo(@"Creating RTCPEerConnectionFactory");
   return [self initWithNativeAudioEncoderFactory:webrtc::CreateBuiltinAudioEncoderFactory()
                        nativeAudioDecoderFactory:webrtc::CreateBuiltinAudioDecoderFactory()
                        nativeVideoEncoderFactory:std::move(native_encoder_factory)
@@ -175,7 +169,6 @@
 }
 
 - (instancetype)initWithNoMedia {
-  RTC_LOG(LS_VERBOSE) << "Creating RTCPeerConnectionFactory with no media";
   if (self = [self initNative]) {
     webrtc::PeerConnectionFactoryDependencies dependencies;
     dependencies.network_thread = _networkThread.get();

@@ -42,7 +42,6 @@
   [builder setVideoDecoderFactory:std::move(videoDecoderFactory)];
 
 #if defined(WEBRTC_IOS)
-  RTCLogInfo(@"MINI: WTF");
   [builder setAudioDeviceModule:webrtc::CreateAudioDeviceModule()];
 #endif
   return builder;
