@@ -21,6 +21,7 @@
 
 #if defined(WEBRTC_IOS)
 #include "audio_device_ios.h"
+#include "audio_source_sink.h"
 #endif
 
 #define CHECKinitialized_() \
@@ -41,6 +42,12 @@ namespace webrtc {
 namespace ios_adm {
 
 AudioDeviceModuleIOS::AudioDeviceModuleIOS()
+    : task_queue_factory_(CreateDefaultTaskQueueFactory()) {
+  RTC_LOG(INFO) << "current platform is IOS";
+  RTC_LOG(INFO) << "iPhone Audio APIs will be utilized.";
+}
+
+AudioDeviceModuleIOS::AudioDeviceModuleIOS(AudioSourceSink* audioSink)
     : task_queue_factory_(CreateDefaultTaskQueueFactory()) {
   RTC_LOG(INFO) << "current platform is IOS";
   RTC_LOG(INFO) << "iPhone Audio APIs will be utilized.";

@@ -24,6 +24,7 @@
 namespace webrtc {
 
 class AudioDeviceGeneric;
+class AudioSourceSink;
 
 namespace ios_adm {
 
@@ -32,6 +33,7 @@ class AudioDeviceModuleIOS : public AudioDeviceModule {
   int32_t AttachAudioBuffer();
 
   AudioDeviceModuleIOS();
+  AudioDeviceModuleIOS(AudioSourceSink* audioSink);
   ~AudioDeviceModuleIOS() override;
 
   // Retrieve the currently utilized audio layer
