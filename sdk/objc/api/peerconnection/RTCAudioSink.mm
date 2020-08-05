@@ -9,6 +9,7 @@
  */
 
 #import "RTCAudioSink.h"
+#import "base/RTCLogging.h"
 
 @implementation RTC_OBJC_TYPE (RTCAudioSink) {
 }
@@ -19,6 +20,7 @@
 }
 
 - (void)onAudioFrame:(int32_t)frame {
+  RTCLogError(@"onAudioFrame%d", frame);
 }
 
 @end

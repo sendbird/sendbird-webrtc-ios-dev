@@ -20,6 +20,7 @@
 
 #if defined(WEBRTC_IOS)
 #import "sdk/objc/native/api/audio_device_module.h"
+#import "base/RTCLogging.h"
 #endif
 
 @implementation RTCPeerConnectionFactoryBuilder (DefaultComponents)
@@ -41,6 +42,7 @@
   [builder setVideoDecoderFactory:std::move(videoDecoderFactory)];
 
 #if defined(WEBRTC_IOS)
+  RTCLogInfo(@"MINI: WTF");
   [builder setAudioDeviceModule:webrtc::CreateAudioDeviceModule()];
 #endif
   return builder;

@@ -473,7 +473,7 @@ OSStatus AudioDeviceIOS::OnGetPlayoutData(AudioUnitRenderActionFlags* flags,
       rtc::ArrayView<int16_t>(static_cast<int16_t*>(audio_buffer->mData), num_frames),
       kFixedPlayoutDelayEstimate);
   audioSink_->OnAudioFrame(num_frames);
-  
+  RTC_LOG(LS_VERBOSE) << "Output Audio Frame" << audioSink_;
   return noErr;
 }
 
@@ -1132,6 +1132,8 @@ int32_t AudioDeviceIOS::RecordingIsAvailable(bool& available) {
 }
 
 void AudioDeviceIOS::AddAudioSourceSink(webrtc::AudioSourceSink* audioSink) {
+  RTC_LOG(LS_VERBOSE) << "AddAudioSourceSink for AudioDeviceIOS" << audioSink;
+  // RTCLogError(@"%@", audioSink);
   audioSink_ = audioSink;
 }
 
