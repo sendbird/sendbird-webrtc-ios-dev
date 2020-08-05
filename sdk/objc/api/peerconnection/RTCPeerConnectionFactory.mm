@@ -82,9 +82,10 @@
   RTCLogInfo(@"Creating AudioDeviceModule with AudioSourceSink");
   // rtc::scoped_refptr<webrtc::AudioDeviceModuleIOS> audioDeviceModule = webrtc::CreateAudioDeviceModule(sink);
   // audioDeviceModule.audio_sink_ = audioSink;
-  auto audioDeviceModule = webrtc::CreateAudioDeviceModule(sink);
-  static_cast<webrtc::ios_adm::AudioDeviceModuleIOS*>(audioDeviceModule.get())->audio_sink_ = sink;
-  return audioDeviceModule;
+  // auto audioDeviceModule = webrtc::CreateAudioDeviceModule(sink);
+  // static_cast<webrtc::ios_adm::AudioDeviceModuleIOS*>(audioDeviceModule.get())->audio_sink_ = sink;
+  // return audioDeviceModule;
+  return webrtc::CreateAudioDeviceModule(sink);
 #else
   return nullptr;
 #endif
