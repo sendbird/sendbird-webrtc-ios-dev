@@ -20,10 +20,9 @@
 #include "modules/audio_device/include/audio_device.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/critical_section.h"
-#import "sdk/objc/components/audio/RTCAudioSink.h"
 
 namespace webrtc {
-
+class AudiosourceSink;
 class AudioDeviceGeneric;
 
 namespace ios_adm {
@@ -33,7 +32,7 @@ class AudioDeviceModuleIOS : public AudioDeviceModule {
   int32_t AttachAudioBuffer();
 
   AudioDeviceModuleIOS();
-  AudioDeviceModuleIOS(RTCAudioSink *sink);
+  AudioDeviceModuleIOS(webrtc::AudioSourceSink *sink);
   ~AudioDeviceModuleIOS() override;
 
   // Retrieve the currently utilized audio layer
@@ -44,6 +43,7 @@ class AudioDeviceModuleIOS : public AudioDeviceModule {
 
   // Main initializaton and termination
   int32_t Init() override;
+  int32_t Init(webrtc::AudioSourceSink *sink);
   int32_t Terminate() override;
   bool Initialized() const override;
 
@@ -78,7 +78,7 @@ class AudioDeviceModuleIOS : public AudioDeviceModule {
   int32_t StartRecording() override;
   int32_t StopRecording() override;
   bool Recording() const override;
-  void AddAudioSink(RTCAudioSink* sink);
+  void AddAudioSink(webrtc::AudioSourceSink* sink);
   // Audio mixer initialization
   int32_t InitSpeaker() override;
   bool SpeakerIsInitialized() const override;

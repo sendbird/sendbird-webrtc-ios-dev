@@ -34,6 +34,7 @@
 #import "components/audio/RTCAudioSession.h"
 #import "components/audio/RTCAudioSessionConfiguration.h"
 #import "components/audio/RTCNativeAudioSessionDelegateAdapter.h"
+#include "api/peerconnection/RTCAudioSink+Private.h"
 
 namespace webrtc {
 namespace ios_adm {
@@ -122,7 +123,7 @@ AudioDeviceIOS::AudioDeviceIOS()
   audio_session_observer_ = [[RTCNativeAudioSessionDelegateAdapter alloc] initWithObserver:this];
 }
 
-AudioDeviceIOS::AudioDeviceIOS(RTCAudioSink *sink)
+AudioDeviceIOS::AudioDeviceIOS(webrtc::AudioSourceSink *sink)
     : audio_device_buffer_(nullptr),
       audio_unit_(nullptr),
       recording_(0),
@@ -159,6 +160,35 @@ void AudioDeviceIOS::AttachAudioBuffer(AudioDeviceBuffer* audioBuffer) {
 }
 
 AudioDeviceGeneric::InitStatus AudioDeviceIOS::Init() {
+  LOGI() << "Init";
+  io_thread_checker_.Detach();
+  thread_checker_.Detach();
+
+  RTC_DCHECK_RUN_ON(&thread_checker_);
+  if (initialized_) {
+    return InitStatus::OK;
+  }
+#if !defined(NDEBUG)
+  LogDeviceInfo();
+#endif
+  // Store the preferred sample rate and preferred number of channels already
+  // here. They have not been set and confirmed yet since configureForWebRTC
+  // is not called until audio is about to start. However, it makes sense to
+  // store the parameters now and then verify at a later stage.
+  RTC_OBJC_TYPE(RTCAudioSessionConfiguration)* config =
+      [RTC_OBJC_TYPE(RTCAudioSessionConfiguration) webRTCConfiguration];
+  playout_parameters_.reset(config.sampleRate, config.outputNumberOfChannels);
+  record_parameters_.reset(config.sampleRate, config.inputNumberOfChannels);
+  // Ensure that the audio device buffer (ADB) knows about the internal audio
+  // parameters. Note that, even if we are unable to get a mono audio session,
+  // we will always tell the I/O audio unit to do a channel format conversion
+  // to guarantee mono on the "input side" of the audio unit.
+  UpdateAudioDeviceBuffer();
+  initialized_ = true;
+  return InitStatus::OK;
+}
+
+AudioDeviceGeneric::InitStatus AudioDeviceIOS::Init(webrtc::AudioSourceSink* sink) {
   LOGI() << "Init";
   io_thread_checker_.Detach();
   thread_checker_.Detach();
@@ -383,7 +413,7 @@ void AudioDeviceIOS::OnCanPlayOrRecordChange(bool can_play_or_record) {
                 new rtc::TypedMessageData<bool>(can_play_or_record));
 }
 
-void AudioDeviceIOS::AddAudioSink(RTCAudioSink* sink) {
+void AudioDeviceIOS::AddAudioSink(webrtc::AudioSourceSink* sink) {
   sink_ = sink;
 }
 
@@ -500,7 +530,8 @@ OSStatus AudioDeviceIOS::OnGetPlayoutData(AudioUnitRenderActionFlags* flags,
       rtc::ArrayView<int16_t>(static_cast<int16_t*>(audio_buffer->mData), num_frames),
       kFixedPlayoutDelayEstimate);
    
-  [sink_ onAudioBuffer:num_frames];
+  sink_->OnData(num_frames);
+  // [sink_ onAudioBuffer:num_frames];
   return noErr;
 }
 

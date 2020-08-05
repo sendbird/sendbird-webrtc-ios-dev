@@ -8,4 +8,4 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#import "components/audio/RTCAudioSink.h"
+#import "api/peerconnection/RTCAudioSink.h"

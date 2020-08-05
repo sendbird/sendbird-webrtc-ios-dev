@@ -45,7 +45,9 @@
 
 #if defined(WEBRTC_IOS)
 #import "sdk/objc/native/api/audio_device_module.h"
-#import "sdk/objc/components/audio/RTCAudioSink.h"//"sdk/objc/native/src/audio/audio_device_module_ios.h"
+#import "sdk/objc/api/peerconnection/RTCAudioSink.h"//"sdk/objc/native/src/audio/audio_device_module_ios.h"
+#import "sdk/objc/api/peerconnection/RTCAudioSink+Private.h"
+// #import "sdk/objc/components/audio/RTCAudioSink+Private.h"//"sdk/objc/native/src/audio/audio_device_module_ios.h"
 #import "sdk/objc/native/src/audio/audio_device_module_ios.h"
 #endif
 
@@ -67,14 +69,16 @@
 @synthesize nativeFactory = _nativeFactory;
 
 - (rtc::scoped_refptr<webrtc::AudioDeviceModule>)audioDeviceModule {
-  return [self audioDeviceModuleWithSink:nullptr];
+  return webrtc::CreateAudioDeviceModule(nullptr);// [self audioDeviceModuleWithSink:nullptr];
 }
 
 - (rtc::scoped_refptr<webrtc::AudioDeviceModule>)audioDeviceModuleWithSink:(nullable RTCAudioSink *)audioSink {
 #if defined(WEBRTC_IOS)
   // rtc::scoped_refptr<webrtc::ios_adm::AudioDeviceModuleIOS> audioDeviceModule = webrtc::CreateAudioDeviceModule();
-  // audioDeviceModule->AddAudioSink(audioSink);
-  return webrtc::CreateAudioDeviceModule(audioSink);
+  // webrtc::AudioSourceSink *sink = new webrtc::AudioSourceSink(audioSink);
+  // return webrtc::CreateAudioDeviceModule(sink);
+  return webrtc::CreateAudioDeviceModule(nullptr);
+  // // audioDeviceModule->AddAudioSink(audioSink);
   // return audioDeviceModule;
 #else
   return nullptr;
@@ -119,7 +123,7 @@
                        nativeAudioDecoderFactory:webrtc::CreateBuiltinAudioDecoderFactory()
                        nativeVideoEncoderFactory:std::move(native_encoder_factory)
                        nativeVideoDecoderFactory:std::move(native_decoder_factory)
-                               audioDeviceModule:[self audioDeviceModule]
+                               audioDeviceModule:[self audioDeviceModuleWithSink:audioSink]
                            audioProcessingModule:nullptr
                            mediaTransportFactory:std::move(mediaTransportFactory)
                            audioSink:audioSink];

@@ -13,12 +13,13 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/ref_counted_object.h"
 
-#include "sdk/objc/native/src/audio/audio_device_module_ios.h"
+#import "sdk/objc/native/src/audio/audio_device_module_ios.h"
+// #include "sdk/objc/api/peerconnection/RTCAudioSink+Private.h"
 
 namespace webrtc {
 
 #if defined(WEBRTC_IOS)
-rtc::scoped_refptr<ios_adm::AudioDeviceModuleIOS> CreateAudioDeviceModule(RTCAudioSink *sink) {
+rtc::scoped_refptr<AudioDeviceModule> CreateAudioDeviceModule(AudioSourceSink* sink) {
   RTC_LOG(INFO) << __FUNCTION__;
   return new rtc::RefCountedObject<ios_adm::AudioDeviceModuleIOS>(sink);
 }

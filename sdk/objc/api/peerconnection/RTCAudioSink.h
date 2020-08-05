@@ -8,15 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-// #if defined(WEBRTC_IOS)
-#ifndef SDK_OBJC_NATIVE_SRC_AUDIO_SINK_H_
-#define SDK_OBJC_NATIVE_SRC_AUDIO_SINK_H_
-
-#ifdef __OBJC__
 #import <Foundation/Foundation.h>
-
-
-#import "sdk/objc/base/RTCMacros.h"
+#import "RTCMacros.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -30,7 +23,21 @@ RTC_OBJC_EXPORT
 
 @end
 
-NS_ASSUME_NONNULL_END
-#endif 
+// namespace webrtc {
+// class AudioSourceSink {
+//  public:
+//    AudioSourceSink(RTCAudioSink* sink) {
+//        sink_ = sink;
+//    }
 
-#endif
+//   void OnData(int32_t bits_per_sample) {
+//         // RTCLog(@"MINI: CALLED ONDATA.");
+//         [sink_ onAudioBuffer:bits_per_sample];
+//   }
+
+//  private:
+//   __weak RTCAudioSink *sink_;
+// };
+// }
+
+NS_ASSUME_NONNULL_END

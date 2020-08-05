@@ -18,6 +18,7 @@
 #include "rtc_base/ref_count.h"
 #include "rtc_base/ref_counted_object.h"
 #include "system_wrappers/include/metrics.h"
+#import "api/peerconnection/RTCAudioSink+Private.h"
 
 #if defined(WEBRTC_IOS)
 #include "audio_device_ios.h"
@@ -46,7 +47,7 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS()
   RTC_LOG(INFO) << "iPhone Audio APIs will be utilized.";
 }
 
-AudioDeviceModuleIOS::AudioDeviceModuleIOS(RTCAudioSink *sink)
+AudioDeviceModuleIOS::AudioDeviceModuleIOS(webrtc::AudioSourceSink* sink)
     : task_queue_factory_(CreateDefaultTaskQueueFactory()) {
   RTC_LOG(INFO) << "current platform is IOS";
   RTC_LOG(INFO) << "iPhone Audio APIs will be utilized.";
@@ -96,7 +97,31 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS(RTCAudioSink *sink)
     return 0;
   }
 
-  void AudioDeviceModuleIOS::AddAudioSink(RTCAudioSink* sink) {
+  int32_t AudioDeviceModuleIOS::Init(webrtc::AudioSourceSink* sink) {
+    RTC_LOG(INFO) << __FUNCTION__;
+    if (initialized_)
+      return 0;
+
+    audio_device_buffer_.reset(new webrtc::AudioDeviceBuffer(task_queue_factory_.get()));
+    audio_device_.reset(new ios_adm::AudioDeviceIOS());
+    RTC_CHECK(audio_device_);
+
+    this->AttachAudioBuffer();
+    
+    AudioDeviceGeneric::InitStatus status = audio_device_->Init();
+    RTC_HISTOGRAM_ENUMERATION(
+        "WebRTC.Audio.InitializationResult", static_cast<int>(status),
+        static_cast<int>(AudioDeviceGeneric::InitStatus::NUM_STATUSES));
+    if (status != AudioDeviceGeneric::InitStatus::OK) {
+      RTC_LOG(LS_ERROR) << "Audio device initialization failed.";
+      return -1;
+    }
+    initialized_ = true;
+    audio_device_->AddAudioSink(sink);
+    return 0;
+  }
+
+  void AudioDeviceModuleIOS::AddAudioSink(webrtc::AudioSourceSink* sink) {
     audio_device_->AddAudioSink(sink);
   }
 
