@@ -18,7 +18,10 @@
   self = [super init];
   return self;
 }
-
-- (void)onAudioFrame:(int32_t)frame { }
+- (void)onAudioFrameWithFlags:(AudioUnitRenderActionFlags *)flags 
+                    timeStamp:(const AudioTimeStamp *)timeStamp
+                    busNumber:(uint32_t)busNumber
+                    numFrames:(uint32_t)numFrames
+                    ioData:(AudioBufferList *)ioData { }
 
 @end

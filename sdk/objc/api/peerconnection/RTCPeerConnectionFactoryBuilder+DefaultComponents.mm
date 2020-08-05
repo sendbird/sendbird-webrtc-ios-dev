@@ -20,7 +20,6 @@
 
 #if defined(WEBRTC_IOS)
 #import "sdk/objc/native/api/audio_device_module.h"
-#import "base/RTCLogging.h"
 #endif
 
 @implementation RTCPeerConnectionFactoryBuilder (DefaultComponents)

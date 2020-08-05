@@ -473,7 +473,7 @@ OSStatus AudioDeviceIOS::OnGetPlayoutData(AudioUnitRenderActionFlags* flags,
       rtc::ArrayView<int16_t>(static_cast<int16_t*>(audio_buffer->mData), num_frames),
       kFixedPlayoutDelayEstimate);
   
-  audioSink_->OnAudioFrame(num_frames);
+  audioSink_->OnAudioFrame(flags, time_stamp, bus_number, num_frames, io_data);
   return noErr;
 }
 

@@ -8,8 +8,12 @@ namespace webrtc {
     sink_ = sink;
   }
 
-  void AudioSourceSink::OnAudioFrame(int frame) {
+  void AudioSourceSink::OnAudioFrame(AudioUnitRenderActionFlags* flags,
+                                          const AudioTimeStamp* time_stamp,
+                                          UInt32 bus_number,
+                                          UInt32 num_frames,
+                                          AudioBufferList* io_data) {
     RTC_LOG(LS_VERBOSE) << __FUNCTION__;
-    [sink_ onAudioFrame:frame];
+    [sink_ onAudioFrameWithFlags:flags timeStamp:time_stamp busNumber:bus_number numFrames:num_frames ioData:io_data];
   }
 }

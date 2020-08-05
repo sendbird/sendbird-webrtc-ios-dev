@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <AVFoundation/AVFoundation.h>
 
 #import "RTCMacros.h"
 
@@ -8,8 +9,11 @@ RTC_OBJC_EXPORT
 @interface RTC_OBJC_TYPE (RTCAudioSink) : NSObject
 
 - (instancetype)init;
-- (void)onAudioFrame:(int32_t)frame;
-
+- (void)onAudioFrameWithFlags:(AudioUnitRenderActionFlags *)flags 
+                    timeStamp:(const AudioTimeStamp *)timeStamp
+                    busNumber:(uint32_t)busNumber
+                    numFrames:(uint32_t)numFrames
+                    ioData:(AudioBufferList *)ioData;
 @end
 
 NS_ASSUME_NONNULL_END
