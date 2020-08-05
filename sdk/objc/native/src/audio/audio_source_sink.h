@@ -10,12 +10,16 @@ namespace webrtc {
     class AudioSourceSink {
         public: 
         AudioSourceSink(RTCAudioSink* sink);
-        void OnAudioFrame(AudioUnitRenderActionFlags* flags,
+        void OnLocalAudioFrame(AudioUnitRenderActionFlags* flags,
                                           const AudioTimeStamp* time_stamp,
                                           UInt32 bus_number,
                                           UInt32 num_frames,
                                           AudioBufferList* io_data);
-        
+        void OnRemoteAudioFrame(AudioUnitRenderActionFlags* flags,
+                                          const AudioTimeStamp* time_stamp,
+                                          UInt32 bus_number,
+                                          UInt32 num_frames,
+                                          AudioBufferList* io_data);
         private:
         __weak RTCAudioSink *sink_;
     };

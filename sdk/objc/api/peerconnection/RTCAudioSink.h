@@ -9,7 +9,13 @@ RTC_OBJC_EXPORT
 @interface RTC_OBJC_TYPE (RTCAudioSink) : NSObject
 
 - (instancetype)init;
-- (void)onAudioFrameWithFlags:(AudioUnitRenderActionFlags *)flags 
+- (void)onLocalAudioFrameWithFlags:(AudioUnitRenderActionFlags *)flags 
+                    timeStamp:(const AudioTimeStamp *)timeStamp
+                    busNumber:(uint32_t)busNumber
+                    numFrames:(uint32_t)numFrames
+                    ioData:(AudioBufferList *)ioData;
+
+- (void)onRemoteAudioFrameWithFlags:(AudioUnitRenderActionFlags *)flags 
                     timeStamp:(const AudioTimeStamp *)timeStamp
                     busNumber:(uint32_t)busNumber
                     numFrames:(uint32_t)numFrames
