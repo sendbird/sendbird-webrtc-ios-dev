@@ -33,8 +33,8 @@ SDK_OUTPUT_DIR = os.path.join(SRC_DIR, 'out_ios_libs')
 SDK_FRAMEWORK_NAME = 'WebRTC.framework'
 
 DEFAULT_ARCHS = ENABLED_ARCHS = ['arm64', 'arm', 'x64', 'x86']
-IOS_DEPLOYMENT_TARGET = '10.0'
-LIBVPX_BUILD_VP9 = False
+IOS_DEPLOYMENT_TARGET = '9.0'
+LIBVPX_BUILD_VP9 = True
 
 sys.path.append(os.path.join(SCRIPT_DIR, '..', 'libs'))
 from generate_licenses import LicenseBuilder
@@ -59,7 +59,7 @@ def _ParseArgs():
            'If specified together with -c, deletes the dir.')
   parser.add_argument('-r', '--revision', type=int, default=0,
       help='Specifies a revision number to embed if building the framework.')
-  parser.add_argument('-e', '--bitcode', action='store_true', default=False,
+  parser.add_argument('-e', '--bitcode', action='store_true', default=True,
       help='Compile with bitcode.')
   parser.add_argument('--verbose', action='store_true', default=False,
       help='Debug logging.')
