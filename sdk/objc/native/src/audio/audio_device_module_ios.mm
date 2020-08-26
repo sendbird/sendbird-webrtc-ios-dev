@@ -21,6 +21,7 @@
 
 #if defined(WEBRTC_IOS)
 #include "audio_device_ios.h"
+#include "audio_source_sink.h"
 #endif
 
 #define CHECKinitialized_() \
@@ -44,6 +45,13 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS()
     : task_queue_factory_(CreateDefaultTaskQueueFactory()) {
   RTC_LOG(INFO) << "current platform is IOS";
   RTC_LOG(INFO) << "iPhone Audio APIs will be utilized.";
+}
+
+AudioDeviceModuleIOS::AudioDeviceModuleIOS(AudioSourceSink* audioSink)
+    : task_queue_factory_(CreateDefaultTaskQueueFactory()) {
+  RTC_LOG(INFO) << "current platform is IOS";
+  RTC_LOG(INFO) << "iPhone Audio APIs will be utilized.";
+  audio_sink_ = audioSink;
 }
 
   int32_t AudioDeviceModuleIOS::AttachAudioBuffer() {
@@ -74,6 +82,7 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS()
     audio_device_buffer_.reset(new webrtc::AudioDeviceBuffer(task_queue_factory_.get()));
     audio_device_.reset(new ios_adm::AudioDeviceIOS());
     RTC_CHECK(audio_device_);
+    audio_device_->AddAudioSourceSink(audio_sink_);
 
     this->AttachAudioBuffer();
 
@@ -484,6 +493,7 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS()
       return 0;
     }
     int32_t result = audio_device_->InitPlayout();
+    audio_device_->AddAudioSourceSink(audio_sink_);
     RTC_LOG(INFO) << "output: " << result;
     RTC_HISTOGRAM_BOOLEAN("WebRTC.Audio.InitPlayoutSuccess",
                           static_cast<int>(result == 0));

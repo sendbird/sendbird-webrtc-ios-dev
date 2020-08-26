@@ -15,6 +15,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @class RTC_OBJC_TYPE(RTCAudioSource);
+@class RTC_OBJC_TYPE(RTCAudioSink);
 @class RTC_OBJC_TYPE(RTCAudioTrack);
 @class RTC_OBJC_TYPE(RTCConfiguration);
 @class RTC_OBJC_TYPE(RTCMediaConstraints);
@@ -40,6 +41,12 @@ RTC_OBJC_EXPORT
 - (instancetype)
     initWithEncoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
             decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)decoderFactory;
+
+/* Initialize object with injectable video encoder/decoder factories and audioSink */
+- (instancetype)
+    initWithEncoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
+            decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)decoderFactory
+            audioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink;
 
 /** Initialize an RTCAudioSource with constraints. */
 - (RTC_OBJC_TYPE(RTCAudioSource) *)audioSourceWithConstraints:

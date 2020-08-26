@@ -24,6 +24,7 @@
 namespace webrtc {
 
 class AudioDeviceGeneric;
+class AudioSourceSink;
 
 namespace ios_adm {
 
@@ -32,6 +33,7 @@ class AudioDeviceModuleIOS : public AudioDeviceModule {
   int32_t AttachAudioBuffer();
 
   AudioDeviceModuleIOS();
+  AudioDeviceModuleIOS(AudioSourceSink* audioSink);
   ~AudioDeviceModuleIOS() override;
 
   // Retrieve the currently utilized audio layer
@@ -126,7 +128,6 @@ class AudioDeviceModuleIOS : public AudioDeviceModule {
   int32_t EnableBuiltInNS(bool enable) override;
 
   int32_t GetPlayoutUnderrunCount() const override;
-
 #if defined(WEBRTC_IOS)
   int GetPlayoutAudioParameters(AudioParameters* params) const override;
   int GetRecordAudioParameters(AudioParameters* params) const override;
@@ -136,6 +137,7 @@ class AudioDeviceModuleIOS : public AudioDeviceModule {
   const std::unique_ptr<TaskQueueFactory> task_queue_factory_;
   std::unique_ptr<AudioDeviceIOS> audio_device_;
   std::unique_ptr<AudioDeviceBuffer> audio_device_buffer_;
+  AudioSourceSink* audio_sink_;
 };
 }  // namespace ios_adm
 }  // namespace webrtc

@@ -17,7 +17,10 @@
 
 namespace webrtc {
 
+class AudioSourceSink;
+
 rtc::scoped_refptr<AudioDeviceModule> CreateAudioDeviceModule();
+rtc::scoped_refptr<AudioDeviceModule> CreateAudioDeviceModule(AudioSourceSink* audioSink);
 
 }  // namespace webrtc
 

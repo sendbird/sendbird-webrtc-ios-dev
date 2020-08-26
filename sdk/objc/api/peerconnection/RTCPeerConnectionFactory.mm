@@ -45,6 +45,9 @@
 
 #if defined(WEBRTC_IOS)
 #import "sdk/objc/native/api/audio_device_module.h"
+#import "sdk/objc/native/src/audio/audio_source_sink.h"
+#import "sdk/objc/native/src/audio/audio_device_module_ios.h"
+#import "RTCAudioSink.h"
 #endif
 
 // Adding the nogncheck to disable the including header check.
@@ -66,7 +69,18 @@
 
 - (rtc::scoped_refptr<webrtc::AudioDeviceModule>)audioDeviceModule {
 #if defined(WEBRTC_IOS)
+  RTCLogInfo(@"Creating AudioDeviceModule without AudioSourceSink");
   return webrtc::CreateAudioDeviceModule();
+#else
+  return nullptr;
+#endif
+}
+
+- (rtc::scoped_refptr<webrtc::AudioDeviceModule>)audioDeviceModuleWithAudioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink { 
+#if defined(WEBRTC_IOS)
+  RTCLogInfo(@"Creating AudioDeviceModule with AudioSourceSink");
+  webrtc::AudioSourceSink *sink = new webrtc::AudioSourceSink(audioSink);
+  return webrtc::CreateAudioDeviceModule(sink);
 #else
   return nullptr;
 #endif
@@ -92,6 +106,7 @@
 - (instancetype)
     initWithEncoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
             decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)decoderFactory
+                 audioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink
      mediaTransportFactory:(std::unique_ptr<webrtc::MediaTransportFactory>)mediaTransportFactory {
 #ifdef HAVE_NO_MEDIA
   return [self initWithNoMedia];
@@ -108,16 +123,28 @@
                        nativeAudioDecoderFactory:webrtc::CreateBuiltinAudioDecoderFactory()
                        nativeVideoEncoderFactory:std::move(native_encoder_factory)
                        nativeVideoDecoderFactory:std::move(native_decoder_factory)
-                               audioDeviceModule:[self audioDeviceModule]
+                               audioDeviceModule:[self audioDeviceModuleWithAudioSink:audioSink]
                            audioProcessingModule:nullptr
                            mediaTransportFactory:std::move(mediaTransportFactory)];
 #endif
 }
+
 - (instancetype)
     initWithEncoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
             decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)decoderFactory {
   return [self initWithEncoderFactory:encoderFactory
                        decoderFactory:decoderFactory
+                       audioSink:nullptr
+                mediaTransportFactory:nullptr];
+}
+
+- (instancetype)
+    initWithEncoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
+            decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)decoderFactory
+            audioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink {
+  return [self initWithEncoderFactory:encoderFactory
+                       decoderFactory:decoderFactory
+                       audioSink:audioSink
                 mediaTransportFactory:nullptr];
 }
 

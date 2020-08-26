@@ -26,6 +26,7 @@ RTC_FWD_DECL_OBJC_CLASS(RTCNativeAudioSessionDelegateAdapter);
 
 namespace webrtc {
 
+class AudioSourceSink;
 class FineAudioBuffer;
 
 namespace ios_adm {
@@ -161,6 +162,8 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
   // Handles messages from posts.
   void OnMessage(rtc::Message* msg) override;
 
+  void AddAudioSourceSink(AudioSourceSink* audioSink);
+
   bool IsInterrupted();
 
  private:
@@ -293,6 +296,8 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
 
   // Contains the time for when the last output volume change was detected.
   int64_t last_output_volume_change_time_ RTC_GUARDED_BY(thread_checker_);
+
+  AudioSourceSink* audioSink_;
 };
 }  // namespace ios_adm
 }  // namespace webrtc

@@ -88,6 +88,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)
     initWithEncoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
             decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)decoderFactory
+            audioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink
      mediaTransportFactory:(std::unique_ptr<webrtc::MediaTransportFactory>)mediaTransportFactory;
 
 /** Initialize an RTCPeerConnection with a configuration, constraints, and
