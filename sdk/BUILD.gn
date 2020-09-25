@@ -248,6 +248,8 @@ if (is_ios || is_mac) {
         visibility = [ "*" ]
 
         sources = [
+          "objc/native/src/audio/audio_source_sink.h",
+          "objc/native/src/audio/audio_source_sink.mm",
           "objc/native/src/audio/audio_device_ios.h",
           "objc/native/src/audio/audio_device_ios.mm",
           "objc/native/src/audio/audio_device_module_ios.h",
@@ -813,6 +815,8 @@ if (is_ios || is_mac) {
         "objc/api/peerconnection/RTCAudioSource+Private.h",
         "objc/api/peerconnection/RTCAudioSource.h",
         "objc/api/peerconnection/RTCAudioSource.mm",
+        "objc/api/peerconnection/RTCAudioSink.h",
+        "objc/api/peerconnection/RTCAudioSink.mm",
         "objc/api/peerconnection/RTCAudioTrack+Private.h",
         "objc/api/peerconnection/RTCAudioTrack.h",
         "objc/api/peerconnection/RTCAudioTrack.mm",
@@ -983,6 +987,7 @@ if (is_ios || is_mac) {
         "objc/Framework/Headers/WebRTC/RTCAudioSession.h",
         "objc/Framework/Headers/WebRTC/RTCAudioSessionConfiguration.h",
         "objc/Framework/Headers/WebRTC/RTCAudioSource.h",
+        "objc/Framework/Headers/WebRTC/RTCAudioSink.h",
         "objc/Framework/Headers/WebRTC/RTCAudioTrack.h",
         "objc/Framework/Headers/WebRTC/RTCCVPixelBuffer.h",
         "objc/Framework/Headers/WebRTC/RTCCallbackLogger.h",
@@ -1284,6 +1289,7 @@ if (is_ios || is_mac) {
           "objc/helpers/RTCDispatcher.h",
           "objc/helpers/UIDevice+RTCDevice.h",
           "objc/api/peerconnection/RTCAudioSource.h",
+          "objc/api/peerconnection/RTCAudioSink.h",
           "objc/api/peerconnection/RTCAudioTrack.h",
           "objc/api/peerconnection/RTCConfiguration.h",
           "objc/api/peerconnection/RTCDataChannel.h",
@@ -1395,6 +1401,7 @@ if (is_ios || is_mac) {
 
         sources = [
           "objc/api/peerconnection/RTCAudioSource.h",
+          "objc/api/peerconnection/RTCAudioSink.h",
           "objc/api/peerconnection/RTCAudioTrack.h",
           "objc/api/peerconnection/RTCCertificate.h",
           "objc/api/peerconnection/RTCConfiguration.h",

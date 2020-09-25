@@ -35,6 +35,8 @@
 #import "components/audio/RTCAudioSessionConfiguration.h"
 #import "components/audio/RTCNativeAudioSessionDelegateAdapter.h"
 
+#import "audio_source_sink.h"
+
 namespace webrtc {
 namespace ios_adm {
 
@@ -411,6 +413,8 @@ OSStatus AudioDeviceIOS::OnDeliverRecordedData(AudioUnitRenderActionFlags* flags
   // Use the FineAudioBuffer instance to convert between native buffer size
   // and the 10ms buffer size used by WebRTC.
   fine_audio_buffer_->DeliverRecordedData(record_audio_buffer_, kFixedRecordDelayEstimate);
+
+  audioSink_->OnLocalAudioFrame(flags, time_stamp, bus_number, num_frames, &audio_buffer_list);
   return noErr;
 }
 
@@ -470,6 +474,8 @@ OSStatus AudioDeviceIOS::OnGetPlayoutData(AudioUnitRenderActionFlags* flags,
   fine_audio_buffer_->GetPlayoutData(
       rtc::ArrayView<int16_t>(static_cast<int16_t*>(audio_buffer->mData), num_frames),
       kFixedPlayoutDelayEstimate);
+  
+  audioSink_->OnRemoteAudioFrame(flags, time_stamp, bus_number, num_frames, io_data);
   return noErr;
 }
 
@@ -1125,6 +1131,11 @@ int32_t AudioDeviceIOS::PlayoutIsAvailable(bool& available) {
 int32_t AudioDeviceIOS::RecordingIsAvailable(bool& available) {
   available = true;
   return 0;
+}
+
+void AudioDeviceIOS::AddAudioSourceSink(webrtc::AudioSourceSink* audioSink) {
+  RTC_LOG(LS_VERBOSE) << "AddAudioSourceSink for AudioDeviceIOS" << audioSink;
+  audioSink_ = audioSink;
 }
 
 }  // namespace ios_adm
