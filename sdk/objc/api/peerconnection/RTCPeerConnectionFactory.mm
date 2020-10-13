@@ -66,18 +66,18 @@
 }
 
 @synthesize nativeFactory = _nativeFactory;
-@synthesize internalAudioDeviceModule = _internalAudioDeviceModule;
+@synthesize internalAudioDeviceModule = _audioDeviceModule;
 
 - (void)initializeAudioTesting {
   #if defined(WEBRTC_IOS)
-  auto adm = _internalAudioDeviceModule.get();
+  auto adm = _audioDeviceModule.get();
   static_cast<webrtc::ios_adm::AudioDeviceModuleIOS *>(adm)->InitializeAudioTesting();
   #endif
 }
 - (void)deliverRecordedDataWithNumFrames:(uint32_t)numFrames
                             ioData:(AudioBufferList*)ioData {
   #if defined(WEBRTC_IOS)
-  auto adm = _internalAudioDeviceModule.get();
+  auto adm = _audioDeviceModule.get();
   static_cast<webrtc::ios_adm::AudioDeviceModuleIOS *>(adm)->DeliverRecordedData(numFrames, ioData);
   #endif
 }
