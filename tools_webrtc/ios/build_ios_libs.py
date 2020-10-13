@@ -59,7 +59,7 @@ def _ParseArgs():
            'If specified together with -c, deletes the dir.')
   parser.add_argument('-r', '--revision', type=int, default=0,
       help='Specifies a revision number to embed if building the framework.')
-  parser.add_argument('-e', '--bitcode', action='store_true', default=True,
+  parser.add_argument('-e', '--bitcode', action='store_true', default=False,
       help='Compile with bitcode.')
   parser.add_argument('--verbose', action='store_true', default=False,
       help='Debug logging.')

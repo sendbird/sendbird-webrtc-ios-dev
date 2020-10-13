@@ -82,6 +82,7 @@ VoiceProcessingAudioUnit::~VoiceProcessingAudioUnit() {
   DisposeAudioUnit();
 }
 
+bool VoiceProcessingAudioUnit::vpio_enabled = true;
 const UInt32 VoiceProcessingAudioUnit::kBytesPerSample = 2;
 
 bool VoiceProcessingAudioUnit::Init() {
@@ -395,8 +396,13 @@ OSStatus VoiceProcessingAudioUnit::OnDeliverRecordedData(
     AudioBufferList* io_data) {
   VoiceProcessingAudioUnit* audio_unit =
       static_cast<VoiceProcessingAudioUnit*>(in_ref_con);
-  return audio_unit->NotifyDeliverRecordedData(flags, time_stamp, bus_number,
+  
+  if (VoiceProcessingAudioUnit::vpio_enabled) {
+    return audio_unit->NotifyDeliverRecordedData(flags, time_stamp, bus_number,
                                                num_frames, io_data);
+  } else { 
+    return noErr;
+  }
 }
 
 OSStatus VoiceProcessingAudioUnit::NotifyGetPlayoutData(
@@ -464,6 +470,11 @@ void VoiceProcessingAudioUnit::DisposeAudioUnit() {
     }
     vpio_unit_ = nullptr;
   }
+}
+
+void VoiceProcessingAudioUnit::InitializeAudioTesting() {
+  VoiceProcessingAudioUnit::vpio_enabled = false;
+  RTCLog(@"Initializing Audio Testing...Removing Audio Unit Input Callback.");
 }
 
 }  // namespace ios_adm
