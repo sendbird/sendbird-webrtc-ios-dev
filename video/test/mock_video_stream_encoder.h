@@ -10,6 +10,8 @@
 #ifndef VIDEO_TEST_MOCK_VIDEO_STREAM_ENCODER_H_
 #define VIDEO_TEST_MOCK_VIDEO_STREAM_ENCODER_H_
 
+#include <vector>
+
 #include "api/video/video_stream_encoder_interface.h"
 #include "test/gmock.h"
 
@@ -17,6 +19,14 @@ namespace webrtc {
 
 class MockVideoStreamEncoder : public VideoStreamEncoderInterface {
  public:
+  MOCK_METHOD(void,
+              AddAdaptationResource,
+              (rtc::scoped_refptr<Resource>),
+              (override));
+  MOCK_METHOD(std::vector<rtc::scoped_refptr<Resource>>,
+              GetAdaptationResources,
+              (),
+              (override));
   MOCK_METHOD(void,
               SetSource,
               (rtc::VideoSourceInterface<VideoFrame>*,
@@ -34,10 +44,6 @@ class MockVideoStreamEncoder : public VideoStreamEncoderInterface {
               (DataRate, DataRate, DataRate, uint8_t, int64_t, double),
               (override));
   MOCK_METHOD(void, OnFrame, (const VideoFrame&), (override));
-  MOCK_METHOD(void,
-              SetBitrateAllocationObserver,
-              (VideoBitrateAllocationObserver*),
-              (override));
   MOCK_METHOD(void,
               SetFecControllerOverride,
               (FecControllerOverride*),

@@ -35,7 +35,10 @@ class MockChannelReceive : public voe::ChannelReceiveInterface {
               (override));
   MOCK_METHOD(void, ResetReceiverCongestionControlObjects, (), (override));
   MOCK_METHOD(CallReceiveStatistics, GetRTCPStatistics, (), (const, override));
-  MOCK_METHOD(NetworkStatistics, GetNetworkStatistics, (), (const, override));
+  MOCK_METHOD(NetworkStatistics,
+              GetNetworkStatistics,
+              (bool),
+              (const, override));
   MOCK_METHOD(AudioDecodingCallStats,
               GetDecodingCallStatistics,
               (),
@@ -76,7 +79,7 @@ class MockChannelReceive : public voe::ChannelReceiveInterface {
               GetSyncInfo,
               (),
               (const, override));
-  MOCK_METHOD(void, SetMinimumPlayoutDelay, (int delay_ms), (override));
+  MOCK_METHOD(bool, SetMinimumPlayoutDelay, (int delay_ms), (override));
   MOCK_METHOD(bool, SetBaseMinimumPlayoutDelayMs, (int delay_ms), (override));
   MOCK_METHOD(int, GetBaseMinimumPlayoutDelayMs, (), (const, override));
   MOCK_METHOD((absl::optional<std::pair<int, SdpAudioFormat>>),
@@ -152,7 +155,7 @@ class MockChannelSend : public voe::ChannelSendInterface {
               ProcessAndEncodeAudio,
               (std::unique_ptr<AudioFrame>),
               (override));
-  MOCK_METHOD(RtpRtcp*, GetRtpRtcp, (), (const, override));
+  MOCK_METHOD(RtpRtcpInterface*, GetRtpRtcp, (), (const, override));
   MOCK_METHOD(int, GetBitrate, (), (const, override));
   MOCK_METHOD(int64_t, GetRTT, (), (const, override));
   MOCK_METHOD(void, StartSend, (), (override));
