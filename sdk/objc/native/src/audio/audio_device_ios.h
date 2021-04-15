@@ -166,6 +166,10 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
 
   bool IsInterrupted();
 
+  void InitializeAudioTesting();
+
+  void DeliverRecordedData(UInt32 num_frames,
+                           AudioBufferList* io_data) const;
  private:
   // Called by the relevant AudioSessionObserver methods on |thread_|.
   void HandleInterruptionBegin();

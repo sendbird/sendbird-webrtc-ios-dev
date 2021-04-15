@@ -659,6 +659,14 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS(AudioSourceSink* audioSink)
     return ok;
   }
 
+  void AudioDeviceModuleIOS::InitializeAudioTesting() const {
+    audio_device_->InitializeAudioTesting();
+  }
+
+  void AudioDeviceModuleIOS::DeliverRecordedData(UInt32 num_frames,
+                                                AudioBufferList* io_data) const {
+    audio_device_->DeliverRecordedData(num_frames, io_data);
+  }
 #if defined(WEBRTC_IOS)
   int AudioDeviceModuleIOS::GetPlayoutAudioParameters(
       AudioParameters* params) const {

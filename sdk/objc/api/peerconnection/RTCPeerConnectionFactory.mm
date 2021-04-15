@@ -66,6 +66,21 @@
 }
 
 @synthesize nativeFactory = _nativeFactory;
+@synthesize internalAudioDeviceModule = _audioDeviceModule;
+
+- (void)initializeAudioTesting {
+  #if defined(WEBRTC_IOS)
+  auto adm = _audioDeviceModule.get();
+  static_cast<webrtc::ios_adm::AudioDeviceModuleIOS *>(adm)->InitializeAudioTesting();
+  #endif
+}
+- (void)deliverRecordedDataWithNumFrames:(uint32_t)numFrames
+                            ioData:(AudioBufferList*)ioData {
+  #if defined(WEBRTC_IOS)
+  auto adm = _audioDeviceModule.get();
+  static_cast<webrtc::ios_adm::AudioDeviceModuleIOS *>(adm)->DeliverRecordedData(numFrames, ioData);
+  #endif
+}
 
 - (rtc::scoped_refptr<webrtc::AudioDeviceModule>)audioDeviceModule {
 #if defined(WEBRTC_IOS)
@@ -175,6 +190,7 @@
     dependencies.worker_thread = _workerThread.get();
     dependencies.signaling_thread = _signalingThread.get();
     _nativeFactory = webrtc::CreateModularPeerConnectionFactory(std::move(dependencies));
+    _audioDeviceModule = nil;
     NSAssert(_nativeFactory, @"Failed to initialize PeerConnectionFactory!");
   }
   return self;
@@ -265,6 +281,7 @@
     dependencies.media_transport_factory = std::move(mediaTransportFactory);
 #endif
     _nativeFactory = webrtc::CreateModularPeerConnectionFactory(std::move(dependencies));
+    _audioDeviceModule = audioDeviceModule;
     NSAssert(_nativeFactory, @"Failed to initialize PeerConnectionFactory!");
   }
   return self;

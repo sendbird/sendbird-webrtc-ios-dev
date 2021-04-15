@@ -1138,5 +1138,15 @@ void AudioDeviceIOS::AddAudioSourceSink(webrtc::AudioSourceSink* audioSink) {
   audioSink_ = audioSink;
 }
 
+void AudioDeviceIOS::InitializeAudioTesting() {
+  audio_unit_->InitializeAudioTesting();
+}
+
+void AudioDeviceIOS::DeliverRecordedData(UInt32 num_frames,
+                                            AudioBufferList* io_data) const {
+    rtc::ArrayView<int16_t> recorded_audio(reinterpret_cast<int16_t*>(io_data->mBuffers[0].mData), num_frames);
+    fine_audio_buffer_->DeliverRecordedData(recorded_audio, kFixedRecordDelayEstimate);
+}
+
 }  // namespace ios_adm
 }  // namespace webrtc

@@ -9,6 +9,7 @@
  */
 
 #import <Foundation/Foundation.h>
+#import <AVFoundation/AVFoundation.h>
 
 #import "RTCMacros.h"
 
@@ -91,6 +92,9 @@ RTC_OBJC_EXPORT
 /* Stop an active AecDump recording */
 - (void)stopAecDump;
 
+- (void)initializeAudioTesting;
+- (void)deliverRecordedDataWithNumFrames:(uint32_t)numFrames
+                            ioData:(AudioBufferList*)ioData;
 @end
 
 NS_ASSUME_NONNULL_END
