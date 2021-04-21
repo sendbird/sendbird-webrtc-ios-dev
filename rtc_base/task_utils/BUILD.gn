@@ -23,8 +23,8 @@ rtc_library("repeating_task") {
     "../../api/units:timestamp",
     "../../system_wrappers:system_wrappers",
     "../synchronization:sequence_checker",
-    "//third_party/abseil-cpp/absl/memory",
   ]
+  absl_deps = [ "//third_party/abseil-cpp/absl/memory" ]
 }
 
 rtc_library("pending_task_safety_flag") {
@@ -38,6 +38,7 @@ rtc_library("pending_task_safety_flag") {
     "..:thread_checker",
     "../../api:scoped_refptr",
     "../synchronization:sequence_checker",
+    "../system:no_unique_address",
   ]
 }
 
@@ -82,7 +83,7 @@ if (rtc_include_tests) {
       ":to_queued_task",
       "../../api/task_queue",
       "../../test:test_support",
-      "//third_party/abseil-cpp/absl/memory",
     ]
+    absl_deps = [ "//third_party/abseil-cpp/absl/memory" ]
   }
 }

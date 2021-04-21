@@ -45,8 +45,10 @@ using ::testing::_;
 using ::testing::AnyNumber;
 using ::testing::Eq;
 using ::testing::Field;
+using ::testing::InSequence;
 using ::testing::Invoke;
 using ::testing::Ne;
+using ::testing::NiceMock;
 using ::testing::Return;
 using ::testing::StrEq;
 
@@ -152,7 +154,7 @@ struct ConfigHelper {
         audio_processing_(
             use_null_audio_processing
                 ? nullptr
-                : new rtc::RefCountedObject<MockAudioProcessing>()),
+                : new rtc::RefCountedObject<NiceMock<MockAudioProcessing>>()),
         bitrate_allocator_(&limit_observer_),
         worker_queue_(task_queue_factory_->CreateTaskQueue(
             "ConfigHelper_worker_queue",
@@ -203,7 +205,7 @@ struct ConfigHelper {
     return *static_cast<MockAudioEncoderFactory*>(
         stream_config_.encoder_factory.get());
   }
-  MockRtpRtcp* rtp_rtcp() { return &rtp_rtcp_; }
+  MockRtpRtcpInterface* rtp_rtcp() { return &rtp_rtcp_; }
   MockChannelSend* channel_send() { return channel_send_; }
   RtpTransportControllerSendInterface* transport() { return &rtp_transport_; }
 
@@ -332,7 +334,7 @@ struct ConfigHelper {
   ::testing::StrictMock<MockRtcpBandwidthObserver> bandwidth_observer_;
   ::testing::NiceMock<MockRtcEventLog> event_log_;
   ::testing::NiceMock<MockRtpTransportControllerSend> rtp_transport_;
-  ::testing::NiceMock<MockRtpRtcp> rtp_rtcp_;
+  ::testing::NiceMock<MockRtpRtcpInterface> rtp_rtcp_;
   ::testing::NiceMock<MockLimitObserver> limit_observer_;
   BitrateAllocator bitrate_allocator_;
   // |worker_queue| is defined last to ensure all pending tasks are cancelled
@@ -366,11 +368,13 @@ TEST(AudioSendStreamTest, ConfigToString) {
   config.rtp.c_name = kCName;
   config.min_bitrate_bps = 12000;
   config.max_bitrate_bps = 34000;
+  config.has_dscp = true;
   config.send_codec_spec =
       AudioSendStream::Config::SendCodecSpec(kIsacPayloadType, kIsacFormat);
   config.send_codec_spec->nack_enabled = true;
   config.send_codec_spec->transport_cc_enabled = false;
   config.send_codec_spec->cng_payload_type = 42;
+  config.send_codec_spec->red_payload_type = 43;
   config.encoder_factory = MockAudioEncoderFactory::CreateUnusedFactory();
   config.rtp.extmap_allow_mixed = true;
   config.rtp.extensions.push_back(
@@ -381,9 +385,10 @@ TEST(AudioSendStreamTest, ConfigToString) {
       "urn:ietf:params:rtp-hdrext:ssrc-audio-level, id: 2}], "
       "c_name: foo_name}, rtcp_report_interval_ms: 2500, "
       "send_transport: null, "
-      "min_bitrate_bps: 12000, max_bitrate_bps: 34000, "
+      "min_bitrate_bps: 12000, max_bitrate_bps: 34000, has "
+      "audio_network_adaptor_config: false, has_dscp: true, "
       "send_codec_spec: {nack_enabled: true, transport_cc_enabled: false, "
-      "cng_payload_type: 42, payload_type: 103, "
+      "cng_payload_type: 42, red_payload_type: 43, payload_type: 103, "
       "format: {name: isac, clockrate_hz: 16000, num_channels: 1, "
       "parameters: {}}}}",
       config.ToString());
@@ -417,7 +422,6 @@ TEST(AudioSendStreamTest, SetMuted) {
 }
 
 TEST(AudioSendStreamTest, AudioBweCorrectObjectsOnChannelProxy) {
-  ScopedFieldTrials field_trials("WebRTC-Audio-SendSideBwe/Enabled/");
   for (bool use_null_audio_processing : {false, true}) {
     ConfigHelper helper(true, true, use_null_audio_processing);
     auto send_stream = helper.CreateAudioSendStream();
@@ -519,14 +523,12 @@ TEST(AudioSendStreamTest, GetStatsAudioLevel) {
 
 TEST(AudioSendStreamTest, SendCodecAppliesAudioNetworkAdaptor) {
   for (bool use_null_audio_processing : {false, true}) {
-    ConfigHelper helper(false, true, use_null_audio_processing);
+    ConfigHelper helper(true, true, use_null_audio_processing);
     helper.config().send_codec_spec =
         AudioSendStream::Config::SendCodecSpec(0, kOpusFormat);
     const std::string kAnaConfigString = "abcde";
     const std::string kAnaReconfigString = "12345";
 
-    helper.config().rtp.extensions.push_back(RtpExtension(
-        RtpExtension::kTransportSequenceNumberUri, kTransportSequenceNumberId));
     helper.config().audio_network_adaptor_config = kAnaConfigString;
 
     EXPECT_CALL(helper.mock_encoder_factory(), MakeAudioEncoderMock(_, _, _, _))
@@ -548,6 +550,46 @@ TEST(AudioSendStreamTest, SendCodecAppliesAudioNetworkAdaptor) {
 
     auto stream_config = helper.config();
     stream_config.audio_network_adaptor_config = kAnaReconfigString;
+
+    send_stream->Reconfigure(stream_config);
+  }
+}
+
+TEST(AudioSendStreamTest, AudioNetworkAdaptorReceivesOverhead) {
+  for (bool use_null_audio_processing : {false, true}) {
+    ConfigHelper helper(true, true, use_null_audio_processing);
+    helper.config().send_codec_spec =
+        AudioSendStream::Config::SendCodecSpec(0, kOpusFormat);
+    const std::string kAnaConfigString = "abcde";
+
+    EXPECT_CALL(helper.mock_encoder_factory(), MakeAudioEncoderMock(_, _, _, _))
+        .WillOnce(Invoke(
+            [&kAnaConfigString](int payload_type, const SdpAudioFormat& format,
+                                absl::optional<AudioCodecPairId> codec_pair_id,
+                                std::unique_ptr<AudioEncoder>* return_value) {
+              auto mock_encoder = SetupAudioEncoderMock(payload_type, format);
+              InSequence s;
+              EXPECT_CALL(
+                  *mock_encoder,
+                  OnReceivedOverhead(Eq(kOverheadPerPacket.bytes<size_t>())))
+                  .Times(2);
+              EXPECT_CALL(*mock_encoder,
+                          EnableAudioNetworkAdaptor(StrEq(kAnaConfigString), _))
+                  .WillOnce(Return(true));
+              // Note: Overhead is received AFTER ANA has been enabled.
+              EXPECT_CALL(
+                  *mock_encoder,
+                  OnReceivedOverhead(Eq(kOverheadPerPacket.bytes<size_t>())))
+                  .WillOnce(Return());
+              *return_value = std::move(mock_encoder);
+            }));
+    EXPECT_CALL(*helper.rtp_rtcp(), ExpectedPerPacketOverhead)
+        .WillRepeatedly(Return(kOverheadPerPacket.bytes<size_t>()));
+
+    auto send_stream = helper.CreateAudioSendStream();
+
+    auto stream_config = helper.config();
+    stream_config.audio_network_adaptor_config = kAnaConfigString;
 
     send_stream->Reconfigure(stream_config);
   }
@@ -601,7 +643,6 @@ TEST(AudioSendStreamTest, DoesNotPassHigherBitrateThanMaxBitrate) {
 }
 
 TEST(AudioSendStreamTest, SSBweTargetInRangeRespected) {
-  ScopedFieldTrials field_trials("WebRTC-Audio-SendSideBwe/Enabled/");
   for (bool use_null_audio_processing : {false, true}) {
     ConfigHelper helper(true, true, use_null_audio_processing);
     auto send_stream = helper.CreateAudioSendStream();
@@ -620,7 +661,6 @@ TEST(AudioSendStreamTest, SSBweTargetInRangeRespected) {
 
 TEST(AudioSendStreamTest, SSBweFieldTrialMinRespected) {
   ScopedFieldTrials field_trials(
-      "WebRTC-Audio-SendSideBwe/Enabled/"
       "WebRTC-Audio-Allocation/min:6kbps,max:64kbps/");
   for (bool use_null_audio_processing : {false, true}) {
     ConfigHelper helper(true, true, use_null_audio_processing);
@@ -638,7 +678,6 @@ TEST(AudioSendStreamTest, SSBweFieldTrialMinRespected) {
 
 TEST(AudioSendStreamTest, SSBweFieldTrialMaxRespected) {
   ScopedFieldTrials field_trials(
-      "WebRTC-Audio-SendSideBwe/Enabled/"
       "WebRTC-Audio-Allocation/min:6kbps,max:64kbps/");
   for (bool use_null_audio_processing : {false, true}) {
     ConfigHelper helper(true, true, use_null_audio_processing);
@@ -656,8 +695,6 @@ TEST(AudioSendStreamTest, SSBweFieldTrialMaxRespected) {
 
 TEST(AudioSendStreamTest, SSBweWithOverhead) {
   ScopedFieldTrials field_trials(
-      "WebRTC-Audio-SendSideBwe/Enabled/"
-      "WebRTC-SendSideBwe-WithOverhead/Enabled/"
       "WebRTC-Audio-LegacyOverhead/Disabled/");
   for (bool use_null_audio_processing : {false, true}) {
     ConfigHelper helper(true, true, use_null_audio_processing);
@@ -679,8 +716,6 @@ TEST(AudioSendStreamTest, SSBweWithOverhead) {
 
 TEST(AudioSendStreamTest, SSBweWithOverheadMinRespected) {
   ScopedFieldTrials field_trials(
-      "WebRTC-Audio-SendSideBwe/Enabled/"
-      "WebRTC-SendSideBwe-WithOverhead/Enabled/"
       "WebRTC-Audio-LegacyOverhead/Disabled/"
       "WebRTC-Audio-Allocation/min:6kbps,max:64kbps/");
   for (bool use_null_audio_processing : {false, true}) {
@@ -701,8 +736,6 @@ TEST(AudioSendStreamTest, SSBweWithOverheadMinRespected) {
 
 TEST(AudioSendStreamTest, SSBweWithOverheadMaxRespected) {
   ScopedFieldTrials field_trials(
-      "WebRTC-Audio-SendSideBwe/Enabled/"
-      "WebRTC-SendSideBwe-WithOverhead/Enabled/"
       "WebRTC-Audio-LegacyOverhead/Disabled/"
       "WebRTC-Audio-Allocation/min:6kbps,max:64kbps/");
   for (bool use_null_audio_processing : {false, true}) {
@@ -762,7 +795,6 @@ TEST(AudioSendStreamTest, DontRecreateEncoder) {
 }
 
 TEST(AudioSendStreamTest, ReconfigureTransportCcResetsFirst) {
-  ScopedFieldTrials field_trials("WebRTC-Audio-SendSideBwe/Enabled/");
   for (bool use_null_audio_processing : {false, true}) {
     ConfigHelper helper(false, true, use_null_audio_processing);
     auto send_stream = helper.CreateAudioSendStream();

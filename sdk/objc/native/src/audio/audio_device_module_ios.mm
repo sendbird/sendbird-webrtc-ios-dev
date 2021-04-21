@@ -41,14 +41,9 @@
 namespace webrtc {
 namespace ios_adm {
 
-AudioDeviceModuleIOS::AudioDeviceModuleIOS()
-    : task_queue_factory_(CreateDefaultTaskQueueFactory()) {
-  RTC_LOG(INFO) << "current platform is IOS";
-  RTC_LOG(INFO) << "iPhone Audio APIs will be utilized.";
-}
-
-AudioDeviceModuleIOS::AudioDeviceModuleIOS(AudioSourceSink* audioSink)
-    : task_queue_factory_(CreateDefaultTaskQueueFactory()) {
+AudioDeviceModuleIOS::AudioDeviceModuleIOS(bool bypass_voice_processing, AudioSourceSink* audioSink)
+    : bypass_voice_processing_(bypass_voice_processing),
+      task_queue_factory_(CreateDefaultTaskQueueFactory()) {
   RTC_LOG(INFO) << "current platform is IOS";
   RTC_LOG(INFO) << "iPhone Audio APIs will be utilized.";
   audio_sink_ = audioSink;
@@ -80,7 +75,7 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS(AudioSourceSink* audioSink)
       return 0;
 
     audio_device_buffer_.reset(new webrtc::AudioDeviceBuffer(task_queue_factory_.get()));
-    audio_device_.reset(new ios_adm::AudioDeviceIOS());
+    audio_device_.reset(new ios_adm::AudioDeviceIOS(bypass_voice_processing_));
     RTC_CHECK(audio_device_);
     audio_device_->AddAudioSourceSink(audio_sink_);
 

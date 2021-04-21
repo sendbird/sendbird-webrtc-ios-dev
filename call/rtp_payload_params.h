@@ -50,8 +50,7 @@ class RtpPayloadParams final {
                         bool first_frame_in_picture);
   RTPVideoHeader::GenericDescriptorInfo GenericDescriptorFromFrameInfo(
       const GenericFrameInfo& frame_info,
-      int64_t frame_id,
-      VideoFrameType frame_type);
+      int64_t frame_id);
   void SetGeneric(const CodecSpecificInfo* codec_specific_info,
                   int64_t frame_id,
                   bool is_keyframe,
@@ -114,7 +113,6 @@ class RtpPayloadParams final {
   RtpPayloadState state_;
 
   const bool generic_picture_id_experiment_;
-  const bool generic_descriptor_experiment_;
 };
 }  // namespace webrtc
 #endif  // CALL_RTP_PAYLOAD_PARAMS_H_
