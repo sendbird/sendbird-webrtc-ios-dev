@@ -20,6 +20,7 @@
 #include "api/array_view.h"
 #include "api/frame_transformer_interface.h"
 #include "api/scoped_refptr.h"
+#include "api/sequence_checker.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/transport/rtp/dependency_descriptor.h"
 #include "api/video/video_codec_type.h"
@@ -37,7 +38,6 @@
 #include "rtc_base/race_checker.h"
 #include "rtc_base/rate_statistics.h"
 #include "rtc_base/synchronization/mutex.h"
-#include "rtc_base/synchronization/sequence_checker.h"
 #include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
@@ -89,6 +89,7 @@ class RTPSenderVideo {
   virtual ~RTPSenderVideo();
 
   // expected_retransmission_time_ms.has_value() -> retransmission allowed.
+  // `capture_time_ms` and `clock::CurrentTime` should be using the same epoch.
   // Calls to this method is assumed to be externally serialized.
   // |estimated_capture_clock_offset_ms| is an estimated clock offset between
   // this sender and the original capturer, for this video packet. See

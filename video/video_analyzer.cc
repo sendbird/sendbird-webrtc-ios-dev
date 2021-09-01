@@ -18,11 +18,13 @@
 #include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "modules/rtp_rtcp/source/create_video_rtp_depacketizer.h"
 #include "modules/rtp_rtcp/source/rtp_packet.h"
+#include "modules/rtp_rtcp/source/rtp_util.h"
 #include "rtc_base/cpu_time.h"
 #include "rtc_base/format_macros.h"
 #include "rtc_base/memory_usage.h"
 #include "rtc_base/task_queue_for_test.h"
 #include "rtc_base/task_utils/repeating_task.h"
+#include "rtc_base/time_utils.h"
 #include "system_wrappers/include/cpu_info.h"
 #include "test/call_test.h"
 #include "test/testsupport/file_utils.h"
@@ -136,10 +138,12 @@ VideoAnalyzer::VideoAnalyzer(test::LayerFilteringTransport* transport,
   }
 
   for (uint32_t i = 0; i < num_cores; ++i) {
-    rtc::PlatformThread* thread =
-        new rtc::PlatformThread(&FrameComparisonThread, this, "Analyzer");
-    thread->Start();
-    comparison_thread_pool_.push_back(thread);
+    comparison_thread_pool_.push_back(rtc::PlatformThread::SpawnJoinable(
+        [this] {
+          while (CompareFrames()) {
+          }
+        },
+        "Analyzer"));
   }
 
   if (!rtp_dump_name.empty()) {
@@ -154,10 +158,8 @@ VideoAnalyzer::~VideoAnalyzer() {
     MutexLock lock(&comparison_lock_);
     quit_ = true;
   }
-  for (rtc::PlatformThread* thread : comparison_thread_pool_) {
-    thread->Stop();
-    delete thread;
-  }
+  // Joins all threads.
+  comparison_thread_pool_.clear();
 }
 
 void VideoAnalyzer::SetReceiver(PacketReceiver* receiver) {
@@ -211,7 +213,7 @@ PacketReceiver::DeliveryStatus VideoAnalyzer::DeliverPacket(
     int64_t packet_time_us) {
   // Ignore timestamps of RTCP packets. They're not synchronized with
   // RTP packet timestamps and so they would confuse wrap_handler_.
-  if (RtpHeaderParser::IsRtcp(packet.cdata(), packet.size())) {
+  if (IsRtcpPacket(packet)) {
     return receiver_->DeliverPacket(media_type, std::move(packet),
                                     packet_time_us);
   }
@@ -532,12 +534,6 @@ void VideoAnalyzer::PollStats() {
   memory_usage_.AddSample(rtc::GetProcessResidentSizeBytes());
 }
 
-void VideoAnalyzer::FrameComparisonThread(void* obj) {
-  VideoAnalyzer* analyzer = static_cast<VideoAnalyzer*>(obj);
-  while (analyzer->CompareFrames()) {
-  }
-}
-
 bool VideoAnalyzer::CompareFrames() {
   if (AllFramesRecorded())
     return false;
@@ -605,7 +601,7 @@ bool VideoAnalyzer::AllFramesRecordedLocked() {
 bool VideoAnalyzer::FrameProcessed() {
   MutexLock lock(&comparison_lock_);
   ++frames_processed_;
-  assert(frames_processed_ <= frames_to_process_);
+  RTC_DCHECK_LE(frames_processed_, frames_to_process_);
   return frames_processed_ == frames_to_process_ ||
          (clock_->CurrentTime() > test_end_ && comparisons_.empty());
 }

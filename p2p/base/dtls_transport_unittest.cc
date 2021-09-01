@@ -15,6 +15,7 @@
 #include <set>
 #include <utility>
 
+#include "api/dtls_transport_interface.h"
 #include "p2p/base/fake_ice_transport.h"
 #include "p2p/base/packet_transport_internal.h"
 #include "rtc_base/checks.h"
@@ -86,10 +87,9 @@ class DtlsTestClient : public sigslot::has_slots<> {
     fake_ice_transport_->SignalReadPacket.connect(
         this, &DtlsTestClient::OnFakeIceTransportReadPacket);
 
-    dtls_transport_ = std::make_unique<DtlsTransport>(fake_ice_transport_.get(),
-                                                      webrtc::CryptoOptions(),
-                                                      /*event_log=*/nullptr);
-    dtls_transport_->SetSslMaxProtocolVersion(ssl_max_version_);
+    dtls_transport_ = std::make_unique<DtlsTransport>(
+        fake_ice_transport_.get(), webrtc::CryptoOptions(),
+        /*event_log=*/nullptr, ssl_max_version_);
     // Note: Certificate may be null here if testing passthrough.
     dtls_transport_->SetLocalCertificate(certificate_);
     dtls_transport_->SignalWritableState.connect(
@@ -669,18 +669,19 @@ class DtlsEventOrderingTest
           // Sanity check that the handshake hasn't already finished.
           EXPECT_FALSE(client1_.dtls_transport()->IsDtlsConnected() ||
                        client1_.dtls_transport()->dtls_state() ==
-                           DTLS_TRANSPORT_FAILED);
+                           webrtc::DtlsTransportState::kFailed);
           EXPECT_TRUE_SIMULATED_WAIT(
               client1_.dtls_transport()->IsDtlsConnected() ||
                   client1_.dtls_transport()->dtls_state() ==
-                      DTLS_TRANSPORT_FAILED,
+                      webrtc::DtlsTransportState::kFailed,
               kTimeout, fake_clock_);
           break;
       }
     }
 
-    DtlsTransportState expected_final_state =
-        valid_fingerprint ? DTLS_TRANSPORT_CONNECTED : DTLS_TRANSPORT_FAILED;
+    webrtc::DtlsTransportState expected_final_state =
+        valid_fingerprint ? webrtc::DtlsTransportState::kConnected
+                          : webrtc::DtlsTransportState::kFailed;
     EXPECT_EQ_SIMULATED_WAIT(expected_final_state,
                              client1_.dtls_transport()->dtls_state(), kTimeout,
                              fake_clock_);

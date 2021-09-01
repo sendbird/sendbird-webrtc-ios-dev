@@ -11,10 +11,12 @@
 #ifndef PC_DTLS_SRTP_TRANSPORT_H_
 #define PC_DTLS_SRTP_TRANSPORT_H_
 
+#include <string>
 #include <vector>
 
 #include "absl/types/optional.h"
 #include "api/crypto_params.h"
+#include "api/dtls_transport_interface.h"
 #include "api/rtc_error.h"
 #include "p2p/base/dtls_transport_internal.h"
 #include "p2p/base/packet_transport_internal.h"
@@ -45,8 +47,7 @@ class DtlsSrtpTransport : public SrtpTransport {
   void UpdateRecvEncryptedHeaderExtensionIds(
       const std::vector<int>& recv_extension_ids);
 
-  sigslot::signal<DtlsSrtpTransport*, bool> SignalDtlsSrtpSetupFailure;
-  sigslot::signal<> SignalDtlsStateChange;
+  void SetOnDtlsStateChange(std::function<void(void)> callback);
 
   RTCError SetSrtpSendKey(const cricket::CryptoParams& params) override {
     return RTCError(RTCErrorType::UNSUPPORTED_OPERATION,
@@ -82,7 +83,7 @@ class DtlsSrtpTransport : public SrtpTransport {
       cricket::DtlsTransportInternal* rtcp_dtls_transport);
 
   void OnDtlsState(cricket::DtlsTransportInternal* dtls_transport,
-                   cricket::DtlsTransportState state);
+                   DtlsTransportState state);
 
   // Override the SrtpTransport::OnWritableState.
   void OnWritableState(rtc::PacketTransportInternal* packet_transport) override;
@@ -96,6 +97,7 @@ class DtlsSrtpTransport : public SrtpTransport {
   absl::optional<std::vector<int>> recv_extension_ids_;
 
   bool active_reset_srtp_params_ = false;
+  std::function<void(void)> on_dtls_state_change_;
 };
 
 }  // namespace webrtc

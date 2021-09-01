@@ -10,11 +10,11 @@
 
 #include "video/adaptation/pixel_limit_resource.h"
 
+#include "api/sequence_checker.h"
 #include "api/units/time_delta.h"
 #include "call/adaptation/video_stream_adapter.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/ref_counted_object.h"
-#include "rtc_base/synchronization/sequence_checker.h"
 
 namespace webrtc {
 
@@ -28,8 +28,8 @@ constexpr TimeDelta kResourceUsageCheckIntervalMs = TimeDelta::Seconds(5);
 rtc::scoped_refptr<PixelLimitResource> PixelLimitResource::Create(
     TaskQueueBase* task_queue,
     VideoStreamInputStateProvider* input_state_provider) {
-  return new rtc::RefCountedObject<PixelLimitResource>(task_queue,
-                                                       input_state_provider);
+  return rtc::make_ref_counted<PixelLimitResource>(task_queue,
+                                                   input_state_provider);
 }
 
 PixelLimitResource::PixelLimitResource(

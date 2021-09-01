@@ -103,7 +103,7 @@ Packet CreateRedPayload(size_t num_payloads,
         rtc::checked_cast<int>((num_payloads - i - 1) * timestamp_offset);
     *payload_ptr = this_offset >> 6;
     ++payload_ptr;
-    assert(kPayloadLength <= 1023);  // Max length described by 10 bits.
+    RTC_DCHECK_LE(kPayloadLength, 1023);  // Max length described by 10 bits.
     *payload_ptr = ((this_offset & 0x3F) << 2) | (kPayloadLength >> 8);
     ++payload_ptr;
     *payload_ptr = kPayloadLength & 0xFF;
@@ -298,7 +298,7 @@ TEST(RedPayloadSplitter, CheckRedPayloads) {
   // easier to just register the payload types and let the actual implementation
   // do its job.
   DecoderDatabase decoder_database(
-      new rtc::RefCountedObject<MockAudioDecoderFactory>, absl::nullopt);
+      rtc::make_ref_counted<MockAudioDecoderFactory>(), absl::nullopt);
   decoder_database.RegisterPayload(0, SdpAudioFormat("cn", 8000, 1));
   decoder_database.RegisterPayload(1, SdpAudioFormat("pcmu", 8000, 1));
   decoder_database.RegisterPayload(2,
@@ -333,7 +333,7 @@ TEST(RedPayloadSplitter, CheckRedPayloadsRecursiveRed) {
   // easier to just register the payload types and let the actual implementation
   // do its job.
   DecoderDatabase decoder_database(
-      new rtc::RefCountedObject<MockAudioDecoderFactory>, absl::nullopt);
+      rtc::make_ref_counted<MockAudioDecoderFactory>(), absl::nullopt);
   decoder_database.RegisterPayload(kRedPayloadType,
                                    SdpAudioFormat("red", 8000, 1));
 
