@@ -38,7 +38,7 @@ ENABLED_ARCHS = [
     'arm64', 'x64'
 ]
 DEFAULT_ARCHS = [
-    'device:arm64', 'simulator:arm64', 'simulator:x64'
+    'device:arm64', 'simulator:arm64', 'simulator:x64', 'device:arm', 'simulator:x86'
 ]
 IOS_DEPLOYMENT_TARGET = '9.0'
 LIBVPX_BUILD_VP9 = True

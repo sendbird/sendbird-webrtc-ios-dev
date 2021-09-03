@@ -581,7 +581,7 @@ void PeerConnectionDelegateAdapter::OnRemoveTrack(
   RTC_DCHECK(completionHandler != nil);
   rtc::scoped_refptr<webrtc::SetLocalDescriptionObserverInterface> observer(
       new rtc::RefCountedObject<::SetSessionDescriptionObserver>(completionHandler));
-  _peerConnection->SetLocalDescription(sdp.nativeDescription->Clone(), observer);
+  _peerConnection->SetLocalDescription(sdp.nativeDescription ? sdp.nativeDescription->Clone() : nullptr, observer);
 }
 
 - (void)setLocalDescriptionWithCompletionHandler:
@@ -597,7 +597,7 @@ void PeerConnectionDelegateAdapter::OnRemoveTrack(
   RTC_DCHECK(completionHandler != nil);
   rtc::scoped_refptr<webrtc::SetRemoteDescriptionObserverInterface> observer(
       new rtc::RefCountedObject<::SetSessionDescriptionObserver>(completionHandler));
-  _peerConnection->SetRemoteDescription(sdp.nativeDescription->Clone(), observer);
+  _peerConnection->SetRemoteDescription(sdp.nativeDescription ? sdp.nativeDescription->Clone() : nullptr, observer);
 }
 
 - (BOOL)setBweMinBitrateBps:(nullable NSNumber *)minBitrateBps
