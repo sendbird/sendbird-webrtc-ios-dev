@@ -176,8 +176,7 @@ void DEPRECATED_RtpSenderEgress::SendPacket(
     AddPacketToTransportFeedback(*packet_id, *packet, pacing_info);
   }
 
-  options.application_data.assign(packet->application_data().begin(),
-                                  packet->application_data().end());
+  options.additional_data = packet->additional_data();
 
   if (packet->packet_type() != RtpPacketMediaType::kPadding &&
       packet->packet_type() != RtpPacketMediaType::kRetransmission) {
@@ -314,7 +313,9 @@ void DEPRECATED_RtpSenderEgress::AddPacketToTransportFeedback(
     }
 
     RtpPacketSendInfo packet_info;
+    // TODO(bugs.webrtc.org/12713): Remove once downstream usage is gone.
     packet_info.ssrc = ssrc_;
+    packet_info.media_ssrc = ssrc_;
     packet_info.transport_sequence_number = packet_id;
     packet_info.rtp_sequence_number = packet.SequenceNumber();
     packet_info.length = packet_size;

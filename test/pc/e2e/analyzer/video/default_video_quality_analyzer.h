@@ -504,7 +504,8 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
       RTC_EXCLUSIVE_LOCKS_REQUIRED(lock_);
   // Returns string representation of stats key for metrics naming. Used for
   // backward compatibility by metrics naming for 2 peers cases.
-  std::string StatsKeyToMetricName(const StatsKey& key);
+  std::string StatsKeyToMetricName(const StatsKey& key) const
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   void StartMeasuringCpuProcessTime();
   void StopMeasuringCpuProcessTime();
@@ -517,9 +518,9 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
   std::atomic<uint16_t> next_frame_id_{0};
 
   std::string test_label_;
-  std::unique_ptr<NamesCollection> peers_;
 
   mutable Mutex lock_;
+  std::unique_ptr<NamesCollection> peers_ RTC_GUARDED_BY(lock_);
   State state_ RTC_GUARDED_BY(lock_) = State::kNew;
   Timestamp start_time_ RTC_GUARDED_BY(lock_) = Timestamp::MinusInfinity();
   // Mapping from stream label to unique size_t value to use in stats and avoid
@@ -559,7 +560,7 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
   std::deque<FrameComparison> comparisons_ RTC_GUARDED_BY(comparison_lock_);
   AnalyzerStats analyzer_stats_ RTC_GUARDED_BY(comparison_lock_);
 
-  std::vector<std::unique_ptr<rtc::PlatformThread>> thread_pool_;
+  std::vector<rtc::PlatformThread> thread_pool_;
   rtc::Event comparison_available_event_;
 
   Mutex cpu_measurement_lock_;

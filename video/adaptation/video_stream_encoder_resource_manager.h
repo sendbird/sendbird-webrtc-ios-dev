@@ -66,7 +66,7 @@ extern const int kDefaultInputPixelsHeight;
 // resources.
 //
 // The manager is also involved with various mitigations not part of the
-// ResourceAdaptationProcessor code such as the inital frame dropping.
+// ResourceAdaptationProcessor code such as the initial frame dropping.
 class VideoStreamEncoderResourceManager
     : public VideoSourceRestrictionsListener,
       public ResourceLimitationsListener,
@@ -92,7 +92,7 @@ class VideoStreamEncoderResourceManager
   void SetDegradationPreferences(DegradationPreference degradation_preference);
   DegradationPreference degradation_preference() const;
 
-  void EnsureEncodeUsageResourceStarted();
+  void ConfigureEncodeUsageResource();
   // Initializes the pixel limit resource if the "WebRTC-PixelLimitResource"
   // field trial is enabled. This can be used for testing.
   void MaybeInitializePixelLimitResource();
@@ -130,6 +130,7 @@ class VideoStreamEncoderResourceManager
   // frames based on size and bitrate.
   bool DropInitialFrames() const;
   absl::optional<uint32_t> SingleActiveStreamPixels() const;
+  absl::optional<uint32_t> UseBandwidthAllocationBps() const;
 
   // VideoSourceRestrictionsListener implementation.
   // Updates |video_source_restrictions_|.
@@ -146,6 +147,8 @@ class VideoStreamEncoderResourceManager
   // QualityRampUpExperimentListener implementation.
   void OnQualityRampUp() override;
 
+  static bool IsSimulcast(const VideoEncoderConfig& encoder_config);
+
  private:
   class InitialFrameDropper;
 
@@ -153,7 +156,7 @@ class VideoStreamEncoderResourceManager
       rtc::scoped_refptr<Resource> resource) const;
 
   CpuOveruseOptions GetCpuOveruseOptions() const;
-  int LastInputFrameSizeOrDefault() const;
+  int LastFrameSizeOrDefault() const;
 
   // Calculates an up-to-date value of the target frame rate and informs the
   // |encode_usage_resource_| of the new value.

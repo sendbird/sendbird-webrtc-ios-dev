@@ -21,11 +21,10 @@
 #include <vector>
 
 #include "api/scoped_refptr.h"
+#include "api/sequence_checker.h"
 #include "rtc_base/constructor_magic.h"
 #include "rtc_base/ref_count.h"
-#include "rtc_base/string_encode.h"
 #include "rtc_base/system/rtc_export.h"
-#include "rtc_base/thread_checker.h"
 
 namespace webrtc {
 
@@ -344,7 +343,7 @@ class RTC_EXPORT StatsReport {
     const StatsValueName name;
 
    private:
-    rtc::ThreadChecker thread_checker_;
+    webrtc::SequenceChecker thread_checker_;
     mutable int ref_count_ RTC_GUARDED_BY(thread_checker_) = 0;
 
     const Type type_;
@@ -447,7 +446,7 @@ class StatsCollection {
 
  private:
   Container list_;
-  rtc::ThreadChecker thread_checker_;
+  webrtc::SequenceChecker thread_checker_;
 };
 
 }  // namespace webrtc

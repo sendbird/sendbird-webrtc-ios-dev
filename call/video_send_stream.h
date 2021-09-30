@@ -82,7 +82,6 @@ class VideoSendStream {
     uint64_t total_packet_send_delay_ms = 0;
     StreamDataCounters rtp_stats;
     RtcpPacketTypeCounter rtcp_packet_type_counts;
-    RtcpStatistics rtcp_stats;
     // A snapshot of the most recent Report Block with additional data of
     // interest to statistics. Used to implement RTCRemoteInboundRtpStreamStats.
     absl::optional<ReportBlockData> report_block_data;
@@ -108,6 +107,7 @@ class VideoSendStream {
     uint64_t total_encode_time_ms = 0;
     // https://w3c.github.io/webrtc-stats/#dom-rtcoutboundrtpstreamstats-totalencodedbytestarget
     uint64_t total_encoded_bytes_target = 0;
+    uint32_t frames = 0;
     uint32_t frames_dropped_by_capturer = 0;
     uint32_t frames_dropped_by_encoder_queue = 0;
     uint32_t frames_dropped_by_rate_limiter = 0;
@@ -217,6 +217,15 @@ class VideoSendStream {
   // Stops stream activity.
   // When a stream is stopped, it can't receive, process or deliver packets.
   virtual void Stop() = 0;
+
+  // Accessor for determining if the stream is active. This is an inexpensive
+  // call that must be made on the same thread as `Start()` and `Stop()` methods
+  // are called on and will return `true` iff activity has been started either
+  // via `Start()` or `UpdateActiveSimulcastLayers()`. If activity is either
+  // stopped or is in the process of being stopped as a result of a call to
+  // either `Stop()` or `UpdateActiveSimulcastLayers()` where all layers were
+  // deactivated, the return value will be `false`.
+  virtual bool started() = 0;
 
   // If the resource is overusing, the VideoSendStream will try to reduce
   // resolution or frame rate until no resource is overusing.

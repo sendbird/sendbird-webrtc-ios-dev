@@ -16,6 +16,7 @@
 
 #include "modules/video_coding/codecs/h264/h264_encoder_impl.h"
 
+#include <algorithm>
 #include <limits>
 #include <string>
 
@@ -241,7 +242,8 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
     configurations_[i].frame_dropping_on = codec_.H264()->frameDroppingOn;
     configurations_[i].key_frame_interval = codec_.H264()->keyFrameInterval;
     configurations_[i].num_temporal_layers =
-        codec_.simulcastStream[idx].numberOfTemporalLayers;
+        std::max(codec_.H264()->numberOfTemporalLayers,
+                 codec_.simulcastStream[idx].numberOfTemporalLayers);
 
     // Create downscaled image buffers.
     if (i > 0) {
@@ -373,8 +375,19 @@ int32_t H264EncoderImpl::Encode(
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
 
-  rtc::scoped_refptr<const I420BufferInterface> frame_buffer =
+  rtc::scoped_refptr<I420BufferInterface> frame_buffer =
       input_frame.video_frame_buffer()->ToI420();
+  // The buffer should now be a mapped I420 or I420A format, but some buffer
+  // implementations incorrectly return the wrong buffer format, such as
+  // kNative. As a workaround to this, we perform ToI420() a second time.
+  // TODO(https://crbug.com/webrtc/12602): When Android buffers have a correct
+  // ToI420() implementaion, remove his workaround.
+  if (frame_buffer->type() != VideoFrameBuffer::Type::kI420 &&
+      frame_buffer->type() != VideoFrameBuffer::Type::kI420A) {
+    frame_buffer = frame_buffer->ToI420();
+    RTC_CHECK(frame_buffer->type() == VideoFrameBuffer::Type::kI420 ||
+              frame_buffer->type() == VideoFrameBuffer::Type::kI420A);
+  }
 
   bool send_key_frame = false;
   for (size_t i = 0; i < configurations_.size(); ++i) {
@@ -434,7 +447,7 @@ int32_t H264EncoderImpl::Encode(
                         pictures_[i].iStride[0], pictures_[i].pData[1],
                         pictures_[i].iStride[1], pictures_[i].pData[2],
                         pictures_[i].iStride[2], configurations_[i].width,
-                        configurations_[i].height, libyuv::kFilterBilinear);
+                        configurations_[i].height, libyuv::kFilterBox);
     }
 
     if (!configurations_[i].sending) {
@@ -567,7 +580,13 @@ SEncParamExt H264EncoderImpl::CreateEncoderParams(size_t i) const {
       encoder_params.iMaxBitrate;
   encoder_params.iTemporalLayerNum = configurations_[i].num_temporal_layers;
   if (encoder_params.iTemporalLayerNum > 1) {
-    encoder_params.iNumRefFrame = 1;
+    // iNumRefFrame specifies total number of reference buffers to allocate.
+    // For N temporal layers we need at least (N - 1) buffers to store last
+    // encoded frames of all reference temporal layers.
+    // Note that there is no API in OpenH264 encoder to specify exact set of
+    // references to be used to prediction of a given frame. Encoder can
+    // theoretically use all available reference buffers.
+    encoder_params.iNumRefFrame = encoder_params.iTemporalLayerNum - 1;
   }
   RTC_LOG(INFO) << "OpenH264 version is " << OPENH264_MAJOR << "."
                 << OPENH264_MINOR;

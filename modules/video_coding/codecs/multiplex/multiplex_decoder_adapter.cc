@@ -17,7 +17,6 @@
 #include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "modules/video_coding/codecs/multiplex/include/augmented_video_frame_buffer.h"
 #include "modules/video_coding/codecs/multiplex/multiplex_encoded_image_packer.h"
-#include "rtc_base/keep_ref_until_done.h"
 #include "rtc_base/logging.h"
 
 namespace webrtc {
@@ -249,9 +248,8 @@ void MultiplexDecoderAdapter::MergeAlphaImages(
         [yuv_buffer, alpha_buffer] {});
   }
   if (supports_augmenting_data_) {
-    merged_buffer = rtc::scoped_refptr<webrtc::AugmentedVideoFrameBuffer>(
-        new rtc::RefCountedObject<AugmentedVideoFrameBuffer>(
-            merged_buffer, std::move(augmenting_data), augmenting_data_length));
+    merged_buffer = rtc::make_ref_counted<AugmentedVideoFrameBuffer>(
+        merged_buffer, std::move(augmenting_data), augmenting_data_length);
   }
 
   VideoFrame merged_image = VideoFrame::Builder()

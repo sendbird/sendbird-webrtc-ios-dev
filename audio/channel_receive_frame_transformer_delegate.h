@@ -14,7 +14,7 @@
 #include <memory>
 
 #include "api/frame_transformer_interface.h"
-#include "rtc_base/synchronization/sequence_checker.h"
+#include "api/sequence_checker.h"
 #include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/thread.h"
@@ -32,7 +32,7 @@ class ChannelReceiveFrameTransformerDelegate : public TransformedFrameCallback {
   ChannelReceiveFrameTransformerDelegate(
       ReceiveFrameCallback receive_frame_callback,
       rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
-      rtc::Thread* channel_receive_thread);
+      TaskQueueBase* channel_receive_thread);
 
   // Registers |this| as callback for |frame_transformer_|, to get the
   // transformed frames.
@@ -67,7 +67,7 @@ class ChannelReceiveFrameTransformerDelegate : public TransformedFrameCallback {
       RTC_GUARDED_BY(sequence_checker_);
   rtc::scoped_refptr<FrameTransformerInterface> frame_transformer_
       RTC_GUARDED_BY(sequence_checker_);
-  rtc::Thread* channel_receive_thread_;
+  TaskQueueBase* const channel_receive_thread_;
 };
 
 }  // namespace webrtc

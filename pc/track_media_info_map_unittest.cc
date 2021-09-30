@@ -31,6 +31,45 @@ namespace webrtc {
 
 namespace {
 
+class MockVideoTrack : public VideoTrackInterface {
+ public:
+  // NotifierInterface
+  MOCK_METHOD(void,
+              RegisterObserver,
+              (ObserverInterface * observer),
+              (override));
+  MOCK_METHOD(void,
+              UnregisterObserver,
+              (ObserverInterface * observer),
+              (override));
+
+  // MediaStreamTrackInterface
+  MOCK_METHOD(std::string, kind, (), (const, override));
+  MOCK_METHOD(std::string, id, (), (const, override));
+  MOCK_METHOD(bool, enabled, (), (const, override));
+  MOCK_METHOD(bool, set_enabled, (bool enable), (override));
+  MOCK_METHOD(TrackState, state, (), (const, override));
+
+  // VideoSourceInterface
+  MOCK_METHOD(void,
+              AddOrUpdateSink,
+              (rtc::VideoSinkInterface<VideoFrame> * sink,
+               const rtc::VideoSinkWants& wants),
+              (override));
+  // RemoveSink must guarantee that at the time the method returns,
+  // there is no current and no future calls to VideoSinkInterface::OnFrame.
+  MOCK_METHOD(void,
+              RemoveSink,
+              (rtc::VideoSinkInterface<VideoFrame> * sink),
+              (override));
+
+  // VideoTrackInterface
+  MOCK_METHOD(VideoTrackSourceInterface*, GetSource, (), (const, override));
+
+  MOCK_METHOD(ContentHint, content_hint, (), (const, override));
+  MOCK_METHOD(void, set_content_hint, (ContentHint hint), (override));
+};
+
 RtpParameters CreateRtpParametersWithSsrcs(
     std::initializer_list<uint32_t> ssrcs) {
   RtpParameters params;
@@ -52,8 +91,7 @@ rtc::scoped_refptr<MockRtpSenderInternal> CreateMockRtpSender(
   } else {
     first_ssrc = 0;
   }
-  rtc::scoped_refptr<MockRtpSenderInternal> sender(
-      new rtc::RefCountedObject<MockRtpSenderInternal>());
+  auto sender = rtc::make_ref_counted<MockRtpSenderInternal>();
   EXPECT_CALL(*sender, track())
       .WillRepeatedly(::testing::Return(std::move(track)));
   EXPECT_CALL(*sender, ssrc()).WillRepeatedly(::testing::Return(first_ssrc));
@@ -69,8 +107,7 @@ rtc::scoped_refptr<MockRtpReceiverInternal> CreateMockRtpReceiver(
     cricket::MediaType media_type,
     std::initializer_list<uint32_t> ssrcs,
     rtc::scoped_refptr<MediaStreamTrackInterface> track) {
-  rtc::scoped_refptr<MockRtpReceiverInternal> receiver(
-      new rtc::RefCountedObject<MockRtpReceiverInternal>());
+  auto receiver = rtc::make_ref_counted<MockRtpReceiverInternal>();
   EXPECT_CALL(*receiver, track())
       .WillRepeatedly(::testing::Return(std::move(track)));
   EXPECT_CALL(*receiver, media_type())
@@ -81,23 +118,35 @@ rtc::scoped_refptr<MockRtpReceiverInternal> CreateMockRtpReceiver(
   return receiver;
 }
 
+rtc::scoped_refptr<VideoTrackInterface> CreateVideoTrack(
+    const std::string& id) {
+  return VideoTrack::Create(id, FakeVideoTrackSource::Create(false),
+                            rtc::Thread::Current());
+}
+
+rtc::scoped_refptr<VideoTrackInterface> CreateMockVideoTrack(
+    const std::string& id) {
+  auto track = rtc::make_ref_counted<MockVideoTrack>();
+  EXPECT_CALL(*track, kind())
+      .WillRepeatedly(::testing::Return(VideoTrack::kVideoKind));
+  return track;
+}
+
 class TrackMediaInfoMapTest : public ::testing::Test {
  public:
   TrackMediaInfoMapTest() : TrackMediaInfoMapTest(true) {}
 
-  explicit TrackMediaInfoMapTest(bool use_current_thread)
+  explicit TrackMediaInfoMapTest(bool use_real_video_track)
       : voice_media_info_(new cricket::VoiceMediaInfo()),
         video_media_info_(new cricket::VideoMediaInfo()),
         local_audio_track_(AudioTrack::Create("LocalAudioTrack", nullptr)),
         remote_audio_track_(AudioTrack::Create("RemoteAudioTrack", nullptr)),
-        local_video_track_(VideoTrack::Create(
-            "LocalVideoTrack",
-            FakeVideoTrackSource::Create(false),
-            use_current_thread ? rtc::Thread::Current() : nullptr)),
-        remote_video_track_(VideoTrack::Create(
-            "RemoteVideoTrack",
-            FakeVideoTrackSource::Create(false),
-            use_current_thread ? rtc::Thread::Current() : nullptr)) {}
+        local_video_track_(use_real_video_track
+                               ? CreateVideoTrack("LocalVideoTrack")
+                               : CreateMockVideoTrack("LocalVideoTrack")),
+        remote_video_track_(use_real_video_track
+                                ? CreateVideoTrack("RemoteVideoTrack")
+                                : CreateMockVideoTrack("LocalVideoTrack")) {}
 
   ~TrackMediaInfoMapTest() {
     // If we have a map the ownership has been passed to the map, only delete if
@@ -181,8 +230,8 @@ class TrackMediaInfoMapTest : public ::testing::Test {
   std::unique_ptr<TrackMediaInfoMap> map_;
   rtc::scoped_refptr<AudioTrack> local_audio_track_;
   rtc::scoped_refptr<AudioTrack> remote_audio_track_;
-  rtc::scoped_refptr<VideoTrack> local_video_track_;
-  rtc::scoped_refptr<VideoTrack> remote_video_track_;
+  rtc::scoped_refptr<VideoTrackInterface> local_video_track_;
+  rtc::scoped_refptr<VideoTrackInterface> remote_video_track_;
 };
 
 }  // namespace

@@ -131,7 +131,7 @@ bool RtpHeaderParser::RTCP() const {
 }
 
 bool RtpHeaderParser::ParseRtcp(RTPHeader* header) const {
-  assert(header != NULL);
+  RTC_DCHECK(header);
 
   const ptrdiff_t length = _ptrRTPDataEnd - _ptrRTPDataBegin;
   if (length < kRtcpMinParseLength) {
@@ -364,6 +364,10 @@ void RtpHeaderParser::ParseOneByteExtensionHeader(
           header->extension.hasTransmissionTimeOffset = true;
           break;
         }
+        case kRtpExtensionCsrcAudioLevel: {
+          RTC_LOG(LS_WARNING) << "Csrc audio level extension not supported";
+          return;
+        }
         case kRtpExtensionAudioLevel: {
           if (len != 0) {
             RTC_LOG(LS_WARNING) << "Incorrect audio level len: " << len;
@@ -535,6 +539,10 @@ void RtpHeaderParser::ParseOneByteExtensionHeader(
         case kRtpExtensionInbandComfortNoise:
           RTC_LOG(WARNING) << "Inband comfort noise extension unsupported by "
                               "rtp header parser.";
+          break;
+        case kRtpExtensionVideoFrameTrackingId:
+          RTC_LOG(WARNING)
+              << "VideoFrameTrackingId unsupported by rtp header parser.";
           break;
         case kRtpExtensionNone:
         case kRtpExtensionNumberOfExtensions: {
