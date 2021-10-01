@@ -29,7 +29,7 @@
 #include "api/task_queue/queued_task.h"
 #include "api/task_queue/task_queue_base.h"
 #include "rtc_base/constructor_magic.h"
-#include "rtc_base/critical_section.h"
+#include "rtc_base/deprecated/recursive_critical_section.h"
 #include "rtc_base/location.h"
 #include "rtc_base/message_handler.h"
 #include "rtc_base/platform_thread_types.h"
@@ -40,6 +40,35 @@
 
 #if defined(WEBRTC_WIN)
 #include "rtc_base/win32.h"
+#endif
+
+#if RTC_DCHECK_IS_ON
+// Counts how many blocking Thread::Invoke or Thread::Send calls are made from
+// within a scope and logs the number of blocking calls at the end of the scope.
+#define RTC_LOG_THREAD_BLOCK_COUNT()                                        \
+  rtc::Thread::ScopedCountBlockingCalls blocked_call_count_printer(         \
+      [func = __func__](uint32_t actual_block, uint32_t could_block) {      \
+        auto total = actual_block + could_block;                            \
+        if (total) {                                                        \
+          RTC_LOG(LS_WARNING) << "Blocking " << func << ": total=" << total \
+                              << " (actual=" << actual_block                \
+                              << ", could=" << could_block << ")";          \
+        }                                                                   \
+      })
+
+// Adds an RTC_DCHECK_LE that checks that the number of blocking calls are
+// less than or equal to a specific value. Use to avoid regressing in the
+// number of blocking thread calls.
+// Note: Use of this macro, requires RTC_LOG_THREAD_BLOCK_COUNT() to be called
+// first.
+#define RTC_DCHECK_BLOCK_COUNT_NO_MORE_THAN(x)                               \
+  do {                                                                       \
+    blocked_call_count_printer.set_minimum_call_count_for_callback(x + 1);   \
+    RTC_DCHECK_LE(blocked_call_count_printer.GetTotalBlockedCallCount(), x); \
+  } while (0)
+#else
+#define RTC_LOG_THREAD_BLOCK_COUNT()
+#define RTC_DCHECK_BLOCK_COUNT_NO_MORE_THAN(x)
 #endif
 
 namespace rtc {
@@ -81,9 +110,6 @@ class RTC_EXPORT ThreadManager {
   static void Add(Thread* message_queue);
   static void Remove(Thread* message_queue);
   static void Clear(MessageHandler* handler);
-
-  // TODO(nisse): Delete alias, as soon as downstream code is updated.
-  static void ProcessAllMessageQueues() { ProcessAllMessageQueuesForTesting(); }
 
   // For testing purposes, for use with a simulated clock.
   // Ensures that all message queues have processed delayed messages
@@ -140,7 +166,7 @@ class RTC_EXPORT ThreadManager {
   // Methods that don't modify the list of message queues may be called in a
   // re-entrant fashion. "processing_" keeps track of the depth of re-entrant
   // calls.
-  CriticalSection crit_;
+  RecursiveCriticalSection crit_;
   size_t processing_ RTC_GUARDED_BY(crit_) = 0;
 #if RTC_DCHECK_IS_ON
   // Represents all thread seand actions by storing all send targets per thread.
@@ -215,6 +241,39 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
     const bool previous_state_;
   };
 
+#if RTC_DCHECK_IS_ON
+  class ScopedCountBlockingCalls {
+   public:
+    ScopedCountBlockingCalls(std::function<void(uint32_t, uint32_t)> callback);
+    ScopedCountBlockingCalls(const ScopedDisallowBlockingCalls&) = delete;
+    ScopedCountBlockingCalls& operator=(const ScopedDisallowBlockingCalls&) =
+        delete;
+    ~ScopedCountBlockingCalls();
+
+    uint32_t GetBlockingCallCount() const;
+    uint32_t GetCouldBeBlockingCallCount() const;
+    uint32_t GetTotalBlockedCallCount() const;
+
+    void set_minimum_call_count_for_callback(uint32_t minimum) {
+      min_blocking_calls_for_callback_ = minimum;
+    }
+
+   private:
+    Thread* const thread_;
+    const uint32_t base_blocking_call_count_;
+    const uint32_t base_could_be_blocking_call_count_;
+    // The minimum number of blocking calls required in order to issue the
+    // result_callback_. This is used by RTC_DCHECK_BLOCK_COUNT_NO_MORE_THAN to
+    // tame log spam.
+    // By default we always issue the callback, regardless of callback count.
+    uint32_t min_blocking_calls_for_callback_ = 0;
+    std::function<void(uint32_t, uint32_t)> result_callback_;
+  };
+
+  uint32_t GetBlockingCallCount() const;
+  uint32_t GetCouldBeBlockingCallCount() const;
+#endif
+
   SocketServer* socketserver();
 
   // Note: The behavior of Thread has changed.  When a thread is stopped,
@@ -277,10 +336,6 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
     }
   }
 
-  // When this signal is sent out, any references to this queue should
-  // no longer be used.
-  sigslot::signal0<> SignalQueueDestroyed;
-
   bool IsCurrent() const;
 
   // Sleeps the calling thread for the specified number of milliseconds, during
@@ -292,6 +347,11 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
   // If |obj| is non-null, its value is appended to |name|.
   const std::string& name() const { return name_; }
   bool SetName(const std::string& name, const void* obj);
+
+  // Sets the expected processing time in ms. The thread will write
+  // log messages when Invoke() takes more time than this.
+  // Default is 50 ms.
+  void SetDispatchWarningMs(int deadline);
 
   // Starts the execution of the thread.
   bool Start();
@@ -337,6 +397,19 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
   void Invoke(const Location& posted_from, FunctionView<void()> functor) {
     InvokeInternal(posted_from, functor);
   }
+
+  // Allows invoke to specified |thread|. Thread never will be dereferenced and
+  // will be used only for reference-based comparison, so instance can be safely
+  // deleted. If NDEBUG is defined and DCHECK_ALWAYS_ON is undefined do nothing.
+  void AllowInvokesToThread(Thread* thread);
+
+  // If NDEBUG is defined and DCHECK_ALWAYS_ON is undefined do nothing.
+  void DisallowAllInvokes();
+  // Returns true if |target| was allowed by AllowInvokesToThread() or if no
+  // calls were made to AllowInvokesToThread and DisallowAllInvokes. Otherwise
+  // returns false.
+  // If NDEBUG is defined and DCHECK_ALWAYS_ON is undefined always returns true.
+  bool IsInvokeToThreadAllowed(rtc::Thread* target);
 
   // Posts a task to invoke the functor on |this| thread asynchronously, i.e.
   // without blocking the thread that invoked PostTask(). Ownership of |functor|
@@ -428,13 +501,6 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
   // irrevocable. Must be called on this thread.
   void DisallowBlockingCalls() { SetAllowBlockingCalls(false); }
 
-#ifdef WEBRTC_ANDROID
-  // Sets the per-thread allow-blocking-calls flag to true, sidestepping the
-  // invariants upheld by DisallowBlockingCalls() and
-  // ScopedDisallowBlockingCalls. Must be called on this thread.
-  void DEPRECATED_AllowBlockingCalls() { SetAllowBlockingCalls(true); }
-#endif
-
  protected:
   class CurrentThreadSetter : CurrentTaskQueueSetter {
    public:
@@ -519,11 +585,14 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
 
   friend class ScopedDisallowBlockingCalls;
 
-  CriticalSection* CritForTest() { return &crit_; }
+  RecursiveCriticalSection* CritForTest() { return &crit_; }
 
  private:
+  static const int kSlowDispatchLoggingThreshold = 50;  // 50 ms
+
   class QueuedTaskHandler final : public MessageHandler {
    public:
+    QueuedTaskHandler() {}
     void OnMessage(Message* msg) override;
   };
 
@@ -566,7 +635,13 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
   MessageList messages_ RTC_GUARDED_BY(crit_);
   PriorityQueue delayed_messages_ RTC_GUARDED_BY(crit_);
   uint32_t delayed_next_num_ RTC_GUARDED_BY(crit_);
-  CriticalSection crit_;
+#if RTC_DCHECK_IS_ON
+  uint32_t blocking_call_count_ RTC_GUARDED_BY(this) = 0;
+  uint32_t could_be_blocking_call_count_ RTC_GUARDED_BY(this) = 0;
+  std::vector<Thread*> allowed_threads_ RTC_GUARDED_BY(this);
+  bool invoke_policy_enabled_ RTC_GUARDED_BY(this) = false;
+#endif
+  RecursiveCriticalSection crit_;
   bool fInitialized_;
   bool fDestroyed_;
 
@@ -606,13 +681,17 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
 
   friend class ThreadManager;
 
+  int dispatch_warning_ms_ RTC_GUARDED_BY(this) = kSlowDispatchLoggingThreshold;
+
   RTC_DISALLOW_COPY_AND_ASSIGN(Thread);
 };
 
 // AutoThread automatically installs itself at construction
 // uninstalls at destruction, if a Thread object is
 // _not already_ associated with the current OS thread.
-
+//
+// NOTE: *** This class should only be used by tests ***
+//
 class AutoThread : public Thread {
  public:
   AutoThread();

@@ -185,7 +185,6 @@ ReceiveAudioStream::ReceiveAudioStream(
     recv_config.rtp.extensions = {{RtpExtension::kTransportSequenceNumberUri,
                                    kTransportSequenceNumberExtensionId}};
   }
-  receiver_->AddExtensions(recv_config.rtp.extensions);
   recv_config.decoder_factory = decoder_factory;
   recv_config.decoder_map = {
       {CallTest::kAudioSendPayloadType, {"opus", 48000, 2}}};
@@ -212,7 +211,9 @@ void ReceiveAudioStream::Stop() {
 
 AudioReceiveStream::Stats ReceiveAudioStream::GetStats() const {
   AudioReceiveStream::Stats result;
-  receiver_->SendTask([&] { result = receive_stream_->GetStats(); });
+  receiver_->SendTask([&] {
+    result = receive_stream_->GetStats(/*get_and_clear_legacy_stats=*/true);
+  });
   return result;
 }
 

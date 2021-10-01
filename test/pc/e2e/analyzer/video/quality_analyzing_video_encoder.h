@@ -16,15 +16,15 @@
 #include <utility>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "api/test/video_quality_analyzer_interface.h"
 #include "api/video/video_frame.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
 #include "api/video_codecs/video_encoder_factory.h"
-#include "rtc_base/critical_section.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "test/pc/e2e/analyzer/video/encoded_image_data_injector.h"
-#include "test/pc/e2e/analyzer/video/id_generator.h"
 
 namespace webrtc {
 namespace webrtc_pc_e2e {
@@ -49,16 +49,13 @@ constexpr int kAnalyzeAnySpatialStream = -1;
 // injected into EncodedImage with passed EncodedImageDataInjector. Then new
 // EncodedImage will be passed to origin callback, provided by user.
 //
-// Quality encoder registers its own callback in origin encoder at the same
-// time, when user registers his callback in quality encoder.
+// Quality encoder registers its own callback in origin encoder, at the same
+// time the user registers their callback in quality encoder.
 class QualityAnalyzingVideoEncoder : public VideoEncoder,
                                      public EncodedImageCallback {
  public:
-  // Creates analyzing encoder. |id| is unique coding entity id, that will
-  // be used to distinguish all encoders and decoders inside
-  // EncodedImageDataInjector and EncodedImageIdExtracor.
   QualityAnalyzingVideoEncoder(
-      int id,
+      absl::string_view peer_name,
       std::unique_ptr<VideoEncoder> delegate,
       double bitrate_multiplier,
       std::map<std::string, absl::optional<int>> stream_required_spatial_index,
@@ -82,8 +79,7 @@ class QualityAnalyzingVideoEncoder : public VideoEncoder,
   // Methods of EncodedImageCallback interface.
   EncodedImageCallback::Result OnEncodedImage(
       const EncodedImage& encoded_image,
-      const CodecSpecificInfo* codec_specific_info,
-      const RTPFragmentationHeader* fragmentation) override;
+      const CodecSpecificInfo* codec_specific_info) override;
   void OnDroppedFrame(DropReason reason) override;
 
  private:
@@ -138,7 +134,7 @@ class QualityAnalyzingVideoEncoder : public VideoEncoder,
   bool ShouldDiscard(uint16_t frame_id, const EncodedImage& encoded_image)
       RTC_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
-  const int id_;
+  const std::string peer_name_;
   std::unique_ptr<VideoEncoder> delegate_;
   const double bitrate_multiplier_;
   // Contains mapping from stream label to optional spatial index.
@@ -154,7 +150,7 @@ class QualityAnalyzingVideoEncoder : public VideoEncoder,
   // VideoEncoder interface assumes async delivery of encoded images.
   // This lock is used to protect shared state, that have to be propagated
   // from received VideoFrame to resulted EncodedImage.
-  rtc::CriticalSection lock_;
+  Mutex lock_;
 
   VideoCodec codec_settings_;
   SimulcastMode mode_ RTC_GUARDED_BY(lock_);
@@ -170,10 +166,10 @@ class QualityAnalyzingVideoEncoder : public VideoEncoder,
 class QualityAnalyzingVideoEncoderFactory : public VideoEncoderFactory {
  public:
   QualityAnalyzingVideoEncoderFactory(
+      absl::string_view peer_name,
       std::unique_ptr<VideoEncoderFactory> delegate,
       double bitrate_multiplier,
       std::map<std::string, absl::optional<int>> stream_required_spatial_index,
-      IdGenerator<int>* id_generator,
       EncodedImageDataInjector* injector,
       VideoQualityAnalyzerInterface* analyzer);
   ~QualityAnalyzingVideoEncoderFactory() override;
@@ -186,10 +182,10 @@ class QualityAnalyzingVideoEncoderFactory : public VideoEncoderFactory {
       const SdpVideoFormat& format) override;
 
  private:
+  const std::string peer_name_;
   std::unique_ptr<VideoEncoderFactory> delegate_;
   const double bitrate_multiplier_;
   std::map<std::string, absl::optional<int>> stream_required_spatial_index_;
-  IdGenerator<int>* const id_generator_;
   EncodedImageDataInjector* const injector_;
   VideoQualityAnalyzerInterface* const analyzer_;
 };

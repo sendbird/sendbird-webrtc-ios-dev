@@ -18,6 +18,7 @@
 #include "rtc_base/gunit.h"
 #include "rtc_base/ip_address.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/net_helpers.h"
 #include "rtc_base/network_monitor.h"
 #include "rtc_base/socket_unittest.h"
 #include "rtc_base/test_utils.h"
@@ -379,6 +380,15 @@ TEST_F(PhysicalSocketTest, TestCloseInClosedCallbackIPv4) {
 
 TEST_F(PhysicalSocketTest, TestCloseInClosedCallbackIPv6) {
   SocketTest::TestCloseInClosedCallbackIPv6();
+}
+
+TEST_F(PhysicalSocketTest, TestDeleteInReadCallbackIPv4) {
+  MAYBE_SKIP_IPV4;
+  SocketTest::TestDeleteInReadCallbackIPv4();
+}
+
+TEST_F(PhysicalSocketTest, TestDeleteInReadCallbackIPv6) {
+  SocketTest::TestDeleteInReadCallbackIPv6();
 }
 
 TEST_F(PhysicalSocketTest, TestSocketServerWaitIPv4) {

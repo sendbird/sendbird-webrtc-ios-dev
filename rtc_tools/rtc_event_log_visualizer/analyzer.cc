@@ -19,8 +19,10 @@
 #include <utility>
 
 #include "absl/algorithm/container.h"
+#include "absl/functional/bind_front.h"
 #include "absl/strings/string_view.h"
 #include "api/function_view.h"
+#include "api/network_state_predictor.h"
 #include "api/transport/field_trial_based_config.h"
 #include "api/transport/goog_cc_factory.h"
 #include "call/audio_receive_stream.h"
@@ -31,12 +33,6 @@
 #include "logging/rtc_event_log/rtc_event_processor.h"
 #include "logging/rtc_event_log/rtc_stream_config.h"
 #include "modules/audio_coding/audio_network_adaptor/include/audio_network_adaptor.h"
-#include "modules/audio_coding/neteq/tools/audio_sink.h"
-#include "modules/audio_coding/neteq/tools/fake_decode_from_file.h"
-#include "modules/audio_coding/neteq/tools/neteq_delay_analyzer.h"
-#include "modules/audio_coding/neteq/tools/neteq_replacement_input.h"
-#include "modules/audio_coding/neteq/tools/neteq_test.h"
-#include "modules/audio_coding/neteq/tools/resample_input_audio_file.h"
 #include "modules/congestion_controller/goog_cc/acknowledged_bitrate_estimator.h"
 #include "modules/congestion_controller/goog_cc/bitrate_estimator.h"
 #include "modules/congestion_controller/goog_cc/delay_based_bwe.h"
@@ -44,8 +40,6 @@
 #include "modules/congestion_controller/rtp/transport_feedback_adapter.h"
 #include "modules/pacing/paced_sender.h"
 #include "modules/pacing/packet_router.h"
-#include "modules/remote_bitrate_estimator/include/bwe_defines.h"
-#include "modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtcp_packet.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
@@ -54,6 +48,7 @@
 #include "modules/rtp_rtcp/source/rtcp_packet/sender_report.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
+#include "modules/rtp_rtcp/source/rtp_rtcp_interface.h"
 #include "modules/rtp_rtcp/source/rtp_utility.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/format_macros.h"
@@ -62,16 +57,11 @@
 #include "rtc_base/rate_statistics.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_tools/rtc_event_log_visualizer/log_simulation.h"
-
-#ifndef BWE_TEST_LOGGING_COMPILE_TIME_ENABLE
-#define BWE_TEST_LOGGING_COMPILE_TIME_ENABLE 0
-#endif  // BWE_TEST_LOGGING_COMPILE_TIME_ENABLE
+#include "test/explicit_key_value_config.h"
 
 namespace webrtc {
 
 namespace {
-
-const int kNumMicrosecsPerSec = 1000000;
 
 std::string SsrcToString(uint32_t ssrc) {
   rtc::StringBuilder ss;
@@ -168,11 +158,6 @@ absl::optional<uint32_t> EstimateRtpClockFrequency(
   return absl::nullopt;
 }
 
-constexpr float kLeftMargin = 0.01f;
-constexpr float kRightMargin = 0.02f;
-constexpr float kBottomMargin = 0.02f;
-constexpr float kTopMargin = 0.05f;
-
 absl::optional<double> NetworkDelayDiff_AbsSendTime(
     const LoggedRtpPacketIncoming& old_packet,
     const LoggedRtpPacketIncoming& new_packet) {
@@ -222,99 +207,6 @@ absl::optional<double> NetworkDelayDiff_CaptureTime(
   return delay_change;
 }
 
-// For each element in data_view, use |f()| to extract a y-coordinate and
-// store the result in a TimeSeries.
-template <typename DataType, typename IterableType>
-void ProcessPoints(rtc::FunctionView<float(const DataType&)> fx,
-                   rtc::FunctionView<absl::optional<float>(const DataType&)> fy,
-                   const IterableType& data_view,
-                   TimeSeries* result) {
-  for (size_t i = 0; i < data_view.size(); i++) {
-    const DataType& elem = data_view[i];
-    float x = fx(elem);
-    absl::optional<float> y = fy(elem);
-    if (y)
-      result->points.emplace_back(x, *y);
-  }
-}
-
-// For each pair of adjacent elements in |data|, use |f()| to extract a
-// y-coordinate and store the result in a TimeSeries. Note that the x-coordinate
-// will be the time of the second element in the pair.
-template <typename DataType, typename ResultType, typename IterableType>
-void ProcessPairs(
-    rtc::FunctionView<float(const DataType&)> fx,
-    rtc::FunctionView<absl::optional<ResultType>(const DataType&,
-                                                 const DataType&)> fy,
-    const IterableType& data,
-    TimeSeries* result) {
-  for (size_t i = 1; i < data.size(); i++) {
-    float x = fx(data[i]);
-    absl::optional<ResultType> y = fy(data[i - 1], data[i]);
-    if (y)
-      result->points.emplace_back(x, static_cast<float>(*y));
-  }
-}
-
-// For each pair of adjacent elements in |data|, use |f()| to extract a
-// y-coordinate and store the result in a TimeSeries. Note that the x-coordinate
-// will be the time of the second element in the pair.
-template <typename DataType, typename ResultType, typename IterableType>
-void AccumulatePairs(
-    rtc::FunctionView<float(const DataType&)> fx,
-    rtc::FunctionView<absl::optional<ResultType>(const DataType&,
-                                                 const DataType&)> fy,
-    const IterableType& data,
-    TimeSeries* result) {
-  ResultType sum = 0;
-  for (size_t i = 1; i < data.size(); i++) {
-    float x = fx(data[i]);
-    absl::optional<ResultType> y = fy(data[i - 1], data[i]);
-    if (y) {
-      sum += *y;
-      result->points.emplace_back(x, static_cast<float>(sum));
-    }
-  }
-}
-
-// Calculates a moving average of |data| and stores the result in a TimeSeries.
-// A data point is generated every |step| microseconds from |begin_time|
-// to |end_time|. The value of each data point is the average of the data
-// during the preceding |window_duration_us| microseconds.
-template <typename DataType, typename ResultType, typename IterableType>
-void MovingAverage(
-    rtc::FunctionView<absl::optional<ResultType>(const DataType&)> fy,
-    const IterableType& data_view,
-    AnalyzerConfig config,
-    TimeSeries* result) {
-  size_t window_index_begin = 0;
-  size_t window_index_end = 0;
-  ResultType sum_in_window = 0;
-
-  for (int64_t t = config.begin_time_; t < config.end_time_ + config.step_;
-       t += config.step_) {
-    while (window_index_end < data_view.size() &&
-           data_view[window_index_end].log_time_us() < t) {
-      absl::optional<ResultType> value = fy(data_view[window_index_end]);
-      if (value)
-        sum_in_window += *value;
-      ++window_index_end;
-    }
-    while (window_index_begin < data_view.size() &&
-           data_view[window_index_begin].log_time_us() <
-               t - config.window_duration_) {
-      absl::optional<ResultType> value = fy(data_view[window_index_begin]);
-      if (value)
-        sum_in_window -= *value;
-      ++window_index_begin;
-    }
-    float window_duration_s =
-        static_cast<float>(config.window_duration_) / kNumMicrosecsPerSec;
-    float x = config.GetCallTimeSec(t);
-    float y = sum_in_window / window_duration_s;
-    result->points.emplace_back(x, y);
-  }
-}
 
 template <typename T>
 TimeSeries CreateRtcpTypeTimeSeries(const std::vector<T>& rtcp_list,
@@ -465,15 +357,21 @@ EventLogAnalyzer::EventLogAnalyzer(const ParsedRtcEventLog& log,
     config_.begin_time_ = config_.end_time_ = 0;
   }
 
-  RTC_LOG(LS_INFO) << "Found " << parsed_log_.log_segments().size()
-                   << " (LOG_START, LOG_END) segments in log.";
+  RTC_LOG(LS_INFO) << "Log is "
+                   << (parsed_log_.last_timestamp() -
+                       parsed_log_.first_timestamp()) /
+                          1000000
+                   << " seconds long.";
 }
 
 EventLogAnalyzer::EventLogAnalyzer(const ParsedRtcEventLog& log,
                                    const AnalyzerConfig& config)
     : parsed_log_(log), config_(config) {
-  RTC_LOG(LS_INFO) << "Found " << parsed_log_.log_segments().size()
-                   << " (LOG_START, LOG_END) segments in log.";
+  RTC_LOG(LS_INFO) << "Log is "
+                   << (parsed_log_.last_timestamp() -
+                       parsed_log_.first_timestamp()) /
+                          1000000
+                   << " seconds long.";
 }
 
 class BitrateObserver : public RemoteBitrateObserver {
@@ -548,6 +446,8 @@ void EventLogAnalyzer::CreateRtcpTypeGraph(PacketDirection direction,
       CreateRtcpTypeTimeSeries(parsed_log_.firs(direction), config_, "FIR", 7));
   plot->AppendTimeSeries(
       CreateRtcpTypeTimeSeries(parsed_log_.plis(direction), config_, "PLI", 8));
+  plot->AppendTimeSeries(
+      CreateRtcpTypeTimeSeries(parsed_log_.byes(direction), config_, "BYE", 9));
   plot->SetXAxis(config_.CallBeginTimeSec(), config_.CallEndTimeSec(),
                  "Time (s)", kLeftMargin, kRightMargin);
   plot->SetSuggestedYAxis(0, 1, "RTCP type", kBottomMargin, kTopMargin);
@@ -559,7 +459,8 @@ void EventLogAnalyzer::CreateRtcpTypeGraph(PacketDirection direction,
                             {5, "NACK"},
                             {6, "REMB"},
                             {7, "FIR"},
-                            {8, "PLI"}});
+                            {8, "PLI"},
+                            {9, "BYE"}});
 }
 
 template <typename IterableType>
@@ -852,10 +753,7 @@ void EventLogAnalyzer::CreateIncomingDelayGraph(Plot* plot) {
                           << packets.size() << " packets in the stream.";
       continue;
     }
-    int64_t segment_end_us =
-        parsed_log_.log_segments().empty()
-            ? std::numeric_limits<int64_t>::max()
-            : parsed_log_.log_segments().front().stop_time_us();
+    int64_t segment_end_us = parsed_log_.first_log_segment().stop_time_us();
     absl::optional<uint32_t> estimated_frequency =
         EstimateRtpClockFrequency(packets, segment_end_us);
     if (!estimated_frequency)
@@ -1315,10 +1213,13 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
 
   TimeSeries time_series("Delay-based estimate", LineStyle::kStep,
                          PointStyle::kHighlight);
-  TimeSeries acked_time_series("Acked bitrate", LineStyle::kLine,
+  TimeSeries acked_time_series("Raw acked bitrate", LineStyle::kLine,
                                PointStyle::kHighlight);
-  TimeSeries acked_estimate_time_series(
-      "Acked bitrate estimate", LineStyle::kLine, PointStyle::kHighlight);
+  TimeSeries robust_time_series("Robust throughput estimate", LineStyle::kLine,
+                                PointStyle::kHighlight);
+  TimeSeries acked_estimate_time_series("Ackednowledged bitrate estimate",
+                                        LineStyle::kLine,
+                                        PointStyle::kHighlight);
 
   auto rtp_iterator = outgoing_rtp.begin();
   auto rtcp_iterator = incoming_rtcp.begin();
@@ -1344,20 +1245,18 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
     return std::numeric_limits<int64_t>::max();
   };
 
-  RateStatistics acked_bitrate(250, 8000);
-#if !(BWE_TEST_LOGGING_COMPILE_TIME_ENABLE)
-  FieldTrialBasedConfig field_trial_config_;
-  // The event_log_visualizer should normally not be compiled with
-  // BWE_TEST_LOGGING_COMPILE_TIME_ENABLE since the normal plots won't work.
-  // However, compiling with BWE_TEST_LOGGING, running with --plot=sendside_bwe
-  // and piping the output to plot_dynamics.py can be used as a hack to get the
-  // internal state of various BWE components. In this case, it is important
-  // we don't instantiate the AcknowledgedBitrateEstimator both here and in
-  // GoogCcNetworkController since that would lead to duplicate outputs.
+  RateStatistics acked_bitrate(750, 8000);
+  test::ExplicitKeyValueConfig throughput_config(
+      "WebRTC-Bwe-RobustThroughputEstimatorSettings/"
+      "enabled:true,reduce_bias:true,assume_shared_link:false,initial_packets:"
+      "10,min_packets:25,window_duration:750ms,unacked_weight:0.5/");
+  std::unique_ptr<AcknowledgedBitrateEstimatorInterface>
+      robust_throughput_estimator(
+          AcknowledgedBitrateEstimatorInterface::Create(&throughput_config));
+  FieldTrialBasedConfig field_trial_config;
   std::unique_ptr<AcknowledgedBitrateEstimatorInterface>
       acknowledged_bitrate_estimator(
-          AcknowledgedBitrateEstimatorInterface::Create(&field_trial_config_));
-#endif  // !(BWE_TEST_LOGGING_COMPILE_TIME_ENABLE)
+          AcknowledgedBitrateEstimatorInterface::Create(&field_trial_config));
   int64_t time_us =
       std::min({NextRtpTime(), NextRtcpTime(), NextProcessTime()});
   int64_t last_update_us = 0;
@@ -1367,24 +1266,40 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
       RTC_DCHECK_EQ(clock.TimeInMicroseconds(), NextRtpTime());
       const RtpPacketType& rtp_packet = *rtp_iterator->second;
       if (rtp_packet.rtp.header.extension.hasTransportSequenceNumber) {
-        RTC_DCHECK(rtp_packet.rtp.header.extension.hasTransportSequenceNumber);
         RtpPacketSendInfo packet_info;
-        packet_info.ssrc = rtp_packet.rtp.header.ssrc;
+        packet_info.media_ssrc = rtp_packet.rtp.header.ssrc;
         packet_info.transport_sequence_number =
             rtp_packet.rtp.header.extension.transportSequenceNumber;
         packet_info.rtp_sequence_number = rtp_packet.rtp.header.sequenceNumber;
         packet_info.length = rtp_packet.rtp.total_length;
+        if (IsRtxSsrc(parsed_log_, PacketDirection::kOutgoingPacket,
+                      rtp_packet.rtp.header.ssrc)) {
+          // Don't set the optional media type as we don't know if it is
+          // a retransmission, FEC or padding.
+        } else if (IsVideoSsrc(parsed_log_, PacketDirection::kOutgoingPacket,
+                               rtp_packet.rtp.header.ssrc)) {
+          packet_info.packet_type = RtpPacketMediaType::kVideo;
+        } else if (IsAudioSsrc(parsed_log_, PacketDirection::kOutgoingPacket,
+                               rtp_packet.rtp.header.ssrc)) {
+          packet_info.packet_type = RtpPacketMediaType::kAudio;
+        }
         transport_feedback.AddPacket(
             packet_info,
             0u,  // Per packet overhead bytes.
             Timestamp::Micros(rtp_packet.rtp.log_time_us()));
-        rtc::SentPacket sent_packet(
-            rtp_packet.rtp.header.extension.transportSequenceNumber,
-            rtp_packet.rtp.log_time_us() / 1000);
-        auto sent_msg = transport_feedback.ProcessSentPacket(sent_packet);
-        if (sent_msg)
-          observer.Update(goog_cc->OnSentPacket(*sent_msg));
       }
+      rtc::SentPacket sent_packet;
+      sent_packet.send_time_ms = rtp_packet.rtp.log_time_ms();
+      sent_packet.info.included_in_allocation = true;
+      sent_packet.info.packet_size_bytes = rtp_packet.rtp.total_length;
+      if (rtp_packet.rtp.header.extension.hasTransportSequenceNumber) {
+        sent_packet.packet_id =
+            rtp_packet.rtp.header.extension.transportSequenceNumber;
+        sent_packet.info.included_in_feedback = true;
+      }
+      auto sent_msg = transport_feedback.ProcessSentPacket(sent_packet);
+      if (sent_msg)
+        observer.Update(goog_cc->OnSentPacket(*sent_msg));
       ++rtp_iterator;
     }
     if (clock.TimeInMicroseconds() >= NextRtcpTime()) {
@@ -1399,13 +1314,13 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
         std::vector<PacketResult> feedback =
             feedback_msg->SortedByReceiveTime();
         if (!feedback.empty()) {
-#if !(BWE_TEST_LOGGING_COMPILE_TIME_ENABLE)
           acknowledged_bitrate_estimator->IncomingPacketFeedbackVector(
               feedback);
-#endif  // !(BWE_TEST_LOGGING_COMPILE_TIME_ENABLE)
-          for (const PacketResult& packet : feedback)
+          robust_throughput_estimator->IncomingPacketFeedbackVector(feedback);
+          for (const PacketResult& packet : feedback) {
             acked_bitrate.Update(packet.sent_packet.size.bytes(),
                                  packet.receive_time.ms());
+          }
           bitrate_bps = acked_bitrate.Rate(feedback.back().receive_time.ms());
         }
       }
@@ -1413,12 +1328,14 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
       float x = config_.GetCallTimeSec(clock.TimeInMicroseconds());
       float y = bitrate_bps.value_or(0) / 1000;
       acked_time_series.points.emplace_back(x, y);
-#if !(BWE_TEST_LOGGING_COMPILE_TIME_ENABLE)
+      y = robust_throughput_estimator->bitrate()
+              .value_or(DataRate::Zero())
+              .kbps();
+      robust_time_series.points.emplace_back(x, y);
       y = acknowledged_bitrate_estimator->bitrate()
               .value_or(DataRate::Zero())
               .kbps();
       acked_estimate_time_series.points.emplace_back(x, y);
-#endif  // !(BWE_TEST_LOGGING_COMPILE_TIME_ENABLE)
       ++rtcp_iterator;
     }
     if (clock.TimeInMicroseconds() >= NextProcessTime()) {
@@ -1439,6 +1356,7 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
   }
   // Add the data set to the plot.
   plot->AppendTimeSeries(std::move(time_series));
+  plot->AppendTimeSeries(std::move(robust_time_series));
   plot->AppendTimeSeries(std::move(acked_time_series));
   plot->AppendTimeSeriesIfNotEmpty(std::move(acked_estimate_time_series));
 
@@ -1450,13 +1368,11 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
 
 void EventLogAnalyzer::CreateReceiveSideBweSimulationGraph(Plot* plot) {
   using RtpPacketType = LoggedRtpPacketIncoming;
-  class RembInterceptingPacketRouter : public PacketRouter {
+  class RembInterceptor {
    public:
-    void OnReceiveBitrateChanged(const std::vector<uint32_t>& ssrcs,
-                                 uint32_t bitrate_bps) override {
+    void SendRemb(uint32_t bitrate_bps, std::vector<uint32_t> ssrcs) {
       last_bitrate_bps_ = bitrate_bps;
       bitrate_updated_ = true;
-      PacketRouter::OnReceiveBitrateChanged(ssrcs, bitrate_bps);
     }
     uint32_t last_bitrate_bps() const { return last_bitrate_bps_; }
     bool GetAndResetBitrateUpdated() {
@@ -1466,8 +1382,10 @@ void EventLogAnalyzer::CreateReceiveSideBweSimulationGraph(Plot* plot) {
     }
 
    private:
-    uint32_t last_bitrate_bps_;
-    bool bitrate_updated_;
+    // We don't know the start bitrate, but assume that it is the default 300
+    // kbps.
+    uint32_t last_bitrate_bps_ = 300000;
+    bool bitrate_updated_ = false;
   };
 
   std::multimap<int64_t, const RtpPacketType*> incoming_rtp;
@@ -1481,10 +1399,10 @@ void EventLogAnalyzer::CreateReceiveSideBweSimulationGraph(Plot* plot) {
   }
 
   SimulatedClock clock(0);
-  RembInterceptingPacketRouter packet_router;
-  // TODO(terelius): The PacketRouter is used as the RemoteBitrateObserver.
-  // Is this intentional?
-  ReceiveSideCongestionController rscc(&clock, &packet_router);
+  RembInterceptor remb_interceptor;
+  ReceiveSideCongestionController rscc(
+      &clock, [](auto...) {},
+      absl::bind_front(&RembInterceptor::SendRemb, &remb_interceptor), nullptr);
   // TODO(holmer): Log the call config and use that here instead.
   // static const uint32_t kDefaultStartBitrateBps = 300000;
   // rscc.SetBweBitrates(0, kDefaultStartBitrateBps, -1);
@@ -1509,9 +1427,9 @@ void EventLogAnalyzer::CreateReceiveSideBweSimulationGraph(Plot* plot) {
       float x = config_.GetCallTimeSec(clock.TimeInMicroseconds());
       acked_time_series.points.emplace_back(x, y);
     }
-    if (packet_router.GetAndResetBitrateUpdated() ||
+    if (remb_interceptor.GetAndResetBitrateUpdated() ||
         clock.TimeInMicroseconds() - last_update_us >= 1e6) {
-      uint32_t y = packet_router.last_bitrate_bps() / 1000;
+      uint32_t y = remb_interceptor.last_bitrate_bps() / 1000;
       float x = config_.GetCallTimeSec(clock.TimeInMicroseconds());
       time_series.points.emplace_back(x, y);
       last_update_us = clock.TimeInMicroseconds();
@@ -1586,10 +1504,7 @@ void EventLogAnalyzer::CreatePacerDelayGraph(Plot* plot) {
              "pacer delay with less than 2 packets in the stream";
       continue;
     }
-    int64_t segment_end_us =
-        parsed_log_.log_segments().empty()
-            ? std::numeric_limits<int64_t>::max()
-            : parsed_log_.log_segments().front().stop_time_us();
+    int64_t segment_end_us = parsed_log_.first_log_segment().stop_time_us();
     absl::optional<uint32_t> estimated_frequency =
         EstimateRtpClockFrequency(packets, segment_end_us);
     if (!estimated_frequency)
@@ -1721,466 +1636,6 @@ void EventLogAnalyzer::CreateSenderAndReceiverReportPlot(
                  "Time (s)", kLeftMargin, kRightMargin);
   plot->SetSuggestedYAxis(0, 1, yaxis_label, kBottomMargin, kTopMargin);
   plot->SetTitle(title);
-}
-
-void EventLogAnalyzer::CreateAudioEncoderTargetBitrateGraph(Plot* plot) {
-  TimeSeries time_series("Audio encoder target bitrate", LineStyle::kLine,
-                         PointStyle::kHighlight);
-  auto GetAnaBitrateBps = [](const LoggedAudioNetworkAdaptationEvent& ana_event)
-      -> absl::optional<float> {
-    if (ana_event.config.bitrate_bps)
-      return absl::optional<float>(
-          static_cast<float>(*ana_event.config.bitrate_bps));
-    return absl::nullopt;
-  };
-  auto ToCallTime = [this](const LoggedAudioNetworkAdaptationEvent& packet) {
-    return this->config_.GetCallTimeSec(packet.log_time_us());
-  };
-  ProcessPoints<LoggedAudioNetworkAdaptationEvent>(
-      ToCallTime, GetAnaBitrateBps,
-      parsed_log_.audio_network_adaptation_events(), &time_series);
-  plot->AppendTimeSeries(std::move(time_series));
-  plot->SetXAxis(config_.CallBeginTimeSec(), config_.CallEndTimeSec(),
-                 "Time (s)", kLeftMargin, kRightMargin);
-  plot->SetSuggestedYAxis(0, 1, "Bitrate (bps)", kBottomMargin, kTopMargin);
-  plot->SetTitle("Reported audio encoder target bitrate");
-}
-
-void EventLogAnalyzer::CreateAudioEncoderFrameLengthGraph(Plot* plot) {
-  TimeSeries time_series("Audio encoder frame length", LineStyle::kLine,
-                         PointStyle::kHighlight);
-  auto GetAnaFrameLengthMs =
-      [](const LoggedAudioNetworkAdaptationEvent& ana_event) {
-        if (ana_event.config.frame_length_ms)
-          return absl::optional<float>(
-              static_cast<float>(*ana_event.config.frame_length_ms));
-        return absl::optional<float>();
-      };
-  auto ToCallTime = [this](const LoggedAudioNetworkAdaptationEvent& packet) {
-    return this->config_.GetCallTimeSec(packet.log_time_us());
-  };
-  ProcessPoints<LoggedAudioNetworkAdaptationEvent>(
-      ToCallTime, GetAnaFrameLengthMs,
-      parsed_log_.audio_network_adaptation_events(), &time_series);
-  plot->AppendTimeSeries(std::move(time_series));
-  plot->SetXAxis(config_.CallBeginTimeSec(), config_.CallEndTimeSec(),
-                 "Time (s)", kLeftMargin, kRightMargin);
-  plot->SetSuggestedYAxis(0, 1, "Frame length (ms)", kBottomMargin, kTopMargin);
-  plot->SetTitle("Reported audio encoder frame length");
-}
-
-void EventLogAnalyzer::CreateAudioEncoderPacketLossGraph(Plot* plot) {
-  TimeSeries time_series("Audio encoder uplink packet loss fraction",
-                         LineStyle::kLine, PointStyle::kHighlight);
-  auto GetAnaPacketLoss =
-      [](const LoggedAudioNetworkAdaptationEvent& ana_event) {
-        if (ana_event.config.uplink_packet_loss_fraction)
-          return absl::optional<float>(static_cast<float>(
-              *ana_event.config.uplink_packet_loss_fraction));
-        return absl::optional<float>();
-      };
-  auto ToCallTime = [this](const LoggedAudioNetworkAdaptationEvent& packet) {
-    return this->config_.GetCallTimeSec(packet.log_time_us());
-  };
-  ProcessPoints<LoggedAudioNetworkAdaptationEvent>(
-      ToCallTime, GetAnaPacketLoss,
-      parsed_log_.audio_network_adaptation_events(), &time_series);
-  plot->AppendTimeSeries(std::move(time_series));
-  plot->SetXAxis(config_.CallBeginTimeSec(), config_.CallEndTimeSec(),
-                 "Time (s)", kLeftMargin, kRightMargin);
-  plot->SetSuggestedYAxis(0, 10, "Percent lost packets", kBottomMargin,
-                          kTopMargin);
-  plot->SetTitle("Reported audio encoder lost packets");
-}
-
-void EventLogAnalyzer::CreateAudioEncoderEnableFecGraph(Plot* plot) {
-  TimeSeries time_series("Audio encoder FEC", LineStyle::kLine,
-                         PointStyle::kHighlight);
-  auto GetAnaFecEnabled =
-      [](const LoggedAudioNetworkAdaptationEvent& ana_event) {
-        if (ana_event.config.enable_fec)
-          return absl::optional<float>(
-              static_cast<float>(*ana_event.config.enable_fec));
-        return absl::optional<float>();
-      };
-  auto ToCallTime = [this](const LoggedAudioNetworkAdaptationEvent& packet) {
-    return this->config_.GetCallTimeSec(packet.log_time_us());
-  };
-  ProcessPoints<LoggedAudioNetworkAdaptationEvent>(
-      ToCallTime, GetAnaFecEnabled,
-      parsed_log_.audio_network_adaptation_events(), &time_series);
-  plot->AppendTimeSeries(std::move(time_series));
-  plot->SetXAxis(config_.CallBeginTimeSec(), config_.CallEndTimeSec(),
-                 "Time (s)", kLeftMargin, kRightMargin);
-  plot->SetSuggestedYAxis(0, 1, "FEC (false/true)", kBottomMargin, kTopMargin);
-  plot->SetTitle("Reported audio encoder FEC");
-}
-
-void EventLogAnalyzer::CreateAudioEncoderEnableDtxGraph(Plot* plot) {
-  TimeSeries time_series("Audio encoder DTX", LineStyle::kLine,
-                         PointStyle::kHighlight);
-  auto GetAnaDtxEnabled =
-      [](const LoggedAudioNetworkAdaptationEvent& ana_event) {
-        if (ana_event.config.enable_dtx)
-          return absl::optional<float>(
-              static_cast<float>(*ana_event.config.enable_dtx));
-        return absl::optional<float>();
-      };
-  auto ToCallTime = [this](const LoggedAudioNetworkAdaptationEvent& packet) {
-    return this->config_.GetCallTimeSec(packet.log_time_us());
-  };
-  ProcessPoints<LoggedAudioNetworkAdaptationEvent>(
-      ToCallTime, GetAnaDtxEnabled,
-      parsed_log_.audio_network_adaptation_events(), &time_series);
-  plot->AppendTimeSeries(std::move(time_series));
-  plot->SetXAxis(config_.CallBeginTimeSec(), config_.CallEndTimeSec(),
-                 "Time (s)", kLeftMargin, kRightMargin);
-  plot->SetSuggestedYAxis(0, 1, "DTX (false/true)", kBottomMargin, kTopMargin);
-  plot->SetTitle("Reported audio encoder DTX");
-}
-
-void EventLogAnalyzer::CreateAudioEncoderNumChannelsGraph(Plot* plot) {
-  TimeSeries time_series("Audio encoder number of channels", LineStyle::kLine,
-                         PointStyle::kHighlight);
-  auto GetAnaNumChannels =
-      [](const LoggedAudioNetworkAdaptationEvent& ana_event) {
-        if (ana_event.config.num_channels)
-          return absl::optional<float>(
-              static_cast<float>(*ana_event.config.num_channels));
-        return absl::optional<float>();
-      };
-  auto ToCallTime = [this](const LoggedAudioNetworkAdaptationEvent& packet) {
-    return this->config_.GetCallTimeSec(packet.log_time_us());
-  };
-  ProcessPoints<LoggedAudioNetworkAdaptationEvent>(
-      ToCallTime, GetAnaNumChannels,
-      parsed_log_.audio_network_adaptation_events(), &time_series);
-  plot->AppendTimeSeries(std::move(time_series));
-  plot->SetXAxis(config_.CallBeginTimeSec(), config_.CallEndTimeSec(),
-                 "Time (s)", kLeftMargin, kRightMargin);
-  plot->SetSuggestedYAxis(0, 1, "Number of channels (1 (mono)/2 (stereo))",
-                          kBottomMargin, kTopMargin);
-  plot->SetTitle("Reported audio encoder number of channels");
-}
-
-class NetEqStreamInput : public test::NetEqInput {
- public:
-  // Does not take any ownership, and all pointers must refer to valid objects
-  // that outlive the one constructed.
-  NetEqStreamInput(const std::vector<LoggedRtpPacketIncoming>* packet_stream,
-                   const std::vector<LoggedAudioPlayoutEvent>* output_events,
-                   absl::optional<int64_t> end_time_ms)
-      : packet_stream_(*packet_stream),
-        packet_stream_it_(packet_stream_.begin()),
-        output_events_it_(output_events->begin()),
-        output_events_end_(output_events->end()),
-        end_time_ms_(end_time_ms) {
-    RTC_DCHECK(packet_stream);
-    RTC_DCHECK(output_events);
-  }
-
-  absl::optional<int64_t> NextPacketTime() const override {
-    if (packet_stream_it_ == packet_stream_.end()) {
-      return absl::nullopt;
-    }
-    if (end_time_ms_ && packet_stream_it_->rtp.log_time_ms() > *end_time_ms_) {
-      return absl::nullopt;
-    }
-    return packet_stream_it_->rtp.log_time_ms();
-  }
-
-  absl::optional<int64_t> NextOutputEventTime() const override {
-    if (output_events_it_ == output_events_end_) {
-      return absl::nullopt;
-    }
-    if (end_time_ms_ && output_events_it_->log_time_ms() > *end_time_ms_) {
-      return absl::nullopt;
-    }
-    return output_events_it_->log_time_ms();
-  }
-
-  std::unique_ptr<PacketData> PopPacket() override {
-    if (packet_stream_it_ == packet_stream_.end()) {
-      return std::unique_ptr<PacketData>();
-    }
-    std::unique_ptr<PacketData> packet_data(new PacketData());
-    packet_data->header = packet_stream_it_->rtp.header;
-    packet_data->time_ms = packet_stream_it_->rtp.log_time_ms();
-
-    // This is a header-only "dummy" packet. Set the payload to all zeros, with
-    // length according to the virtual length.
-    packet_data->payload.SetSize(packet_stream_it_->rtp.total_length -
-                                 packet_stream_it_->rtp.header_length);
-    std::fill_n(packet_data->payload.data(), packet_data->payload.size(), 0);
-
-    ++packet_stream_it_;
-    return packet_data;
-  }
-
-  void AdvanceOutputEvent() override {
-    if (output_events_it_ != output_events_end_) {
-      ++output_events_it_;
-    }
-  }
-
-  bool ended() const override { return !NextEventTime(); }
-
-  absl::optional<RTPHeader> NextHeader() const override {
-    if (packet_stream_it_ == packet_stream_.end()) {
-      return absl::nullopt;
-    }
-    return packet_stream_it_->rtp.header;
-  }
-
- private:
-  const std::vector<LoggedRtpPacketIncoming>& packet_stream_;
-  std::vector<LoggedRtpPacketIncoming>::const_iterator packet_stream_it_;
-  std::vector<LoggedAudioPlayoutEvent>::const_iterator output_events_it_;
-  const std::vector<LoggedAudioPlayoutEvent>::const_iterator output_events_end_;
-  const absl::optional<int64_t> end_time_ms_;
-};
-
-namespace {
-
-// Factory to create a "replacement decoder" that produces the decoded audio
-// by reading from a file rather than from the encoded payloads.
-class ReplacementAudioDecoderFactory : public AudioDecoderFactory {
- public:
-  ReplacementAudioDecoderFactory(const absl::string_view replacement_file_name,
-                                 int file_sample_rate_hz)
-      : replacement_file_name_(replacement_file_name),
-        file_sample_rate_hz_(file_sample_rate_hz) {}
-
-  std::vector<AudioCodecSpec> GetSupportedDecoders() override {
-    RTC_NOTREACHED();
-    return {};
-  }
-
-  bool IsSupportedDecoder(const SdpAudioFormat& format) override {
-    return true;
-  }
-
-  std::unique_ptr<AudioDecoder> MakeAudioDecoder(
-      const SdpAudioFormat& format,
-      absl::optional<AudioCodecPairId> codec_pair_id) override {
-    auto replacement_file = std::make_unique<test::ResampleInputAudioFile>(
-        replacement_file_name_, file_sample_rate_hz_);
-    replacement_file->set_output_rate_hz(48000);
-    return std::make_unique<test::FakeDecodeFromFile>(
-        std::move(replacement_file), 48000, false);
-  }
-
- private:
-  const std::string replacement_file_name_;
-  const int file_sample_rate_hz_;
-};
-
-// Creates a NetEq test object and all necessary input and output helpers. Runs
-// the test and returns the NetEqDelayAnalyzer object that was used to
-// instrument the test.
-std::unique_ptr<test::NetEqStatsGetter> CreateNetEqTestAndRun(
-    const std::vector<LoggedRtpPacketIncoming>* packet_stream,
-    const std::vector<LoggedAudioPlayoutEvent>* output_events,
-    absl::optional<int64_t> end_time_ms,
-    const std::string& replacement_file_name,
-    int file_sample_rate_hz) {
-  std::unique_ptr<test::NetEqInput> input(
-      new NetEqStreamInput(packet_stream, output_events, end_time_ms));
-
-  constexpr int kReplacementPt = 127;
-  std::set<uint8_t> cn_types;
-  std::set<uint8_t> forbidden_types;
-  input.reset(new test::NetEqReplacementInput(std::move(input), kReplacementPt,
-                                              cn_types, forbidden_types));
-
-  NetEq::Config config;
-  config.max_packets_in_buffer = 200;
-  config.enable_fast_accelerate = true;
-
-  std::unique_ptr<test::VoidAudioSink> output(new test::VoidAudioSink());
-
-  rtc::scoped_refptr<AudioDecoderFactory> decoder_factory =
-      new rtc::RefCountedObject<ReplacementAudioDecoderFactory>(
-          replacement_file_name, file_sample_rate_hz);
-
-  test::NetEqTest::DecoderMap codecs = {
-      {kReplacementPt, SdpAudioFormat("l16", 48000, 1)}};
-
-  std::unique_ptr<test::NetEqDelayAnalyzer> delay_cb(
-      new test::NetEqDelayAnalyzer);
-  std::unique_ptr<test::NetEqStatsGetter> neteq_stats_getter(
-      new test::NetEqStatsGetter(std::move(delay_cb)));
-  test::DefaultNetEqTestErrorCallback error_cb;
-  test::NetEqTest::Callbacks callbacks;
-  callbacks.error_callback = &error_cb;
-  callbacks.post_insert_packet = neteq_stats_getter->delay_analyzer();
-  callbacks.get_audio_callback = neteq_stats_getter.get();
-
-  test::NetEqTest test(config, decoder_factory, codecs, /*text_log=*/nullptr,
-                       /*factory=*/nullptr, std::move(input), std::move(output),
-                       callbacks);
-  test.Run();
-  return neteq_stats_getter;
-}
-}  // namespace
-
-EventLogAnalyzer::NetEqStatsGetterMap EventLogAnalyzer::SimulateNetEq(
-    const std::string& replacement_file_name,
-    int file_sample_rate_hz) const {
-  NetEqStatsGetterMap neteq_stats;
-
-  for (const auto& stream : parsed_log_.incoming_rtp_packets_by_ssrc()) {
-    const uint32_t ssrc = stream.ssrc;
-    if (!IsAudioSsrc(parsed_log_, kIncomingPacket, ssrc))
-      continue;
-    const std::vector<LoggedRtpPacketIncoming>* audio_packets =
-        &stream.incoming_packets;
-    if (audio_packets == nullptr) {
-      // No incoming audio stream found.
-      continue;
-    }
-
-    RTC_DCHECK(neteq_stats.find(ssrc) == neteq_stats.end());
-
-    std::map<uint32_t, std::vector<LoggedAudioPlayoutEvent>>::const_iterator
-        output_events_it = parsed_log_.audio_playout_events().find(ssrc);
-    if (output_events_it == parsed_log_.audio_playout_events().end()) {
-      // Could not find output events with SSRC matching the input audio stream.
-      // Using the first available stream of output events.
-      output_events_it = parsed_log_.audio_playout_events().cbegin();
-    }
-
-    absl::optional<int64_t> end_time_ms =
-        parsed_log_.log_segments().empty()
-            ? absl::nullopt
-            : absl::optional<int64_t>(
-                  parsed_log_.log_segments().front().stop_time_ms());
-
-    neteq_stats[ssrc] = CreateNetEqTestAndRun(
-        audio_packets, &output_events_it->second, end_time_ms,
-        replacement_file_name, file_sample_rate_hz);
-  }
-
-  return neteq_stats;
-}
-
-// Given a NetEqStatsGetter and the SSRC that the NetEqStatsGetter was created
-// for, this method generates a plot for the jitter buffer delay profile.
-void EventLogAnalyzer::CreateAudioJitterBufferGraph(
-    uint32_t ssrc,
-    const test::NetEqStatsGetter* stats_getter,
-    Plot* plot) const {
-  test::NetEqDelayAnalyzer::Delays arrival_delay_ms;
-  test::NetEqDelayAnalyzer::Delays corrected_arrival_delay_ms;
-  test::NetEqDelayAnalyzer::Delays playout_delay_ms;
-  test::NetEqDelayAnalyzer::Delays target_delay_ms;
-
-  stats_getter->delay_analyzer()->CreateGraphs(
-      &arrival_delay_ms, &corrected_arrival_delay_ms, &playout_delay_ms,
-      &target_delay_ms);
-
-  TimeSeries time_series_packet_arrival("packet arrival delay",
-                                        LineStyle::kLine);
-  TimeSeries time_series_relative_packet_arrival(
-      "Relative packet arrival delay", LineStyle::kLine);
-  TimeSeries time_series_play_time("Playout delay", LineStyle::kLine);
-  TimeSeries time_series_target_time("Target delay", LineStyle::kLine,
-                                     PointStyle::kHighlight);
-
-  for (const auto& data : arrival_delay_ms) {
-    const float x = config_.GetCallTimeSec(data.first * 1000);  // ms to us.
-    const float y = data.second;
-    time_series_packet_arrival.points.emplace_back(TimeSeriesPoint(x, y));
-  }
-  for (const auto& data : corrected_arrival_delay_ms) {
-    const float x = config_.GetCallTimeSec(data.first * 1000);  // ms to us.
-    const float y = data.second;
-    time_series_relative_packet_arrival.points.emplace_back(
-        TimeSeriesPoint(x, y));
-  }
-  for (const auto& data : playout_delay_ms) {
-    const float x = config_.GetCallTimeSec(data.first * 1000);  // ms to us.
-    const float y = data.second;
-    time_series_play_time.points.emplace_back(TimeSeriesPoint(x, y));
-  }
-  for (const auto& data : target_delay_ms) {
-    const float x = config_.GetCallTimeSec(data.first * 1000);  // ms to us.
-    const float y = data.second;
-    time_series_target_time.points.emplace_back(TimeSeriesPoint(x, y));
-  }
-
-  plot->AppendTimeSeries(std::move(time_series_packet_arrival));
-  plot->AppendTimeSeries(std::move(time_series_relative_packet_arrival));
-  plot->AppendTimeSeries(std::move(time_series_play_time));
-  plot->AppendTimeSeries(std::move(time_series_target_time));
-
-  plot->SetXAxis(config_.CallBeginTimeSec(), config_.CallEndTimeSec(),
-                 "Time (s)", kLeftMargin, kRightMargin);
-  plot->SetSuggestedYAxis(0, 1, "Relative delay (ms)", kBottomMargin,
-                          kTopMargin);
-  plot->SetTitle("NetEq timing for " +
-                 GetStreamName(parsed_log_, kIncomingPacket, ssrc));
-}
-
-template <typename NetEqStatsType>
-void EventLogAnalyzer::CreateNetEqStatsGraphInternal(
-    const NetEqStatsGetterMap& neteq_stats,
-    rtc::FunctionView<const std::vector<std::pair<int64_t, NetEqStatsType>>*(
-        const test::NetEqStatsGetter*)> data_extractor,
-    rtc::FunctionView<float(const NetEqStatsType&)> stats_extractor,
-    const std::string& plot_name,
-    Plot* plot) const {
-  std::map<uint32_t, TimeSeries> time_series;
-
-  for (const auto& st : neteq_stats) {
-    const uint32_t ssrc = st.first;
-    const std::vector<std::pair<int64_t, NetEqStatsType>>* data_vector =
-        data_extractor(st.second.get());
-    for (const auto& data : *data_vector) {
-      const float time =
-          config_.GetCallTimeSec(data.first * 1000);  // ms to us.
-      const float value = stats_extractor(data.second);
-      time_series[ssrc].points.emplace_back(TimeSeriesPoint(time, value));
-    }
-  }
-
-  for (auto& series : time_series) {
-    series.second.label =
-        GetStreamName(parsed_log_, kIncomingPacket, series.first);
-    series.second.line_style = LineStyle::kLine;
-    plot->AppendTimeSeries(std::move(series.second));
-  }
-
-  plot->SetXAxis(config_.CallBeginTimeSec(), config_.CallEndTimeSec(),
-                 "Time (s)", kLeftMargin, kRightMargin);
-  plot->SetSuggestedYAxis(0, 1, plot_name, kBottomMargin, kTopMargin);
-  plot->SetTitle(plot_name);
-}
-
-void EventLogAnalyzer::CreateNetEqNetworkStatsGraph(
-    const NetEqStatsGetterMap& neteq_stats,
-    rtc::FunctionView<float(const NetEqNetworkStatistics&)> stats_extractor,
-    const std::string& plot_name,
-    Plot* plot) const {
-  CreateNetEqStatsGraphInternal<NetEqNetworkStatistics>(
-      neteq_stats,
-      [](const test::NetEqStatsGetter* stats_getter) {
-        return stats_getter->stats();
-      },
-      stats_extractor, plot_name, plot);
-}
-
-void EventLogAnalyzer::CreateNetEqLifetimeStatsGraph(
-    const NetEqStatsGetterMap& neteq_stats,
-    rtc::FunctionView<float(const NetEqLifetimeStatistics&)> stats_extractor,
-    const std::string& plot_name,
-    Plot* plot) const {
-  CreateNetEqStatsGraphInternal<NetEqLifetimeStatistics>(
-      neteq_stats,
-      [](const test::NetEqStatsGetter* stats_getter) {
-        return stats_getter->lifetime_stats();
-      },
-      stats_extractor, plot_name, plot);
 }
 
 void EventLogAnalyzer::CreateIceCandidatePairConfigGraph(Plot* plot) {

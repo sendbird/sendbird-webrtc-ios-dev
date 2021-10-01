@@ -94,6 +94,7 @@ bool VideoEncoder::ResolutionBitrateLimits::operator==(
 VideoEncoder::EncoderInfo::EncoderInfo()
     : scaling_settings(VideoEncoder::ScalingSettings::kOff),
       requested_resolution_alignment(1),
+      apply_alignment_to_all_simulcast_layers(false),
       supports_native_handle(false),
       implementation_name("unknown"),
       has_trusted_rate_controller(false),
@@ -102,7 +103,8 @@ VideoEncoder::EncoderInfo::EncoderInfo()
       fps_allocation{absl::InlinedVector<uint8_t, kMaxTemporalStreams>(
           1,
           kMaxFramerateFraction)},
-      supports_simulcast(false) {}
+      supports_simulcast(false),
+      preferred_pixel_formats{VideoFrameBuffer::Type::kI420} {}
 
 VideoEncoder::EncoderInfo::EncoderInfo(const EncoderInfo&) = default;
 
@@ -123,6 +125,8 @@ std::string VideoEncoder::EncoderInfo::ToString() const {
   oss << "min_pixels_per_frame = " << scaling_settings.min_pixels_per_frame
       << " }";
   oss << ", requested_resolution_alignment = " << requested_resolution_alignment
+      << ", apply_alignment_to_all_simulcast_layers = "
+      << apply_alignment_to_all_simulcast_layers
       << ", supports_native_handle = " << supports_native_handle
       << ", implementation_name = '" << implementation_name
       << "'"
@@ -131,8 +135,17 @@ std::string VideoEncoder::EncoderInfo::ToString() const {
       << ", is_hardware_accelerated = " << is_hardware_accelerated
       << ", has_internal_source = " << has_internal_source
       << ", fps_allocation = [";
+  size_t num_spatial_layer_with_fps_allocation = 0;
+  for (size_t i = 0; i < kMaxSpatialLayers; ++i) {
+    if (!fps_allocation[i].empty()) {
+      num_spatial_layer_with_fps_allocation = i + 1;
+    }
+  }
   bool first = true;
-  for (size_t i = 0; i < fps_allocation->size(); ++i) {
+  for (size_t i = 0; i < num_spatial_layer_with_fps_allocation; ++i) {
+    if (fps_allocation[i].empty()) {
+      break;
+    }
     if (!first) {
       oss << ", ";
     }
@@ -166,7 +179,15 @@ std::string VideoEncoder::EncoderInfo::ToString() const {
   }
   oss << "] "
          ", supports_simulcast = "
-      << supports_simulcast << "}";
+      << supports_simulcast;
+  oss << ", preferred_pixel_formats = [";
+  for (size_t i = 0; i < preferred_pixel_formats.size(); ++i) {
+    if (i > 0)
+      oss << ", ";
+    oss << VideoFrameBufferTypeToString(preferred_pixel_formats.at(i));
+  }
+  oss << "]";
+  oss << "}";
   return oss.str();
 }
 

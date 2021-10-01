@@ -11,9 +11,10 @@
 #import <Foundation/Foundation.h>
 
 #import "RTCWrappedNativeVideoEncoder.h"
+#import "base/RTCMacros.h"
 #import "helpers/NSString+StdString.h"
 
-@implementation RTCWrappedNativeVideoEncoder {
+@implementation RTC_OBJC_TYPE (RTCWrappedNativeVideoEncoder) {
   std::unique_ptr<webrtc::VideoEncoder> _wrappedEncoder;
 }
 
@@ -66,6 +67,16 @@
 - (nullable RTC_OBJC_TYPE(RTCVideoEncoderQpThresholds) *)scalingSettings {
   RTC_NOTREACHED();
   return nil;
+}
+
+- (NSInteger)resolutionAlignment {
+  RTC_NOTREACHED();
+  return 1;
+}
+
+- (BOOL)applyAlignmentToAllSimulcastLayers {
+  RTC_NOTREACHED();
+  return NO;
 }
 
 @end

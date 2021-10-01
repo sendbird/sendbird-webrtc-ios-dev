@@ -17,6 +17,7 @@
 #include "api/task_queue/task_queue_base.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/ntp_time.h"
 
 namespace webrtc {
@@ -28,8 +29,8 @@ class MediaReceiverRtcpObserver {
  public:
   virtual ~MediaReceiverRtcpObserver() = default;
 
-  // All message handlers have default empty implementation. This way user needs
-  // to implement only those she is interested in.
+  // All message handlers have default empty implementation. This way users only
+  // need to implement the ones they are interested in.
   virtual void OnSenderReport(uint32_t sender_ssrc,
                               NtpTime ntp_time,
                               uint32_t rtp_time) {}
@@ -60,6 +61,9 @@ struct RtcpTransceiverConfig {
 
   // Maximum packet size outgoing transport accepts.
   size_t max_packet_size = 1200;
+
+  // The clock to use when querying for the NTP time. Should be set.
+  Clock* clock = nullptr;
 
   // Transport to send rtcp packets to. Should be set.
   Transport* outgoing_transport = nullptr;

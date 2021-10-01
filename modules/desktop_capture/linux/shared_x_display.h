@@ -18,6 +18,7 @@
 #include "api/ref_counted_base.h"
 #include "api/scoped_refptr.h"
 #include "rtc_base/constructor_magic.h"
+#include "rtc_base/system/rtc_export.h"
 
 // Including Xlib.h will involve evil defines (Bool, Status, True, False), which
 // easily conflict with other headers.
@@ -27,7 +28,8 @@ typedef union _XEvent XEvent;
 namespace webrtc {
 
 // A ref-counted object to store XDisplay connection.
-class SharedXDisplay : public rtc::RefCountedBase {
+class RTC_EXPORT SharedXDisplay
+    : public rtc::RefCountedNonVirtual<SharedXDisplay> {
  public:
   class XEventHandler {
    public:
@@ -36,9 +38,6 @@ class SharedXDisplay : public rtc::RefCountedBase {
     // Processes XEvent. Returns true if the event has been handled.
     virtual bool HandleXEvent(const XEvent& event) = 0;
   };
-
-  // Takes ownership of |display|.
-  explicit SharedXDisplay(Display* display);
 
   // Creates a new X11 Display for the |display_name|. NULL is returned if X11
   // connection failed. Equivalent to CreateDefault() when |display_name| is
@@ -62,8 +61,13 @@ class SharedXDisplay : public rtc::RefCountedBase {
   // Processes pending XEvents, calling corresponding event handlers.
   void ProcessPendingXEvents();
 
+  void IgnoreXServerGrabs();
+
+  ~SharedXDisplay();
+
  protected:
-  ~SharedXDisplay() override;
+  // Takes ownership of |display|.
+  explicit SharedXDisplay(Display* display);
 
  private:
   typedef std::map<int, std::vector<XEventHandler*> > EventHandlersMap;

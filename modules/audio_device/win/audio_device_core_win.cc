@@ -38,6 +38,7 @@
 
 #include <iomanip>
 
+#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/string_utils.h"
@@ -173,7 +174,7 @@ class MediaBufferImpl final : public IMediaBuffer {
 // ----------------------------------------------------------------------------
 
 bool AudioDeviceWindowsCore::CoreAudioIsSupported() {
-  RTC_LOG(LS_VERBOSE) << __FUNCTION__;
+  RTC_DLOG(LS_VERBOSE) << __FUNCTION__;
 
   bool MMDeviceIsAvailable(false);
   bool coreAudioIsSupported(false);
@@ -226,7 +227,7 @@ bool AudioDeviceWindowsCore::CoreAudioIsSupported() {
   // by a corresponding call to CoUninitialize.
   //
   ScopedCOMInitializer comInit(ScopedCOMInitializer::kMTA);
-  if (!comInit.succeeded()) {
+  if (!comInit.Succeeded()) {
     // Things will work even if an STA thread is calling this method but we
     // want to ensure that MTA is used and therefore return false here.
     return false;
@@ -280,7 +281,7 @@ bool AudioDeviceWindowsCore::CoreAudioIsSupported() {
     DWORD messageLength = ::FormatMessageW(dwFlags, 0, hr, dwLangID, errorText,
                                            MAXERRORLENGTH, NULL);
 
-    assert(messageLength <= MAXERRORLENGTH);
+    RTC_DCHECK_LE(messageLength, MAXERRORLENGTH);
 
     // Trims tailing white space (FormatMessage() leaves a trailing cr-lf.).
     for (; messageLength && ::isspace(errorText[messageLength - 1]);
@@ -394,8 +395,8 @@ AudioDeviceWindowsCore::AudioDeviceWindowsCore()
       _outputDevice(AudioDeviceModule::kDefaultCommunicationDevice),
       _inputDeviceIndex(0),
       _outputDeviceIndex(0) {
-  RTC_LOG(LS_INFO) << __FUNCTION__ << " created";
-  assert(_comInit.succeeded());
+  RTC_DLOG(LS_INFO) << __FUNCTION__ << " created";
+  RTC_DCHECK(_comInit.Succeeded());
 
   // Try to load the Avrt DLL
   if (!_avrtLibrary) {
@@ -468,7 +469,7 @@ AudioDeviceWindowsCore::AudioDeviceWindowsCore()
   CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL,
                    __uuidof(IMMDeviceEnumerator),
                    reinterpret_cast<void**>(&_ptrEnumerator));
-  assert(NULL != _ptrEnumerator);
+  RTC_DCHECK(_ptrEnumerator);
 
   // DMO initialization for built-in WASAPI AEC.
   {
@@ -491,7 +492,7 @@ AudioDeviceWindowsCore::AudioDeviceWindowsCore()
 // ----------------------------------------------------------------------------
 
 AudioDeviceWindowsCore::~AudioDeviceWindowsCore() {
-  RTC_LOG(LS_INFO) << __FUNCTION__ << " destroyed";
+  RTC_DLOG(LS_INFO) << __FUNCTION__ << " destroyed";
 
   Terminate();
 
@@ -579,7 +580,7 @@ int32_t AudioDeviceWindowsCore::ActiveAudioLayer(
 // ----------------------------------------------------------------------------
 
 AudioDeviceGeneric::InitStatus AudioDeviceWindowsCore::Init() {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   if (_initialized) {
     return InitStatus::OK;
@@ -601,7 +602,7 @@ AudioDeviceGeneric::InitStatus AudioDeviceWindowsCore::Init() {
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::Terminate() {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   if (!_initialized) {
     return 0;
@@ -640,8 +641,11 @@ bool AudioDeviceWindowsCore::Initialized() const {
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::InitSpeaker() {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
+  return InitSpeakerLocked();
+}
 
+int32_t AudioDeviceWindowsCore::InitSpeakerLocked() {
   if (_playing) {
     return -1;
   }
@@ -651,7 +655,7 @@ int32_t AudioDeviceWindowsCore::InitSpeaker() {
   }
 
   if (_usingOutputDeviceIndex) {
-    int16_t nDevices = PlayoutDevices();
+    int16_t nDevices = PlayoutDevicesLocked();
     if (_outputDeviceIndex > (nDevices - 1)) {
       RTC_LOG(LS_ERROR) << "current device selection is invalid => unable to"
                            " initialize";
@@ -709,8 +713,11 @@ int32_t AudioDeviceWindowsCore::InitSpeaker() {
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::InitMicrophone() {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
+  return InitMicrophoneLocked();
+}
 
+int32_t AudioDeviceWindowsCore::InitMicrophoneLocked() {
   if (_recording) {
     return -1;
   }
@@ -720,7 +727,7 @@ int32_t AudioDeviceWindowsCore::InitMicrophone() {
   }
 
   if (_usingInputDeviceIndex) {
-    int16_t nDevices = RecordingDevices();
+    int16_t nDevices = RecordingDevicesLocked();
     if (_inputDeviceIndex > (nDevices - 1)) {
       RTC_LOG(LS_ERROR) << "current device selection is invalid => unable to"
                            " initialize";
@@ -784,7 +791,7 @@ bool AudioDeviceWindowsCore::MicrophoneIsInitialized() const {
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::SpeakerVolumeIsAvailable(bool& available) {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   if (_ptrDeviceOut == NULL) {
     return -1;
@@ -826,7 +833,7 @@ Exit:
 
 int32_t AudioDeviceWindowsCore::SetSpeakerVolume(uint32_t volume) {
   {
-    rtc::CritScope lock(&_critSect);
+    MutexLock lock(&mutex_);
 
     if (!_speakerIsInitialized) {
       return -1;
@@ -846,9 +853,9 @@ int32_t AudioDeviceWindowsCore::SetSpeakerVolume(uint32_t volume) {
 
   // scale input volume to valid range (0.0 to 1.0)
   const float fLevel = (float)volume / MAX_CORE_SPEAKER_VOLUME;
-  _volumeMutex.Enter();
+  volume_mutex_.Lock();
   hr = _ptrRenderSimpleVolume->SetMasterVolume(fLevel, NULL);
-  _volumeMutex.Leave();
+  volume_mutex_.Unlock();
   EXIT_ON_ERROR(hr);
 
   return 0;
@@ -864,7 +871,7 @@ Exit:
 
 int32_t AudioDeviceWindowsCore::SpeakerVolume(uint32_t& volume) const {
   {
-    rtc::CritScope lock(&_critSect);
+    MutexLock lock(&mutex_);
 
     if (!_speakerIsInitialized) {
       return -1;
@@ -878,9 +885,9 @@ int32_t AudioDeviceWindowsCore::SpeakerVolume(uint32_t& volume) const {
   HRESULT hr = S_OK;
   float fLevel(0.0f);
 
-  _volumeMutex.Enter();
+  volume_mutex_.Lock();
   hr = _ptrRenderSimpleVolume->GetMasterVolume(&fLevel);
-  _volumeMutex.Leave();
+  volume_mutex_.Unlock();
   EXIT_ON_ERROR(hr);
 
   // scale input volume range [0.0,1.0] to valid output range
@@ -931,7 +938,7 @@ int32_t AudioDeviceWindowsCore::MinSpeakerVolume(uint32_t& minVolume) const {
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::SpeakerMuteIsAvailable(bool& available) {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   if (_ptrDeviceOut == NULL) {
     return -1;
@@ -967,7 +974,7 @@ Exit:
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::SetSpeakerMute(bool enable) {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   if (!_speakerIsInitialized) {
     return -1;
@@ -1041,7 +1048,7 @@ Exit:
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::MicrophoneMuteIsAvailable(bool& available) {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   if (_ptrDeviceIn == NULL) {
     return -1;
@@ -1151,7 +1158,7 @@ int32_t AudioDeviceWindowsCore::StereoRecordingIsAvailable(bool& available) {
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::SetStereoRecording(bool enable) {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   if (enable) {
     _recChannelsPrioList[0] = 2;  // try stereo first
@@ -1193,7 +1200,7 @@ int32_t AudioDeviceWindowsCore::StereoPlayoutIsAvailable(bool& available) {
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::SetStereoPlayout(bool enable) {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   if (enable) {
     _playChannelsPrioList[0] = 2;  // try stereo first
@@ -1226,7 +1233,7 @@ int32_t AudioDeviceWindowsCore::StereoPlayout(bool& enabled) const {
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::MicrophoneVolumeIsAvailable(bool& available) {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   if (_ptrDeviceIn == NULL) {
     return -1;
@@ -1264,7 +1271,7 @@ int32_t AudioDeviceWindowsCore::SetMicrophoneVolume(uint32_t volume) {
                       << volume << ")";
 
   {
-    rtc::CritScope lock(&_critSect);
+    MutexLock lock(&mutex_);
 
     if (!_microphoneIsInitialized) {
       return -1;
@@ -1283,9 +1290,9 @@ int32_t AudioDeviceWindowsCore::SetMicrophoneVolume(uint32_t volume) {
   HRESULT hr = S_OK;
   // scale input volume to valid range (0.0 to 1.0)
   const float fLevel = static_cast<float>(volume) / MAX_CORE_MICROPHONE_VOLUME;
-  _volumeMutex.Enter();
+  volume_mutex_.Lock();
   _ptrCaptureVolume->SetMasterVolumeLevelScalar(fLevel, NULL);
-  _volumeMutex.Leave();
+  volume_mutex_.Unlock();
   EXIT_ON_ERROR(hr);
 
   return 0;
@@ -1301,7 +1308,7 @@ Exit:
 
 int32_t AudioDeviceWindowsCore::MicrophoneVolume(uint32_t& volume) const {
   {
-    rtc::CritScope lock(&_critSect);
+    MutexLock lock(&mutex_);
 
     if (!_microphoneIsInitialized) {
       return -1;
@@ -1315,9 +1322,9 @@ int32_t AudioDeviceWindowsCore::MicrophoneVolume(uint32_t& volume) const {
   HRESULT hr = S_OK;
   float fLevel(0.0f);
   volume = 0;
-  _volumeMutex.Enter();
+  volume_mutex_.Lock();
   hr = _ptrCaptureVolume->GetMasterVolumeLevelScalar(&fLevel);
-  _volumeMutex.Leave();
+  volume_mutex_.Unlock();
   EXIT_ON_ERROR(hr);
 
   // scale input volume range [0.0,1.0] to valid output range
@@ -1340,7 +1347,7 @@ Exit:
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::MaxMicrophoneVolume(uint32_t& maxVolume) const {
-  RTC_LOG(LS_VERBOSE) << __FUNCTION__;
+  RTC_DLOG(LS_VERBOSE) << __FUNCTION__;
 
   if (!_microphoneIsInitialized) {
     return -1;
@@ -1368,10 +1375,12 @@ int32_t AudioDeviceWindowsCore::MinMicrophoneVolume(uint32_t& minVolume) const {
 // ----------------------------------------------------------------------------
 //  PlayoutDevices
 // ----------------------------------------------------------------------------
-
 int16_t AudioDeviceWindowsCore::PlayoutDevices() {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
+  return PlayoutDevicesLocked();
+}
 
+int16_t AudioDeviceWindowsCore::PlayoutDevicesLocked() {
   if (_RefreshDeviceList(eRender) != -1) {
     return (_DeviceListCount(eRender));
   }
@@ -1398,11 +1407,11 @@ int32_t AudioDeviceWindowsCore::SetPlayoutDevice(uint16_t index) {
     return -1;
   }
 
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   HRESULT hr(S_OK);
 
-  assert(_ptrRenderCollection != NULL);
+  RTC_DCHECK(_ptrRenderCollection);
 
   //  Select an endpoint rendering device given the specified index
   SAFE_RELEASE(_ptrDeviceOut);
@@ -1445,14 +1454,14 @@ int32_t AudioDeviceWindowsCore::SetPlayoutDevice(
     role = eCommunications;
   }
 
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   // Refresh the list of rendering endpoint devices
   _RefreshDeviceList(eRender);
 
   HRESULT hr(S_OK);
 
-  assert(_ptrEnumerator != NULL);
+  RTC_DCHECK(_ptrEnumerator);
 
   //  Select an endpoint rendering device given the specified role
   SAFE_RELEASE(_ptrDeviceOut);
@@ -1506,7 +1515,7 @@ int32_t AudioDeviceWindowsCore::PlayoutDeviceName(
     memset(guid, 0, kAdmMaxGuidSize);
   }
 
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   int32_t ret(-1);
   WCHAR szDeviceName[MAX_PATH];
@@ -1582,7 +1591,7 @@ int32_t AudioDeviceWindowsCore::RecordingDeviceName(
     memset(guid, 0, kAdmMaxGuidSize);
   }
 
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   int32_t ret(-1);
   WCHAR szDeviceName[MAX_PATH];
@@ -1633,8 +1642,11 @@ int32_t AudioDeviceWindowsCore::RecordingDeviceName(
 // ----------------------------------------------------------------------------
 
 int16_t AudioDeviceWindowsCore::RecordingDevices() {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
+  return RecordingDevicesLocked();
+}
 
+int16_t AudioDeviceWindowsCore::RecordingDevicesLocked() {
   if (_RefreshDeviceList(eCapture) != -1) {
     return (_DeviceListCount(eCapture));
   }
@@ -1661,11 +1673,11 @@ int32_t AudioDeviceWindowsCore::SetRecordingDevice(uint16_t index) {
     return -1;
   }
 
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   HRESULT hr(S_OK);
 
-  assert(_ptrCaptureCollection != NULL);
+  RTC_DCHECK(_ptrCaptureCollection);
 
   // Select an endpoint capture device given the specified index
   SAFE_RELEASE(_ptrDeviceIn);
@@ -1708,14 +1720,14 @@ int32_t AudioDeviceWindowsCore::SetRecordingDevice(
     role = eCommunications;
   }
 
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   // Refresh the list of capture endpoint devices
   _RefreshDeviceList(eCapture);
 
   HRESULT hr(S_OK);
 
-  assert(_ptrEnumerator != NULL);
+  RTC_DCHECK(_ptrEnumerator);
 
   //  Select an endpoint capture device given the specified role
   SAFE_RELEASE(_ptrDeviceIn);
@@ -1785,7 +1797,7 @@ int32_t AudioDeviceWindowsCore::RecordingIsAvailable(bool& available) {
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::InitPlayout() {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   if (_playing) {
     return -1;
@@ -1800,7 +1812,7 @@ int32_t AudioDeviceWindowsCore::InitPlayout() {
   }
 
   // Initialize the speaker (devices might have been added or removed)
-  if (InitSpeaker() == -1) {
+  if (InitSpeakerLocked() == -1) {
     RTC_LOG(LS_WARNING) << "InitSpeaker() failed";
   }
 
@@ -2024,8 +2036,8 @@ Exit:
 // handles device initialization itself.
 // Reference: http://msdn.microsoft.com/en-us/library/ff819492(v=vs.85).aspx
 int32_t AudioDeviceWindowsCore::InitRecordingDMO() {
-  assert(_builtInAecEnabled);
-  assert(_dmo != NULL);
+  RTC_DCHECK(_builtInAecEnabled);
+  RTC_DCHECK(_dmo);
 
   if (SetDMOProperties() == -1) {
     return -1;
@@ -2099,7 +2111,7 @@ int32_t AudioDeviceWindowsCore::InitRecordingDMO() {
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::InitRecording() {
-  rtc::CritScope lock(&_critSect);
+  MutexLock lock(&mutex_);
 
   if (_recording) {
     return -1;
@@ -2119,7 +2131,7 @@ int32_t AudioDeviceWindowsCore::InitRecording() {
   }
 
   // Initialize the microphone (devices might have been added or removed)
-  if (InitMicrophone() == -1) {
+  if (InitMicrophoneLocked() == -1) {
     RTC_LOG(LS_WARNING) << "InitMicrophone() failed";
   }
 
@@ -2326,7 +2338,7 @@ int32_t AudioDeviceWindowsCore::StartRecording() {
   }
 
   {
-    rtc::CritScope critScoped(&_critSect);
+    MutexLock lockScoped(&mutex_);
 
     // Create thread which will drive the capturing
     LPTHREAD_START_ROUTINE lpStartAddress = WSAPICaptureThread;
@@ -2344,7 +2356,7 @@ int32_t AudioDeviceWindowsCore::StartRecording() {
       }
     }
 
-    assert(_hRecThread == NULL);
+    RTC_DCHECK(_hRecThread);
     _hRecThread = CreateThread(NULL, 0, lpStartAddress, this, 0, NULL);
     if (_hRecThread == NULL) {
       RTC_LOG(LS_ERROR) << "failed to create the recording thread";
@@ -2353,7 +2365,6 @@ int32_t AudioDeviceWindowsCore::StartRecording() {
 
     // Set thread priority to highest possible
     SetThreadPriority(_hRecThread, THREAD_PRIORITY_TIME_CRITICAL);
-
   }  // critScoped
 
   DWORD ret = WaitForSingleObject(_hCaptureStartedEvent, 1000);
@@ -2410,8 +2421,8 @@ int32_t AudioDeviceWindowsCore::StopRecording() {
 
   ResetEvent(_hShutdownCaptureEvent);  // Must be manually reset.
   // Ensure that the thread has released these interfaces properly.
-  assert(err == -1 || _ptrClientIn == NULL);
-  assert(err == -1 || _ptrCaptureClient == NULL);
+  RTC_DCHECK(err == -1 || _ptrClientIn == NULL);
+  RTC_DCHECK(err == -1 || _ptrCaptureClient == NULL);
 
   _recIsInitialized = false;
   _recording = false;
@@ -2422,7 +2433,7 @@ int32_t AudioDeviceWindowsCore::StopRecording() {
   _hRecThread = NULL;
 
   if (_builtInAecEnabled) {
-    assert(_dmo != NULL);
+    RTC_DCHECK(_dmo);
     // This is necessary. Otherwise the DMO can generate garbage render
     // audio even after rendering has stopped.
     HRESULT hr = _dmo->FreeStreamingResources();
@@ -2479,10 +2490,10 @@ int32_t AudioDeviceWindowsCore::StartPlayout() {
   }
 
   {
-    rtc::CritScope critScoped(&_critSect);
+    MutexLock lockScoped(&mutex_);
 
     // Create thread which will drive the rendering.
-    assert(_hPlayThread == NULL);
+    RTC_DCHECK(_hPlayThread);
     _hPlayThread = CreateThread(NULL, 0, WSAPIRenderThread, this, 0, NULL);
     if (_hPlayThread == NULL) {
       RTC_LOG(LS_ERROR) << "failed to create the playout thread";
@@ -2515,7 +2526,7 @@ int32_t AudioDeviceWindowsCore::StopPlayout() {
   }
 
   {
-    rtc::CritScope critScoped(&_critSect);
+    MutexLock lockScoped(&mutex_);
 
     if (_hPlayThread == NULL) {
       RTC_LOG(LS_VERBOSE)
@@ -2545,7 +2556,7 @@ int32_t AudioDeviceWindowsCore::StopPlayout() {
   }
 
   {
-    rtc::CritScope critScoped(&_critSect);
+    MutexLock lockScoped(&mutex_);
     RTC_LOG(LS_VERBOSE) << "webrtc_core_audio_render_thread is now closed";
 
     // to reset this event manually at each time we finish with it,
@@ -2587,7 +2598,7 @@ int32_t AudioDeviceWindowsCore::StopPlayout() {
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::PlayoutDelay(uint16_t& delayMS) const {
-  rtc::CritScope critScoped(&_critSect);
+  MutexLock lockScoped(&mutex_);
   delayMS = static_cast<uint16_t>(_sndCardPlayDelay);
   return 0;
 }
@@ -2641,7 +2652,7 @@ DWORD AudioDeviceWindowsCore::DoRenderThread() {
 
   // Initialize COM as MTA in this thread.
   ScopedCOMInitializer comInit(ScopedCOMInitializer::kMTA);
-  if (!comInit.succeeded()) {
+  if (!comInit.Succeeded()) {
     RTC_LOG(LS_ERROR) << "failed to initialize COM in render thread";
     return 1;
   }
@@ -2943,12 +2954,12 @@ void AudioDeviceWindowsCore::RevertCaptureThreadPriority() {
 }
 
 DWORD AudioDeviceWindowsCore::DoCaptureThreadPollDMO() {
-  assert(_mediaBuffer != NULL);
+  RTC_DCHECK(_mediaBuffer);
   bool keepRecording = true;
 
   // Initialize COM as MTA in this thread.
   ScopedCOMInitializer comInit(ScopedCOMInitializer::kMTA);
-  if (!comInit.succeeded()) {
+  if (!comInit.Succeeded()) {
     RTC_LOG(LS_ERROR) << "failed to initialize COM in polling DMO thread";
     return 1;
   }
@@ -2981,7 +2992,7 @@ DWORD AudioDeviceWindowsCore::DoCaptureThreadPollDMO() {
     }
 
     while (keepRecording) {
-      rtc::CritScope critScoped(&_critSect);
+      MutexLock lockScoped(&mutex_);
 
       DWORD dwStatus = 0;
       {
@@ -2999,7 +3010,7 @@ DWORD AudioDeviceWindowsCore::DoCaptureThreadPollDMO() {
       if (FAILED(hr)) {
         _TraceCOMError(hr);
         keepRecording = false;
-        assert(false);
+        RTC_NOTREACHED();
         break;
       }
 
@@ -3011,7 +3022,7 @@ DWORD AudioDeviceWindowsCore::DoCaptureThreadPollDMO() {
       if (FAILED(hr)) {
         _TraceCOMError(hr);
         keepRecording = false;
-        assert(false);
+        RTC_NOTREACHED();
         break;
       }
 
@@ -3020,8 +3031,8 @@ DWORD AudioDeviceWindowsCore::DoCaptureThreadPollDMO() {
         // TODO(andrew): verify that this is always satisfied. It might
         // be that ProcessOutput will try to return more than 10 ms if
         // we fail to call it frequently enough.
-        assert(kSamplesProduced == static_cast<int>(_recBlockSize));
-        assert(sizeof(BYTE) == sizeof(int8_t));
+        RTC_DCHECK_EQ(kSamplesProduced, static_cast<int>(_recBlockSize));
+        RTC_DCHECK_EQ(sizeof(BYTE), sizeof(int8_t));
         _ptrAudioBuffer->SetRecordedBuffer(reinterpret_cast<int8_t*>(data),
                                            kSamplesProduced);
         _ptrAudioBuffer->SetVQEData(0, 0);
@@ -3036,7 +3047,7 @@ DWORD AudioDeviceWindowsCore::DoCaptureThreadPollDMO() {
       if (FAILED(hr)) {
         _TraceCOMError(hr);
         keepRecording = false;
-        assert(false);
+        RTC_NOTREACHED();
         break;
       }
 
@@ -3080,7 +3091,7 @@ DWORD AudioDeviceWindowsCore::DoCaptureThread() {
 
   // Initialize COM as MTA in this thread.
   ScopedCOMInitializer comInit(ScopedCOMInitializer::kMTA);
-  if (!comInit.succeeded()) {
+  if (!comInit.Succeeded()) {
     RTC_LOG(LS_ERROR) << "failed to initialize COM in capture thread";
     return 1;
   }
@@ -3217,7 +3228,7 @@ DWORD AudioDeviceWindowsCore::DoCaptureThread() {
           pData = NULL;
         }
 
-        assert(framesAvailable != 0);
+        RTC_DCHECK_NE(framesAvailable, 0);
 
         if (pData) {
           CopyMemory(&syncBuffer[syncBufIndex * _recAudioFrameSize], pData,
@@ -3226,8 +3237,8 @@ DWORD AudioDeviceWindowsCore::DoCaptureThread() {
           ZeroMemory(&syncBuffer[syncBufIndex * _recAudioFrameSize],
                      framesAvailable * _recAudioFrameSize);
         }
-        assert(syncBufferSize >= (syncBufIndex * _recAudioFrameSize) +
-                                     framesAvailable * _recAudioFrameSize);
+        RTC_DCHECK_GE(syncBufferSize, (syncBufIndex * _recAudioFrameSize) +
+                                          framesAvailable * _recAudioFrameSize);
 
         // Release the capture buffer
         //
@@ -3357,16 +3368,16 @@ int32_t AudioDeviceWindowsCore::EnableBuiltInAEC(bool enable) {
 }
 
 void AudioDeviceWindowsCore::_Lock() RTC_NO_THREAD_SAFETY_ANALYSIS {
-  _critSect.Enter();
+  mutex_.Lock();
 }
 
 void AudioDeviceWindowsCore::_UnLock() RTC_NO_THREAD_SAFETY_ANALYSIS {
-  _critSect.Leave();
+  mutex_.Unlock();
 }
 
 int AudioDeviceWindowsCore::SetDMOProperties() {
   HRESULT hr = S_OK;
-  assert(_dmo != NULL);
+  RTC_DCHECK(_dmo);
 
   rtc::scoped_refptr<IPropertyStore> ps;
   {
@@ -3416,7 +3427,7 @@ int AudioDeviceWindowsCore::SetDMOProperties() {
   // MFPKEY_WMAAECMA_FEATR_AGC - Digital AGC (disabled).
   // MFPKEY_WMAAECMA_FEATR_CENTER_CLIP - AEC center clipping (enabled).
   // MFPKEY_WMAAECMA_FEATR_ECHO_LENGTH - Filter length (256 ms).
-  //   TODO(andrew): investigate decresing the length to 128 ms.
+  // TODO(andrew): investigate decresing the length to 128 ms.
   // MFPKEY_WMAAECMA_FEATR_FRAME_SIZE - Frame size (0).
   //   0 is automatic; defaults to 160 samples (or 10 ms frames at the
   //   selected 16 kHz) as long as mic array processing is disabled.
@@ -3501,13 +3512,13 @@ int AudioDeviceWindowsCore::SetVtI4Property(IPropertyStore* ptrPS,
 // ----------------------------------------------------------------------------
 
 int32_t AudioDeviceWindowsCore::_RefreshDeviceList(EDataFlow dir) {
-  RTC_LOG(LS_VERBOSE) << __FUNCTION__;
+  RTC_DLOG(LS_VERBOSE) << __FUNCTION__;
 
   HRESULT hr = S_OK;
   IMMDeviceCollection* pCollection = NULL;
 
-  assert(dir == eRender || dir == eCapture);
-  assert(_ptrEnumerator != NULL);
+  RTC_DCHECK(dir == eRender || dir == eCapture);
+  RTC_DCHECK(_ptrEnumerator);
 
   // Create a fresh list of devices using the specified direction
   hr = _ptrEnumerator->EnumAudioEndpoints(dir, DEVICE_STATE_ACTIVE,
@@ -3537,12 +3548,12 @@ int32_t AudioDeviceWindowsCore::_RefreshDeviceList(EDataFlow dir) {
 // ----------------------------------------------------------------------------
 
 int16_t AudioDeviceWindowsCore::_DeviceListCount(EDataFlow dir) {
-  RTC_LOG(LS_VERBOSE) << __FUNCTION__;
+  RTC_DLOG(LS_VERBOSE) << __FUNCTION__;
 
   HRESULT hr = S_OK;
   UINT count = 0;
 
-  assert(eRender == dir || eCapture == dir);
+  RTC_DCHECK(eRender == dir || eCapture == dir);
 
   if (eRender == dir && NULL != _ptrRenderCollection) {
     hr = _ptrRenderCollection->GetCount(&count);
@@ -3573,12 +3584,12 @@ int32_t AudioDeviceWindowsCore::_GetListDeviceName(EDataFlow dir,
                                                    int index,
                                                    LPWSTR szBuffer,
                                                    int bufferLen) {
-  RTC_LOG(LS_VERBOSE) << __FUNCTION__;
+  RTC_DLOG(LS_VERBOSE) << __FUNCTION__;
 
   HRESULT hr = S_OK;
   IMMDevice* pDevice = NULL;
 
-  assert(dir == eRender || dir == eCapture);
+  RTC_DCHECK(dir == eRender || dir == eCapture);
 
   if (eRender == dir && NULL != _ptrRenderCollection) {
     hr = _ptrRenderCollection->Item(index, &pDevice);
@@ -3610,14 +3621,14 @@ int32_t AudioDeviceWindowsCore::_GetDefaultDeviceName(EDataFlow dir,
                                                       ERole role,
                                                       LPWSTR szBuffer,
                                                       int bufferLen) {
-  RTC_LOG(LS_VERBOSE) << __FUNCTION__;
+  RTC_DLOG(LS_VERBOSE) << __FUNCTION__;
 
   HRESULT hr = S_OK;
   IMMDevice* pDevice = NULL;
 
-  assert(dir == eRender || dir == eCapture);
-  assert(role == eConsole || role == eCommunications);
-  assert(_ptrEnumerator != NULL);
+  RTC_DCHECK(dir == eRender || dir == eCapture);
+  RTC_DCHECK(role == eConsole || role == eCommunications);
+  RTC_DCHECK(_ptrEnumerator);
 
   hr = _ptrEnumerator->GetDefaultAudioEndpoint(dir, role, &pDevice);
 
@@ -3647,12 +3658,12 @@ int32_t AudioDeviceWindowsCore::_GetListDeviceID(EDataFlow dir,
                                                  int index,
                                                  LPWSTR szBuffer,
                                                  int bufferLen) {
-  RTC_LOG(LS_VERBOSE) << __FUNCTION__;
+  RTC_DLOG(LS_VERBOSE) << __FUNCTION__;
 
   HRESULT hr = S_OK;
   IMMDevice* pDevice = NULL;
 
-  assert(dir == eRender || dir == eCapture);
+  RTC_DCHECK(dir == eRender || dir == eCapture);
 
   if (eRender == dir && NULL != _ptrRenderCollection) {
     hr = _ptrRenderCollection->Item(index, &pDevice);
@@ -3684,14 +3695,14 @@ int32_t AudioDeviceWindowsCore::_GetDefaultDeviceID(EDataFlow dir,
                                                     ERole role,
                                                     LPWSTR szBuffer,
                                                     int bufferLen) {
-  RTC_LOG(LS_VERBOSE) << __FUNCTION__;
+  RTC_DLOG(LS_VERBOSE) << __FUNCTION__;
 
   HRESULT hr = S_OK;
   IMMDevice* pDevice = NULL;
 
-  assert(dir == eRender || dir == eCapture);
-  assert(role == eConsole || role == eCommunications);
-  assert(_ptrEnumerator != NULL);
+  RTC_DCHECK(dir == eRender || dir == eCapture);
+  RTC_DCHECK(role == eConsole || role == eCommunications);
+  RTC_DCHECK(_ptrEnumerator);
 
   hr = _ptrEnumerator->GetDefaultAudioEndpoint(dir, role, &pDevice);
 
@@ -3709,15 +3720,15 @@ int32_t AudioDeviceWindowsCore::_GetDefaultDeviceID(EDataFlow dir,
 int32_t AudioDeviceWindowsCore::_GetDefaultDeviceIndex(EDataFlow dir,
                                                        ERole role,
                                                        int* index) {
-  RTC_LOG(LS_VERBOSE) << __FUNCTION__;
+  RTC_DLOG(LS_VERBOSE) << __FUNCTION__;
 
   HRESULT hr = S_OK;
   WCHAR szDefaultDeviceID[MAX_PATH] = {0};
   WCHAR szDeviceID[MAX_PATH] = {0};
 
   const size_t kDeviceIDLength = sizeof(szDeviceID) / sizeof(szDeviceID[0]);
-  assert(kDeviceIDLength ==
-         sizeof(szDefaultDeviceID) / sizeof(szDefaultDeviceID[0]));
+  RTC_DCHECK_EQ(kDeviceIDLength,
+                sizeof(szDefaultDeviceID) / sizeof(szDefaultDeviceID[0]));
 
   if (_GetDefaultDeviceID(dir, role, szDefaultDeviceID, kDeviceIDLength) ==
       -1) {
@@ -3782,7 +3793,7 @@ int32_t AudioDeviceWindowsCore::_GetDefaultDeviceIndex(EDataFlow dir,
 int32_t AudioDeviceWindowsCore::_GetDeviceName(IMMDevice* pDevice,
                                                LPWSTR pszBuffer,
                                                int bufferLen) {
-  RTC_LOG(LS_VERBOSE) << __FUNCTION__;
+  RTC_DLOG(LS_VERBOSE) << __FUNCTION__;
 
   static const WCHAR szDefault[] = L"<Device not available>";
 
@@ -3790,8 +3801,8 @@ int32_t AudioDeviceWindowsCore::_GetDeviceName(IMMDevice* pDevice,
   IPropertyStore* pProps = NULL;
   PROPVARIANT varName;
 
-  assert(pszBuffer != NULL);
-  assert(bufferLen > 0);
+  RTC_DCHECK(pszBuffer);
+  RTC_DCHECK_GT(bufferLen, 0);
 
   if (pDevice != NULL) {
     hr = pDevice->OpenPropertyStore(STGM_READ, &pProps);
@@ -3849,15 +3860,15 @@ int32_t AudioDeviceWindowsCore::_GetDeviceName(IMMDevice* pDevice,
 int32_t AudioDeviceWindowsCore::_GetDeviceID(IMMDevice* pDevice,
                                              LPWSTR pszBuffer,
                                              int bufferLen) {
-  RTC_LOG(LS_VERBOSE) << __FUNCTION__;
+  RTC_DLOG(LS_VERBOSE) << __FUNCTION__;
 
   static const WCHAR szDefault[] = L"<Device not available>";
 
   HRESULT hr = E_FAIL;
   LPWSTR pwszID = NULL;
 
-  assert(pszBuffer != NULL);
-  assert(bufferLen > 0);
+  RTC_DCHECK(pszBuffer);
+  RTC_DCHECK_GT(bufferLen, 0);
 
   if (pDevice != NULL) {
     hr = pDevice->GetId(&pwszID);
@@ -3882,11 +3893,11 @@ int32_t AudioDeviceWindowsCore::_GetDeviceID(IMMDevice* pDevice,
 int32_t AudioDeviceWindowsCore::_GetDefaultDevice(EDataFlow dir,
                                                   ERole role,
                                                   IMMDevice** ppDevice) {
-  RTC_LOG(LS_VERBOSE) << __FUNCTION__;
+  RTC_DLOG(LS_VERBOSE) << __FUNCTION__;
 
   HRESULT hr(S_OK);
 
-  assert(_ptrEnumerator != NULL);
+  RTC_DCHECK(_ptrEnumerator);
 
   hr = _ptrEnumerator->GetDefaultAudioEndpoint(dir, role, ppDevice);
   if (FAILED(hr)) {
@@ -3906,7 +3917,7 @@ int32_t AudioDeviceWindowsCore::_GetListDevice(EDataFlow dir,
                                                IMMDevice** ppDevice) {
   HRESULT hr(S_OK);
 
-  assert(_ptrEnumerator != NULL);
+  RTC_DCHECK(_ptrEnumerator);
 
   IMMDeviceCollection* pCollection = NULL;
 
@@ -3927,6 +3938,8 @@ int32_t AudioDeviceWindowsCore::_GetListDevice(EDataFlow dir,
     return -1;
   }
 
+  SAFE_RELEASE(pCollection);
+
   return 0;
 }
 
@@ -3936,9 +3949,9 @@ int32_t AudioDeviceWindowsCore::_GetListDevice(EDataFlow dir,
 
 int32_t AudioDeviceWindowsCore::_EnumerateEndpointDevicesAll(
     EDataFlow dataFlow) const {
-  RTC_LOG(LS_VERBOSE) << __FUNCTION__;
+  RTC_DLOG(LS_VERBOSE) << __FUNCTION__;
 
-  assert(_ptrEnumerator != NULL);
+  RTC_DCHECK(_ptrEnumerator);
 
   HRESULT hr = S_OK;
   IMMDeviceCollection* pCollection = NULL;
@@ -4130,7 +4143,7 @@ void AudioDeviceWindowsCore::_TraceCOMError(HRESULT hr) const {
   DWORD messageLength = ::FormatMessageW(dwFlags, 0, hr, dwLangID, errorText,
                                          MAXERRORLENGTH, NULL);
 
-  assert(messageLength <= MAXERRORLENGTH);
+  RTC_DCHECK_LE(messageLength, MAXERRORLENGTH);
 
   // Trims tailing white space (FormatMessage() leaves a trailing cr-lf.).
   for (; messageLength && ::isspace(errorText[messageLength - 1]);

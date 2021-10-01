@@ -67,6 +67,8 @@ struct RTC_EXPORT Codec {
   int id;
   std::string name;
   int clockrate;
+  // Non key-value parameters such as the telephone-event "0‐15" are
+  // represented using an empty string as key, i.e. {"": "0-15"}.
   CodecParameterMap params;
   FeedbackParams feedback_params;
 
@@ -199,23 +201,6 @@ struct RTC_EXPORT VideoCodec : public Codec {
  private:
   void SetDefaultParameters();
 };
-
-struct RtpDataCodec : public Codec {
-  RtpDataCodec(int id, const std::string& name);
-  RtpDataCodec();
-  RtpDataCodec(const RtpDataCodec& c);
-  RtpDataCodec(RtpDataCodec&& c);
-  ~RtpDataCodec() override = default;
-
-  RtpDataCodec& operator=(const RtpDataCodec& c);
-  RtpDataCodec& operator=(RtpDataCodec&& c);
-
-  std::string ToString() const;
-};
-
-// For backwards compatibility
-// TODO(bugs.webrtc.org/10597): Remove when no longer needed.
-typedef RtpDataCodec DataCodec;
 
 // Get the codec setting associated with |payload_type|. If there
 // is no codec associated with that payload type it returns nullptr.

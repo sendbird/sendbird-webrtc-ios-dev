@@ -14,6 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -237,6 +238,9 @@ class RTCStatsMemberInterface {
     kSequenceUint64,  // std::vector<uint64_t>
     kSequenceDouble,  // std::vector<double>
     kSequenceString,  // std::vector<std::string>
+
+    kMapStringUint64,  // std::map<std::string, uint64_t>
+    kMapStringDouble,  // std::map<std::string, double>
   };
 
   virtual ~RTCStatsMemberInterface() {}
@@ -319,6 +323,14 @@ class RTCStatsMember : public RTCStatsMemberInterface {
   std::string ValueToString() const override;
   std::string ValueToJson() const override;
 
+  template <typename U>
+  inline T ValueOrDefault(U default_value) const {
+    if (is_defined()) {
+      return *(*this);
+    }
+    return default_value;
+  }
+
   // Assignment operators.
   T& operator=(const T& value) {
     value_ = value;
@@ -355,6 +367,13 @@ class RTCStatsMember : public RTCStatsMemberInterface {
   T value_;
 };
 
+namespace rtc_stats_internal {
+
+typedef std::map<std::string, uint64_t> MapStringUint64;
+typedef std::map<std::string, double> MapStringDouble;
+
+}  // namespace rtc_stats_internal
+
 #define WEBRTC_DECLARE_RTCSTATSMEMBER(T)                                    \
   template <>                                                               \
   RTC_EXPORT RTCStatsMemberInterface::Type RTCStatsMember<T>::StaticType(); \
@@ -383,6 +402,8 @@ WEBRTC_DECLARE_RTCSTATSMEMBER(std::vector<int64_t>);
 WEBRTC_DECLARE_RTCSTATSMEMBER(std::vector<uint64_t>);
 WEBRTC_DECLARE_RTCSTATSMEMBER(std::vector<double>);
 WEBRTC_DECLARE_RTCSTATSMEMBER(std::vector<std::string>);
+WEBRTC_DECLARE_RTCSTATSMEMBER(rtc_stats_internal::MapStringUint64);
+WEBRTC_DECLARE_RTCSTATSMEMBER(rtc_stats_internal::MapStringDouble);
 
 // Using inheritance just so that it's obvious from the member's declaration
 // whether it's standardized or not.
@@ -447,6 +468,10 @@ extern template class RTC_EXPORT_TEMPLATE_DECLARE(RTC_EXPORT)
     RTCNonStandardStatsMember<std::vector<double>>;
 extern template class RTC_EXPORT_TEMPLATE_DECLARE(RTC_EXPORT)
     RTCNonStandardStatsMember<std::vector<std::string>>;
+extern template class RTC_EXPORT_TEMPLATE_DECLARE(RTC_EXPORT)
+    RTCNonStandardStatsMember<std::map<std::string, uint64_t>>;
+extern template class RTC_EXPORT_TEMPLATE_DECLARE(RTC_EXPORT)
+    RTCNonStandardStatsMember<std::map<std::string, double>>;
 
 }  // namespace webrtc
 

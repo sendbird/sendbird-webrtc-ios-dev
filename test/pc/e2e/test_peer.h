@@ -26,16 +26,91 @@ namespace webrtc {
 namespace webrtc_pc_e2e {
 
 // Describes a single participant in the call.
-class TestPeer final : public PeerConnectionWrapper {
+class TestPeer final {
  public:
-  using PeerConnectionWrapper::PeerConnectionWrapper;
-
   Params* params() const { return params_.get(); }
   PeerConfigurerImpl::VideoSource ReleaseVideoSource(size_t i) {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
     return std::move(video_sources_[i]);
   }
 
+  PeerConnectionFactoryInterface* pc_factory() {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
+    return wrapper_->pc_factory();
+  }
+  PeerConnectionInterface* pc() {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
+    return wrapper_->pc();
+  }
+  MockPeerConnectionObserver* observer() {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
+    return wrapper_->observer();
+  }
+
+  std::unique_ptr<SessionDescriptionInterface> CreateOffer() {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
+    return wrapper_->CreateOffer();
+  }
+
+  std::unique_ptr<SessionDescriptionInterface> CreateAnswer() {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
+    return wrapper_->CreateAnswer();
+  }
+
+  bool SetLocalDescription(std::unique_ptr<SessionDescriptionInterface> desc,
+                           std::string* error_out = nullptr) {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
+    return wrapper_->SetLocalDescription(std::move(desc), error_out);
+  }
+
+  bool SetRemoteDescription(std::unique_ptr<SessionDescriptionInterface> desc,
+                            std::string* error_out = nullptr) {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
+    return wrapper_->SetRemoteDescription(std::move(desc), error_out);
+  }
+
+  rtc::scoped_refptr<RtpTransceiverInterface> AddTransceiver(
+      cricket::MediaType media_type,
+      const RtpTransceiverInit& init) {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
+    return wrapper_->AddTransceiver(media_type, init);
+  }
+
+  rtc::scoped_refptr<RtpSenderInterface> AddTrack(
+      rtc::scoped_refptr<MediaStreamTrackInterface> track,
+      const std::vector<std::string>& stream_ids = {}) {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
+    return wrapper_->AddTrack(track, stream_ids);
+  }
+
+  rtc::scoped_refptr<DataChannelInterface> CreateDataChannel(
+      const std::string& label) {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
+    return wrapper_->CreateDataChannel(label);
+  }
+
+  PeerConnectionInterface::SignalingState signaling_state() {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
+    return wrapper_->signaling_state();
+  }
+
+  bool IsIceGatheringDone() {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
+    return wrapper_->IsIceGatheringDone();
+  }
+
+  bool IsIceConnected() {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
+    return wrapper_->IsIceConnected();
+  }
+
+  rtc::scoped_refptr<const RTCStatsReport> GetStats() {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
+    return wrapper_->GetStats();
+  }
+
   void DetachAecDump() {
+    RTC_CHECK(wrapper_) << "TestPeer is already closed";
     if (audio_processing_) {
       audio_processing_->DetachAecDump();
     }
@@ -45,6 +120,10 @@ class TestPeer final : public PeerConnectionWrapper {
   bool AddIceCandidates(
       std::vector<std::unique_ptr<IceCandidateInterface>> candidates);
 
+  // Closes underlying peer connection and destroys all related objects freeing
+  // up related resources.
+  void Close();
+
  protected:
   friend class TestPeerFactory;
   TestPeer(rtc::scoped_refptr<PeerConnectionFactoryInterface> pc_factory,
@@ -52,9 +131,13 @@ class TestPeer final : public PeerConnectionWrapper {
            std::unique_ptr<MockPeerConnectionObserver> observer,
            std::unique_ptr<Params> params,
            std::vector<PeerConfigurerImpl::VideoSource> video_sources,
-           rtc::scoped_refptr<AudioProcessing> audio_processing);
+           rtc::scoped_refptr<AudioProcessing> audio_processing,
+           std::unique_ptr<rtc::Thread> worker_thread);
 
  private:
+  // Keeps ownership of worker thread. It has to be destroyed after |wrapper_|.
+  std::unique_ptr<rtc::Thread> worker_thread_;
+  std::unique_ptr<PeerConnectionWrapper> wrapper_;
   std::unique_ptr<Params> params_;
   std::vector<PeerConfigurerImpl::VideoSource> video_sources_;
   rtc::scoped_refptr<AudioProcessing> audio_processing_;

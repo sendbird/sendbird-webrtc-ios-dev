@@ -96,7 +96,8 @@ GoogCcNetworkController::GoogCcNetworkController(NetworkControllerConfig config,
                     key_value_config_)
               : nullptr),
       bandwidth_estimation_(
-          std::make_unique<SendSideBandwidthEstimation>(event_log_)),
+          std::make_unique<SendSideBandwidthEstimation>(key_value_config_,
+                                                        event_log_)),
       alr_detector_(
           std::make_unique<AlrDetector>(key_value_config_, config.event_log)),
       probe_bitrate_estimator_(new ProbeBitrateEstimator(config.event_log)),
@@ -464,7 +465,7 @@ NetworkControlUpdate GoogCcNetworkController::OnTransportPacketsFeedback(
     expected_packets_since_last_loss_update_ +=
         report.PacketsWithFeedback().size();
     for (const auto& packet_feedback : report.PacketsWithFeedback()) {
-      if (packet_feedback.receive_time.IsInfinite())
+      if (!packet_feedback.IsReceived())
         lost_packets_since_last_loss_update_ += 1;
     }
     if (report.feedback_time > next_loss_update_) {

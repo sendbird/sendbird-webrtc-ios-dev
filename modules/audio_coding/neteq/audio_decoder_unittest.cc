@@ -37,6 +37,9 @@
 namespace webrtc {
 
 namespace {
+
+constexpr int kOverheadBytesPerPacket = 50;
+
 // The absolute difference between the input and output (the first channel) is
 // compared vs |tolerance|. The parameter |delay| is used to correct for codec
 // delays.
@@ -74,9 +77,9 @@ double MseInputOutput(const std::vector<int16_t>& input,
                       size_t num_samples,
                       size_t channels,
                       int delay) {
-  assert(delay < static_cast<int>(num_samples));
-  assert(num_samples <= input.size());
-  assert(num_samples * channels <= output.size());
+  RTC_DCHECK_LT(delay, static_cast<int>(num_samples));
+  RTC_DCHECK_LE(num_samples, input.size());
+  RTC_DCHECK_LE(num_samples * channels, output.size());
   if (num_samples == 0)
     return 0.0;
   double squared_sum = 0.0;
@@ -300,7 +303,7 @@ class AudioDecoderPcm16BTest : public AudioDecoderTest {
     frame_size_ = 20 * codec_input_rate_hz_ / 1000;
     data_length_ = 10 * frame_size_;
     decoder_ = new AudioDecoderPcm16B(codec_input_rate_hz_, 1);
-    assert(decoder_);
+    RTC_DCHECK(decoder_);
     AudioEncoderPcm16B::Config config;
     config.sample_rate_hz = codec_input_rate_hz_;
     config.frame_size_ms =
@@ -317,7 +320,7 @@ class AudioDecoderIlbcTest : public AudioDecoderTest {
     frame_size_ = 240;
     data_length_ = 10 * frame_size_;
     decoder_ = new AudioDecoderIlbcImpl;
-    assert(decoder_);
+    RTC_DCHECK(decoder_);
     AudioEncoderIlbcConfig config;
     config.frame_size_ms = 30;
     audio_encoder_.reset(new AudioEncoderIlbcImpl(config, payload_type_));
@@ -356,6 +359,7 @@ class AudioDecoderIsacFloatTest : public AudioDecoderTest {
     config.frame_size_ms =
         1000 * static_cast<int>(frame_size_) / codec_input_rate_hz_;
     audio_encoder_.reset(new AudioEncoderIsacFloatImpl(config));
+    audio_encoder_->OnReceivedOverhead(kOverheadBytesPerPacket);
 
     AudioDecoderIsacFloatImpl::Config decoder_config;
     decoder_config.sample_rate_hz = codec_input_rate_hz_;
@@ -375,6 +379,7 @@ class AudioDecoderIsacSwbTest : public AudioDecoderTest {
     config.frame_size_ms =
         1000 * static_cast<int>(frame_size_) / codec_input_rate_hz_;
     audio_encoder_.reset(new AudioEncoderIsacFloatImpl(config));
+    audio_encoder_->OnReceivedOverhead(kOverheadBytesPerPacket);
 
     AudioDecoderIsacFloatImpl::Config decoder_config;
     decoder_config.sample_rate_hz = codec_input_rate_hz_;
@@ -394,6 +399,7 @@ class AudioDecoderIsacFixTest : public AudioDecoderTest {
     config.frame_size_ms =
         1000 * static_cast<int>(frame_size_) / codec_input_rate_hz_;
     audio_encoder_.reset(new AudioEncoderIsacFixImpl(config));
+    audio_encoder_->OnReceivedOverhead(kOverheadBytesPerPacket);
 
     AudioDecoderIsacFixImpl::Config decoder_config;
     decoder_config.sample_rate_hz = codec_input_rate_hz_;
@@ -408,7 +414,7 @@ class AudioDecoderG722Test : public AudioDecoderTest {
     frame_size_ = 160;
     data_length_ = 10 * frame_size_;
     decoder_ = new AudioDecoderG722Impl;
-    assert(decoder_);
+    RTC_DCHECK(decoder_);
     AudioEncoderG722Config config;
     config.frame_size_ms = 10;
     config.num_channels = 1;
@@ -424,7 +430,7 @@ class AudioDecoderG722StereoTest : public AudioDecoderTest {
     frame_size_ = 160;
     data_length_ = 10 * frame_size_;
     decoder_ = new AudioDecoderG722StereoImpl;
-    assert(decoder_);
+    RTC_DCHECK(decoder_);
     AudioEncoderG722Config config;
     config.frame_size_ms = 10;
     config.num_channels = 2;
@@ -451,6 +457,7 @@ class AudioDecoderOpusTest
                              ? AudioEncoderOpusConfig::ApplicationMode::kVoip
                              : AudioEncoderOpusConfig::ApplicationMode::kAudio;
     audio_encoder_ = AudioEncoderOpus::MakeAudioEncoder(config, payload_type_);
+    audio_encoder_->OnReceivedOverhead(kOverheadBytesPerPacket);
   }
   const int opus_sample_rate_hz_{std::get<0>(GetParam())};
   const int opus_num_channels_{std::get<1>(GetParam())};
@@ -536,7 +543,18 @@ TEST_F(AudioDecoderIsacFloatTest, EncodeDecode) {
 }
 
 TEST_F(AudioDecoderIsacFloatTest, SetTargetBitrate) {
-  TestSetAndGetTargetBitratesWithFixedCodec(audio_encoder_.get(), 32000);
+  const int overhead_rate =
+      8 * kOverheadBytesPerPacket * codec_input_rate_hz_ / frame_size_;
+  EXPECT_EQ(10000,
+            SetAndGetTargetBitrate(audio_encoder_.get(), 9999 + overhead_rate));
+  EXPECT_EQ(10000, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                          10000 + overhead_rate));
+  EXPECT_EQ(23456, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                          23456 + overhead_rate));
+  EXPECT_EQ(32000, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                          32000 + overhead_rate));
+  EXPECT_EQ(32000, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                          32001 + overhead_rate));
 }
 
 TEST_F(AudioDecoderIsacSwbTest, EncodeDecode) {
@@ -549,7 +567,18 @@ TEST_F(AudioDecoderIsacSwbTest, EncodeDecode) {
 }
 
 TEST_F(AudioDecoderIsacSwbTest, SetTargetBitrate) {
-  TestSetAndGetTargetBitratesWithFixedCodec(audio_encoder_.get(), 32000);
+  const int overhead_rate =
+      8 * kOverheadBytesPerPacket * codec_input_rate_hz_ / frame_size_;
+  EXPECT_EQ(10000,
+            SetAndGetTargetBitrate(audio_encoder_.get(), 9999 + overhead_rate));
+  EXPECT_EQ(10000, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                          10000 + overhead_rate));
+  EXPECT_EQ(23456, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                          23456 + overhead_rate));
+  EXPECT_EQ(56000, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                          56000 + overhead_rate));
+  EXPECT_EQ(56000, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                          56001 + overhead_rate));
 }
 
 TEST_F(AudioDecoderIsacFixTest, EncodeDecode) {
@@ -558,7 +587,9 @@ TEST_F(AudioDecoderIsacFixTest, EncodeDecode) {
   int delay = 54;  // Delay from input to output.
 #if defined(WEBRTC_ANDROID) && defined(WEBRTC_ARCH_ARM)
   static const int kEncodedBytes = 685;
-#elif defined(WEBRTC_ANDROID) && defined(WEBRTC_ARCH_ARM64)
+#elif defined(WEBRTC_ARCH_ARM64)
+  static const int kEncodedBytes = 673;
+#elif defined(WEBRTC_MAC) && defined(WEBRTC_ARCH_ARM64)  // M1 Mac
   static const int kEncodedBytes = 673;
 #else
   static const int kEncodedBytes = 671;
@@ -569,7 +600,18 @@ TEST_F(AudioDecoderIsacFixTest, EncodeDecode) {
 }
 
 TEST_F(AudioDecoderIsacFixTest, SetTargetBitrate) {
-  TestSetAndGetTargetBitratesWithFixedCodec(audio_encoder_.get(), 32000);
+  const int overhead_rate =
+      8 * kOverheadBytesPerPacket * codec_input_rate_hz_ / frame_size_;
+  EXPECT_EQ(10000,
+            SetAndGetTargetBitrate(audio_encoder_.get(), 9999 + overhead_rate));
+  EXPECT_EQ(10000, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                          10000 + overhead_rate));
+  EXPECT_EQ(23456, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                          23456 + overhead_rate));
+  EXPECT_EQ(32000, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                          32000 + overhead_rate));
+  EXPECT_EQ(32000, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                          32001 + overhead_rate));
 }
 
 TEST_F(AudioDecoderG722Test, EncodeDecode) {
@@ -599,7 +641,9 @@ TEST_F(AudioDecoderG722StereoTest, SetTargetBitrate) {
   TestSetAndGetTargetBitratesWithFixedCodec(audio_encoder_.get(), 128000);
 }
 
-TEST_P(AudioDecoderOpusTest, EncodeDecode) {
+// TODO(http://bugs.webrtc.org/12518): Enable the test after Opus has been
+// updated.
+TEST_P(AudioDecoderOpusTest, DISABLED_EncodeDecode) {
   constexpr int tolerance = 6176;
   constexpr int channel_diff_tolerance = 6;
   constexpr double mse = 238630.0;
@@ -610,11 +654,18 @@ TEST_P(AudioDecoderOpusTest, EncodeDecode) {
 }
 
 TEST_P(AudioDecoderOpusTest, SetTargetBitrate) {
-  EXPECT_EQ(6000, SetAndGetTargetBitrate(audio_encoder_.get(), 5999));
-  EXPECT_EQ(6000, SetAndGetTargetBitrate(audio_encoder_.get(), 6000));
-  EXPECT_EQ(32000, SetAndGetTargetBitrate(audio_encoder_.get(), 32000));
-  EXPECT_EQ(510000, SetAndGetTargetBitrate(audio_encoder_.get(), 510000));
-  EXPECT_EQ(510000, SetAndGetTargetBitrate(audio_encoder_.get(), 511000));
+  const int overhead_rate =
+      8 * kOverheadBytesPerPacket * codec_input_rate_hz_ / frame_size_;
+  EXPECT_EQ(6000,
+            SetAndGetTargetBitrate(audio_encoder_.get(), 5999 + overhead_rate));
+  EXPECT_EQ(6000,
+            SetAndGetTargetBitrate(audio_encoder_.get(), 6000 + overhead_rate));
+  EXPECT_EQ(32000, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                          32000 + overhead_rate));
+  EXPECT_EQ(510000, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                           510000 + overhead_rate));
+  EXPECT_EQ(510000, SetAndGetTargetBitrate(audio_encoder_.get(),
+                                           511000 + overhead_rate));
 }
 
 }  // namespace webrtc

@@ -26,15 +26,6 @@
 
 namespace webrtc {
 
-void TriageHelper::Print(FILE* file) {
-  fprintf(file, "========== TRIAGE NOTIFICATIONS ==========\n");
-  for (const auto& alert : triage_alerts_) {
-    fprintf(file, "%d %s. First occurrence at %3.3lf\n", alert.second.count,
-            alert.second.explanation.c_str(), alert.second.first_occurrence);
-  }
-  fprintf(file, "========== END TRIAGE NOTIFICATIONS ==========\n");
-}
-
 void TriageHelper::AnalyzeStreamGaps(const ParsedRtcEventLog& parsed_log,
                                      PacketDirection direction) {
   // With 100 packets/s (~800kbps), false positives would require 10 s without
@@ -62,10 +53,7 @@ void TriageHelper::AnalyzeStreamGaps(const ParsedRtcEventLog& parsed_log,
       direction == kIncomingPacket ? TriageAlertType::kIncomingCaptureTimeJump
                                    : TriageAlertType::kOutgoingCaptureTimeJump;
 
-  const int64_t segment_end_us =
-      parsed_log.log_segments().empty()
-          ? std::numeric_limits<int64_t>::max()
-          : parsed_log.log_segments().front().stop_time_us();
+  const int64_t segment_end_us = parsed_log.first_log_segment().stop_time_us();
 
   // Check for gaps in sequence numbers and capture timestamps.
   for (const auto& stream : parsed_log.rtp_packets_by_ssrc(direction)) {
@@ -133,10 +121,7 @@ void TriageHelper::AnalyzeTransmissionGaps(const ParsedRtcEventLog& parsed_log,
                                    ? TriageAlertType::kIncomingRtcpGap
                                    : TriageAlertType::kOutgoingRtcpGap;
 
-  const int64_t segment_end_us =
-      parsed_log.log_segments().empty()
-          ? std::numeric_limits<int64_t>::max()
-          : parsed_log.log_segments().front().stop_time_us();
+  const int64_t segment_end_us = parsed_log.first_log_segment().stop_time_us();
 
   // TODO(terelius): The parser could provide a list of all packets, ordered
   // by time, for each direction.
@@ -202,10 +187,7 @@ void TriageHelper::AnalyzeLog(const ParsedRtcEventLog& parsed_log) {
   AnalyzeTransmissionGaps(parsed_log, kIncomingPacket);
   AnalyzeTransmissionGaps(parsed_log, kOutgoingPacket);
 
-  const int64_t segment_end_us =
-      parsed_log.log_segments().empty()
-          ? std::numeric_limits<int64_t>::max()
-          : parsed_log.log_segments().front().stop_time_us();
+  const int64_t segment_end_us = parsed_log.first_log_segment().stop_time_us();
 
   int64_t first_occurrence = parsed_log.last_timestamp();
   constexpr double kMaxLossFraction = 0.05;
@@ -230,6 +212,23 @@ void TriageHelper::AnalyzeLog(const ParsedRtcEventLog& parsed_log) {
   if (avg_outgoing_loss > kMaxLossFraction) {
     Alert(TriageAlertType::kOutgoingHighLoss, first_occurrence,
           "More than 5% of outgoing packets lost.");
+  }
+}
+
+void TriageHelper::Print(FILE* file) {
+  fprintf(file, "========== TRIAGE NOTIFICATIONS ==========\n");
+  for (const auto& alert : triage_alerts_) {
+    fprintf(file, "%d %s. First occurrence at %3.3lf\n", alert.second.count,
+            alert.second.explanation.c_str(), alert.second.first_occurrence);
+  }
+  fprintf(file, "========== END TRIAGE NOTIFICATIONS ==========\n");
+}
+
+void TriageHelper::ProcessAlerts(
+    std::function<void(int, float, std::string)> f) {
+  for (const auto& alert : triage_alerts_) {
+    f(alert.second.count, alert.second.first_occurrence,
+      alert.second.explanation);
   }
 }
 

@@ -43,6 +43,7 @@ struct RTC_EXPORT EchoCanceller3Config {
     size_t hysteresis_limit_blocks = 1;
     size_t fixed_capture_delay_samples = 0;
     float delay_estimate_smoothing = 0.7f;
+    float delay_estimate_smoothing_delay_found = 0.7f;
     float delay_candidate_detection_threshold = 0.2f;
     struct DelaySelectionThresholds {
       int initial;
@@ -86,9 +87,11 @@ struct RTC_EXPORT EchoCanceller3Config {
 
     size_t config_change_duration_blocks = 250;
     float initial_state_seconds = 2.5f;
+    int coarse_reset_hangover_blocks = 25;
     bool conservative_initial_phase = false;
     bool enable_coarse_filter_output_usage = true;
     bool use_linear_filter = true;
+    bool high_pass_filter_echo_reference = false;
     bool export_linear_aec_output = false;
   } filter;
 
@@ -107,6 +110,7 @@ struct RTC_EXPORT EchoCanceller3Config {
     float default_len = 0.83f;
     bool echo_can_saturate = true;
     bool bounded_erl = false;
+    bool erle_onset_compensation_in_dominant_nearend = false;
   } ep_strength;
 
   struct EchoAudibility {
@@ -143,6 +147,7 @@ struct RTC_EXPORT EchoCanceller3Config {
     float noise_gate_slope = 0.3f;
     size_t render_pre_window_size = 1;
     size_t render_post_window_size = 1;
+    bool model_reverb_in_nonlinear_mode = true;
   } echo_model;
 
   struct ComfortNoise {
@@ -189,6 +194,12 @@ struct RTC_EXPORT EchoCanceller3Config {
                                    2.0f,
                                    0.25f);
 
+    bool lf_smoothing_during_initial_phase = true;
+    int last_permanent_lf_smoothing_band = 0;
+    int last_lf_smoothing_band = 5;
+    int last_lf_band = 5;
+    int first_hf_band = 8;
+
     struct DominantNearendDetection {
       float enr_threshold = .25f;
       float enr_exit_threshold = 10.f;
@@ -215,11 +226,12 @@ struct RTC_EXPORT EchoCanceller3Config {
     struct HighBandsSuppression {
       float enr_threshold = 1.f;
       float max_gain_during_echo = 1.f;
-      float anti_howling_activation_threshold = 25.f;
-      float anti_howling_gain = 0.01f;
+      float anti_howling_activation_threshold = 400.f;
+      float anti_howling_gain = 1.f;
     } high_bands_suppression;
 
     float floor_first_increase = 0.00001f;
+    bool conservative_hf_suppression = false;
   } suppressor;
 };
 }  // namespace webrtc

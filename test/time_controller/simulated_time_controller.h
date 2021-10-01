@@ -17,15 +17,15 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/sequence_checker.h"
 #include "api/test/time_controller.h"
 #include "api/units/timestamp.h"
 #include "modules/include/module.h"
 #include "modules/utility/include/process_thread.h"
-#include "rtc_base/critical_section.h"
 #include "rtc_base/fake_clock.h"
 #include "rtc_base/platform_thread_types.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/synchronization/yield_policy.h"
-#include "rtc_base/thread_checker.h"
 
 namespace webrtc {
 namespace sim_time_impl {
@@ -89,9 +89,9 @@ class SimulatedTimeControllerImpl : public TaskQueueFactory,
  private:
   const rtc::PlatformThreadId thread_id_;
   const std::unique_ptr<rtc::Thread> dummy_thread_ = rtc::Thread::Create();
-  rtc::CriticalSection time_lock_;
+  mutable Mutex time_lock_;
   Timestamp current_time_ RTC_GUARDED_BY(time_lock_);
-  rtc::CriticalSection lock_;
+  mutable Mutex lock_;
   std::vector<SimulatedSequenceRunner*> runners_ RTC_GUARDED_BY(lock_);
   // Used in RunReadyRunners() to keep track of ready runners that are to be
   // processed in a round robin fashion. the reason it's a member is so that
@@ -139,6 +139,17 @@ class GlobalSimulatedTimeController : public TimeController {
   rtc::Thread* GetMainThread() override;
 
   void AdvanceTime(TimeDelta duration) override;
+
+  // Makes the simulated time controller aware of a custom
+  // SimulatedSequenceRunner.
+  // TODO(bugs.webrtc.org/11581): remove method once the ModuleRtpRtcpImpl2 unit
+  // test stops using it.
+  void Register(sim_time_impl::SimulatedSequenceRunner* runner);
+  // Removes a previously installed custom SimulatedSequenceRunner from the
+  // simulated time controller.
+  // TODO(bugs.webrtc.org/11581): remove method once the ModuleRtpRtcpImpl2 unit
+  // test stops using it.
+  void Unregister(sim_time_impl::SimulatedSequenceRunner* runner);
 
  private:
   rtc::ScopedBaseFakeClock global_clock_;

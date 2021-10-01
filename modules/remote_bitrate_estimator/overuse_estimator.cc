@@ -16,7 +16,7 @@
 
 #include <algorithm>
 
-#include "modules/remote_bitrate_estimator/include/bwe_defines.h"
+#include "api/network_state_predictor.h"
 #include "modules/remote_bitrate_estimator/test/bwe_test_logging.h"
 #include "rtc_base/logging.h"
 
@@ -110,7 +110,7 @@ void OveruseEstimator::Update(int64_t t_delta,
   bool positive_semi_definite =
       E_[0][0] + E_[1][1] >= 0 &&
       E_[0][0] * E_[1][1] - E_[0][1] * E_[1][0] >= 0 && E_[0][0] >= 0;
-  assert(positive_semi_definite);
+  RTC_DCHECK(positive_semi_definite);
   if (!positive_semi_definite) {
     RTC_LOG(LS_ERROR)
         << "The over-use estimator's covariance matrix is no longer "

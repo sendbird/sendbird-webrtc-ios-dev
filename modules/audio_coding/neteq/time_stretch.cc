@@ -43,7 +43,7 @@ TimeStretch::ReturnCodes TimeStretch::Process(const int16_t* input,
     signal_len = input_len / num_channels_;
     signal_array.reset(new int16_t[signal_len]);
     signal = signal_array.get();
-    size_t j = master_channel_;
+    size_t j = kRefChannel;
     for (size_t i = 0; i < signal_len; ++i) {
       signal_array[i] = input[j];
       j += num_channels_;
@@ -66,7 +66,7 @@ TimeStretch::ReturnCodes TimeStretch::Process(const int16_t* input,
   DspHelper::PeakDetection(auto_correlation_, kCorrelationLen, kNumPeaks,
                            fs_mult_, &peak_index, &peak_value);
   // Assert that |peak_index| stays within boundaries.
-  assert(peak_index <= (2 * kCorrelationLen - 1) * fs_mult_);
+  RTC_DCHECK_LE(peak_index, (2 * kCorrelationLen - 1) * fs_mult_);
 
   // Compensate peak_index for displaced starting position. The displacement
   // happens in AutoCorrelation(). Here, |kMinLag| is in the down-sampled 4 kHz
@@ -74,8 +74,9 @@ TimeStretch::ReturnCodes TimeStretch::Process(const int16_t* input,
   // multiplication by fs_mult_ * 2.
   peak_index += kMinLag * fs_mult_ * 2;
   // Assert that |peak_index| stays within boundaries.
-  assert(peak_index >= static_cast<size_t>(20 * fs_mult_));
-  assert(peak_index <= 20 * fs_mult_ + (2 * kCorrelationLen - 1) * fs_mult_);
+  RTC_DCHECK_GE(peak_index, static_cast<size_t>(20 * fs_mult_));
+  RTC_DCHECK_LE(peak_index,
+                20 * fs_mult_ + (2 * kCorrelationLen - 1) * fs_mult_);
 
   // Calculate scaling to ensure that |peak_index| samples can be square-summed
   // without overflowing.
@@ -187,7 +188,7 @@ bool TimeStretch::SpeechDetection(int32_t vec1_energy,
       (static_cast<int64_t>(vec1_energy) + vec2_energy) / 16);
   int32_t right_side;
   if (background_noise_.initialized()) {
-    right_side = background_noise_.Energy(master_channel_);
+    right_side = background_noise_.Energy(kRefChannel);
   } else {
     // If noise parameters have not been estimated, use a fixed threshold.
     right_side = 75000;

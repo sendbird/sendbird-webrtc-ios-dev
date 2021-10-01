@@ -28,16 +28,13 @@ class MockVideoStreamDecoderCallbacks
     : public VideoStreamDecoderInterface::Callbacks {
  public:
   MOCK_METHOD(void, OnNonDecodableState, (), (override));
-  MOCK_METHOD(void,
-              OnContinuousUntil,
-              (const video_coding::VideoLayerFrameId& key),
-              (override));
-  MOCK_METHOD(void,
-              OnDecodedFrame,
-              (VideoFrame decodedImage,
-               absl::optional<int> decode_time_ms,
-               absl::optional<int> qp),
-              (override));
+  MOCK_METHOD(void, OnContinuousUntil, (int64_t frame_id), (override));
+  MOCK_METHOD(
+      void,
+      OnDecodedFrame,
+      (VideoFrame frame,
+       const VideoStreamDecoderInterface::Callbacks::FrameInfo& frame_info),
+      (override));
 };
 
 class StubVideoDecoder : public VideoDecoder {
@@ -130,7 +127,7 @@ class FakeVideoDecoderFactory : public VideoDecoderFactory {
   NiceMock<StubVideoDecoder> av1_decoder_;
 };
 
-class FakeEncodedFrame : public video_coding::EncodedFrame {
+class FakeEncodedFrame : public EncodedFrame {
  public:
   int64_t ReceivedTime() const override { return 0; }
   int64_t RenderTime() const override { return 0; }
@@ -149,7 +146,7 @@ class FrameBuilder {
   }
 
   FrameBuilder& WithPictureId(int picture_id) {
-    frame_->id.picture_id = picture_id;
+    frame_->SetId(picture_id);
     return *this;
   }
 

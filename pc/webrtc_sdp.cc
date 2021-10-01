@@ -15,6 +15,7 @@
 #include <stdio.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <set>
@@ -24,29 +25,46 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "absl/strings/match.h"
 #include "api/candidate.h"
 #include "api/crypto_params.h"
 #include "api/jsep_ice_candidate.h"
 #include "api/jsep_session_description.h"
 #include "api/media_types.h"
 // for RtpExtension
+#include "absl/types/optional.h"
+#include "api/rtc_error.h"
 #include "api/rtp_parameters.h"
+#include "api/rtp_transceiver_direction.h"
 #include "media/base/codec.h"
 #include "media/base/media_constants.h"
+#include "media/base/rid_description.h"
 #include "media/base/rtp_utils.h"
+#include "media/base/stream_params.h"
 #include "media/sctp/sctp_transport_internal.h"
+#include "p2p/base/candidate_pair_interface.h"
+#include "p2p/base/ice_transport_internal.h"
 #include "p2p/base/p2p_constants.h"
 #include "p2p/base/port.h"
+#include "p2p/base/port_interface.h"
+#include "p2p/base/transport_description.h"
+#include "p2p/base/transport_info.h"
+#include "pc/media_protocol_names.h"
 #include "pc/media_session.h"
 #include "pc/sdp_serializer.h"
+#include "pc/session_description.h"
+#include "pc/simulcast_description.h"
 #include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/helpers.h"
+#include "rtc_base/ip_address.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/message_digest.h"
+#include "rtc_base/net_helper.h"
+#include "rtc_base/network_constants.h"
+#include "rtc_base/socket_address.h"
+#include "rtc_base/ssl_fingerprint.h"
+#include "rtc_base/string_encode.h"
 #include "rtc_base/string_utils.h"
 #include "rtc_base/strings/string_builder.h"
-#include "rtc_base/third_party/base64/base64.h"
 
 using cricket::AudioContentDescription;
 using cricket::Candidate;
@@ -55,14 +73,15 @@ using cricket::ContentInfo;
 using cricket::CryptoParams;
 using cricket::ICE_CANDIDATE_COMPONENT_RTCP;
 using cricket::ICE_CANDIDATE_COMPONENT_RTP;
+using cricket::kApplicationSpecificBandwidth;
 using cricket::kCodecParamMaxPTime;
 using cricket::kCodecParamMinPTime;
 using cricket::kCodecParamPTime;
+using cricket::kTransportSpecificBandwidth;
 using cricket::MediaContentDescription;
 using cricket::MediaProtocolType;
 using cricket::MediaType;
 using cricket::RidDescription;
-using cricket::RtpDataContentDescription;
 using cricket::RtpHeaderExtensions;
 using cricket::SctpDataContentDescription;
 using cricket::SimulcastDescription;
@@ -73,12 +92,9 @@ using cricket::StreamParams;
 using cricket::StreamParamsVec;
 using cricket::TransportDescription;
 using cricket::TransportInfo;
+using cricket::UnsupportedContentDescription;
 using cricket::VideoContentDescription;
 using rtc::SocketAddress;
-
-namespace cricket {
-class SessionDescription;
-}
 
 // TODO(deadbeef): Switch to using anonymous namespace rather than declaring
 // everything "static".
@@ -90,6 +106,15 @@ namespace webrtc {
 // the form:
 // <type>=<value>
 // where <type> MUST be exactly one case-significant character.
+
+// Legal characters in a <token> value (RFC 4566 section 9):
+//    token-char =          %x21 / %x23-27 / %x2A-2B / %x2D-2E / %x30-39
+//                         / %x41-5A / %x5E-7E
+static const char kLegalTokenCharacters[] =
+    "!#$%&'*+-."                          // %x21, %x23-27, %x2A-2B, %x2D-2E
+    "0123456789"                          // %x30-39
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"          // %x41-5A
+    "^_`abcdefghijklmnopqrstuvwxyz{|}~";  // %x5E-7E
 static const int kLinePrefixLength = 2;  // Length of <type>=
 static const char kLineTypeVersion = 'v';
 static const char kLineTypeOrigin = 'o';
@@ -224,16 +249,8 @@ static const char kMediaPortRejected[] = "0";
 // Use IPV4 per default.
 static const char kDummyAddress[] = "0.0.0.0";
 static const char kDummyPort[] = "9";
-// RFC 3556
-static const char kApplicationSpecificMaximum[] = "AS";
 
 static const char kDefaultSctpmapProtocol[] = "webrtc-datachannel";
-
-// This is a non-standardized setting for plugin transports.
-static const char kOpaqueTransportParametersLine[] = "x-opaque";
-
-// This is a non-standardized setting for plugin transports.
-static const char kAltProtocolLine[] = "x-alt-protocol";
 
 // RTP payload type is in the 0-127 range. Use -1 to indicate "all" payload
 // types.
@@ -282,9 +299,6 @@ static bool ParseSessionDescription(const std::string& message,
                                     rtc::SocketAddress* connection_addr,
                                     cricket::SessionDescription* desc,
                                     SdpParseError* error);
-static bool ParseGroupAttribute(const std::string& line,
-                                cricket::SessionDescription* desc,
-                                SdpParseError* error);
 static bool ParseMediaDescription(
     const std::string& message,
     const TransportDescription& session_td,
@@ -308,6 +322,9 @@ static bool ParseContent(
     TransportDescription* transport,
     std::vector<std::unique_ptr<JsepIceCandidate>>* candidates,
     SdpParseError* error);
+static bool ParseGroupAttribute(const std::string& line,
+                                cricket::SessionDescription* desc,
+                                SdpParseError* error);
 static bool ParseSsrcAttribute(const std::string& line,
                                SsrcInfoVec* ssrc_infos,
                                int* msid_signaling,
@@ -523,25 +540,6 @@ static void InitAttrLine(const std::string& attribute, rtc::StringBuilder* os) {
   InitLine(kLineTypeAttributes, attribute, os);
 }
 
-// Adds an x-otp SDP attribute line based on opaque transport parameters.
-static void AddOpaqueTransportLine(
-    const cricket::OpaqueTransportParameters params,
-    std::string* message) {
-  rtc::StringBuilder os;
-  InitAttrLine(kOpaqueTransportParametersLine, &os);
-  os << kSdpDelimiterColon << params.protocol << kSdpDelimiterColon
-     << rtc::Base64::Encode(params.parameters);
-  AddLine(os.str(), message);
-}
-
-static void AddAltProtocolLine(const std::string& protocol,
-                               std::string* message) {
-  rtc::StringBuilder os;
-  InitAttrLine(kAltProtocolLine, &os);
-  os << kSdpDelimiterColon << protocol;
-  AddLine(os.str(), message);
-}
-
 // Writes a SDP attribute line based on |attribute| and |value| to |message|.
 static void AddAttributeLine(const std::string& attribute,
                              int value,
@@ -625,6 +623,22 @@ static bool GetValue(const std::string& message,
       leftpart.compare(leftpart.length() - attribute.length(),
                        attribute.length(), attribute) != 0) {
     return ParseFailedGetValue(message, attribute, error);
+  }
+  return true;
+}
+
+// Get a single [token] from <attribute>:<token>
+static bool GetSingleTokenValue(const std::string& message,
+                                const std::string& attribute,
+                                std::string* value,
+                                SdpParseError* error) {
+  if (!GetValue(message, attribute, value, error)) {
+    return false;
+  }
+  if (strspn(value->c_str(), kLegalTokenCharacters) != value->size()) {
+    rtc::StringBuilder description;
+    description << "Illegal character found in the value of " << attribute;
+    return ParseFailed(message, description.str(), error);
   }
   return true;
 }
@@ -886,11 +900,11 @@ std::string SdpSerialize(const JsepSessionDescription& jdesc) {
   // Time Description.
   AddLine(kTimeDescription, &message);
 
-  // Group
-  if (desc->HasGroup(cricket::GROUP_TYPE_BUNDLE)) {
+  // BUNDLE Groups
+  std::vector<const cricket::ContentGroup*> groups =
+      desc->GetGroupsByName(cricket::GROUP_TYPE_BUNDLE);
+  for (const cricket::ContentGroup* group : groups) {
     std::string group_line = kAttrGroup;
-    const cricket::ContentGroup* group =
-        desc->GetGroupByName(cricket::GROUP_TYPE_BUNDLE);
     RTC_DCHECK(group != NULL);
     for (const std::string& content_name : group->content_names()) {
       group_line.append(" ");
@@ -1371,30 +1385,24 @@ void BuildMediaDescription(const ContentInfo* content_info,
   // RFC 4566
   // m=<media> <port> <proto> <fmt>
   // fmt is a list of payload type numbers that MAY be used in the session.
-  const char* type = NULL;
-  if (media_type == cricket::MEDIA_TYPE_AUDIO)
-    type = kMediaTypeAudio;
-  else if (media_type == cricket::MEDIA_TYPE_VIDEO)
-    type = kMediaTypeVideo;
-  else if (media_type == cricket::MEDIA_TYPE_DATA)
-    type = kMediaTypeData;
-  else
-    RTC_NOTREACHED();
-
+  std::string type;
   std::string fmt;
   if (media_type == cricket::MEDIA_TYPE_VIDEO) {
+    type = kMediaTypeVideo;
     const VideoContentDescription* video_desc = media_desc->as_video();
     for (const cricket::VideoCodec& codec : video_desc->codecs()) {
       fmt.append(" ");
       fmt.append(rtc::ToString(codec.id));
     }
   } else if (media_type == cricket::MEDIA_TYPE_AUDIO) {
+    type = kMediaTypeAudio;
     const AudioContentDescription* audio_desc = media_desc->as_audio();
     for (const cricket::AudioCodec& codec : audio_desc->codecs()) {
       fmt.append(" ");
       fmt.append(rtc::ToString(codec.id));
     }
   } else if (media_type == cricket::MEDIA_TYPE_DATA) {
+    type = kMediaTypeData;
     const cricket::SctpDataContentDescription* sctp_data_desc =
         media_desc->as_sctp();
     if (sctp_data_desc) {
@@ -1406,13 +1414,14 @@ void BuildMediaDescription(const ContentInfo* content_info,
         fmt.append(kDefaultSctpmapProtocol);
       }
     } else {
-      const RtpDataContentDescription* rtp_data_desc =
-          media_desc->as_rtp_data();
-      for (const cricket::RtpDataCodec& codec : rtp_data_desc->codecs()) {
-        fmt.append(" ");
-        fmt.append(rtc::ToString(codec.id));
-      }
+      RTC_NOTREACHED() << "Data description without SCTP";
     }
+  } else if (media_type == cricket::MEDIA_TYPE_UNSUPPORTED) {
+    const UnsupportedContentDescription* unsupported_desc =
+        media_desc->as_unsupported();
+    type = unsupported_desc->media_type();
+  } else {
+    RTC_NOTREACHED();
   }
   // The fmt must never be empty. If no codecs are found, set the fmt attribute
   // to 0.
@@ -1461,10 +1470,18 @@ void BuildMediaDescription(const ContentInfo* content_info,
   AddLine(os.str(), message);
 
   // RFC 4566
-  // b=AS:<bandwidth>
-  if (media_desc->bandwidth() >= 1000) {
-    InitLine(kLineTypeSessionBandwidth, kApplicationSpecificMaximum, &os);
-    os << kSdpDelimiterColon << (media_desc->bandwidth() / 1000);
+  // b=AS:<bandwidth> or
+  // b=TIAS:<bandwidth>
+  int bandwidth = media_desc->bandwidth();
+  std::string bandwidth_type = media_desc->bandwidth_type();
+  if (bandwidth_type == kApplicationSpecificBandwidth && bandwidth >= 1000) {
+    InitLine(kLineTypeSessionBandwidth, bandwidth_type, &os);
+    bandwidth /= 1000;
+    os << kSdpDelimiterColon << bandwidth;
+    AddLine(os.str(), message);
+  } else if (bandwidth_type == kTransportSpecificBandwidth && bandwidth > 0) {
+    InitLine(kLineTypeSessionBandwidth, bandwidth_type, &os);
+    os << kSdpDelimiterColon << bandwidth;
     AddLine(os.str(), message);
   }
 
@@ -1532,15 +1549,6 @@ void BuildMediaDescription(const ContentInfo* content_info,
         AddLine(os.str(), message);
       }
     }
-
-    if (transport_info->description.opaque_parameters) {
-      AddOpaqueTransportLine(*transport_info->description.opaque_parameters,
-                             message);
-    }
-  }
-
-  if (media_desc->alt_protocol()) {
-    AddAltProtocolLine(*media_desc->alt_protocol(), message);
   }
 
   // RFC 3388
@@ -1594,6 +1602,8 @@ void BuildRtpContentAttributes(const MediaContentDescription* media_desc,
   // RFC 3264
   // a=sendrecv || a=sendonly || a=sendrecv || a=inactive
   switch (media_desc->direction()) {
+    // Special case that for sdp purposes should be treated same as inactive.
+    case RtpTransceiverDirection::kStopped:
     case RtpTransceiverDirection::kInactive:
       InitAttrLine(kAttributeInactive, &os);
       break;
@@ -1606,9 +1616,7 @@ void BuildRtpContentAttributes(const MediaContentDescription* media_desc,
     case RtpTransceiverDirection::kSendRecv:
       InitAttrLine(kAttributeSendRecv, &os);
       break;
-    case RtpTransceiverDirection::kStopped:
     default:
-      // kStopped shouldn't be used in signalling.
       RTC_NOTREACHED();
       InitAttrLine(kAttributeSendRecv, &os);
       break;
@@ -1796,8 +1804,13 @@ void WriteRtcpFbHeader(int payload_type, rtc::StringBuilder* os) {
 void WriteFmtpParameter(const std::string& parameter_name,
                         const std::string& parameter_value,
                         rtc::StringBuilder* os) {
-  // fmtp parameters: |parameter_name|=|parameter_value|
-  *os << parameter_name << kSdpDelimiterEqual << parameter_value;
+  if (parameter_name == "") {
+    // RFC 2198 and RFC 4733 don't use key-value pairs.
+    *os << parameter_value;
+  } else {
+    // fmtp parameters: |parameter_name|=|parameter_value|
+    *os << parameter_name << kSdpDelimiterEqual << parameter_value;
+  }
 }
 
 bool IsFmtpParam(const std::string& name) {
@@ -1953,19 +1966,6 @@ void BuildRtpMap(const MediaContentDescription* media_desc,
       ptime = std::max(ptime, max_minptime);
       AddAttributeLine(kCodecParamPTime, ptime, message);
     }
-  } else if (media_type == cricket::MEDIA_TYPE_DATA) {
-    if (media_desc->as_rtp_data()) {
-      for (const cricket::RtpDataCodec& codec :
-           media_desc->as_rtp_data()->codecs()) {
-        // RFC 4566
-        // a=rtpmap:<payload type> <encoding name>/<clock rate>
-        // [/<encodingparameters>]
-        InitAttrLine(kAttributeRtpmap, &os);
-        os << kSdpDelimiterColon << codec.id << " " << codec.name << "/"
-           << codec.clockrate;
-        AddLine(os.str(), message);
-      }
-    }
   }
 }
 
@@ -2103,32 +2103,6 @@ bool ParseConnectionData(const std::string& line,
         error);
   }
   return true;
-}
-
-bool ParseOpaqueTransportLine(const std::string& line,
-                              std::string* protocol,
-                              std::string* transport_parameters,
-                              SdpParseError* error) {
-  std::string value;
-  if (!GetValue(line, kOpaqueTransportParametersLine, &value, error)) {
-    return false;
-  }
-  std::string tmp_parameters;
-  if (!rtc::tokenize_first(value, kSdpDelimiterColonChar, protocol,
-                           &tmp_parameters)) {
-    return ParseFailedGetValue(line, kOpaqueTransportParametersLine, error);
-  }
-  if (!rtc::Base64::Decode(tmp_parameters, rtc::Base64::DO_STRICT,
-                           transport_parameters, nullptr)) {
-    return ParseFailedGetValue(line, kOpaqueTransportParametersLine, error);
-  }
-  return true;
-}
-
-bool ParseAltProtocolLine(const std::string& line,
-                          std::string* protocol,
-                          SdpParseError* error) {
-  return GetValue(line, kAltProtocolLine, protocol, error);
 }
 
 bool ParseSessionDescription(const std::string& message,
@@ -2319,12 +2293,6 @@ static bool ParseFingerprintAttribute(
     const std::string& line,
     std::unique_ptr<rtc::SSLFingerprint>* fingerprint,
     SdpParseError* error) {
-  if (!IsLineType(line, kLineTypeAttributes) ||
-      !HasAttribute(line, kAttributeFingerprint)) {
-    return ParseFailedExpectLine(line, 0, kLineTypeAttributes,
-                                 kAttributeFingerprint, error);
-  }
-
   std::vector<std::string> fields;
   rtc::split(line.substr(kLinePrefixLength), kSdpDelimiterSpaceChar, &fields);
   const size_t expected_fields = 2;
@@ -2622,6 +2590,7 @@ static std::unique_ptr<C> ParseContentDescription(
     std::vector<std::unique_ptr<JsepIceCandidate>>* candidates,
     webrtc::SdpParseError* error) {
   auto media_desc = std::make_unique<C>();
+  media_desc->set_extmap_allow_mixed_enum(MediaContentDescription::kNo);
   if (!ParseContent(message, media_type, mline_index, protocol, payload_types,
                     pos, content_name, bundle_only, msid_signaling,
                     media_desc.get(), transport, candidates, error)) {
@@ -2685,18 +2654,12 @@ bool ParseMediaDescription(
     if (!rtc::FromString<int>(fields[1], &port) || !IsValidPort(port)) {
       return ParseFailed(line, "The port number is invalid", error);
     }
-    std::string protocol = fields[2];
+    const std::string& protocol = fields[2];
 
     // <fmt>
     std::vector<int> payload_types;
     if (cricket::IsRtpProtocol(protocol)) {
       for (size_t j = 3; j < fields.size(); ++j) {
-        // TODO(wu): Remove when below bug is fixed.
-        // https://bugzilla.mozilla.org/show_bug.cgi?id=996329
-        if (fields[j].empty() && j == fields.size() - 1) {
-          continue;
-        }
-
         int pl = 0;
         if (!GetPayloadTypeFromString(line, fields[j], &pl, error)) {
           return false;
@@ -2716,17 +2679,22 @@ bool ParseMediaDescription(
     std::string content_name;
     bool bundle_only = false;
     int section_msid_signaling = 0;
-    if (HasAttribute(line, kMediaTypeVideo)) {
+    const std::string& media_type = fields[0];
+    if ((media_type == kMediaTypeVideo || media_type == kMediaTypeAudio) &&
+        !cricket::IsRtpProtocol(protocol)) {
+      return ParseFailed(line, "Unsupported protocol for media type", error);
+    }
+    if (media_type == kMediaTypeVideo) {
       content = ParseContentDescription<VideoContentDescription>(
           message, cricket::MEDIA_TYPE_VIDEO, mline_index, protocol,
           payload_types, pos, &content_name, &bundle_only,
           &section_msid_signaling, &transport, candidates, error);
-    } else if (HasAttribute(line, kMediaTypeAudio)) {
+    } else if (media_type == kMediaTypeAudio) {
       content = ParseContentDescription<AudioContentDescription>(
           message, cricket::MEDIA_TYPE_AUDIO, mline_index, protocol,
           payload_types, pos, &content_name, &bundle_only,
           &section_msid_signaling, &transport, candidates, error);
-    } else if (HasAttribute(line, kMediaTypeData)) {
+    } else if (media_type == kMediaTypeData) {
       if (cricket::IsDtlsSctp(protocol)) {
         // The draft-03 format is:
         // m=application <port> DTLS/SCTP <sctp-port>...
@@ -2753,17 +2721,21 @@ bool ParseMediaDescription(
         data_desc->set_protocol(protocol);
         content = std::move(data_desc);
       } else {
-        // RTP
-        std::unique_ptr<RtpDataContentDescription> data_desc =
-            ParseContentDescription<RtpDataContentDescription>(
-                message, cricket::MEDIA_TYPE_DATA, mline_index, protocol,
-                payload_types, pos, &content_name, &bundle_only,
-                &section_msid_signaling, &transport, candidates, error);
-        content = std::move(data_desc);
+        return ParseFailed(line, "Unsupported protocol for media type", error);
       }
     } else {
       RTC_LOG(LS_WARNING) << "Unsupported media type: " << line;
-      continue;
+      auto unsupported_desc =
+          std::make_unique<UnsupportedContentDescription>(media_type);
+      if (!ParseContent(message, cricket::MEDIA_TYPE_UNSUPPORTED, mline_index,
+                        protocol, payload_types, pos, &content_name,
+                        &bundle_only, &section_msid_signaling,
+                        unsupported_desc.get(), &transport, candidates,
+                        error)) {
+        return false;
+      }
+      unsupported_desc->set_protocol(protocol);
+      content = std::move(unsupported_desc);
     }
     if (!content.get()) {
       // ParseContentDescription returns NULL if failed.
@@ -2791,7 +2763,9 @@ bool ParseMediaDescription(
       content_rejected = port_rejected;
     }
 
-    if (cricket::IsRtpProtocol(protocol) && !content->as_sctp()) {
+    if (content->as_unsupported()) {
+      content_rejected = true;
+    } else if (cricket::IsRtpProtocol(protocol) && !content->as_sctp()) {
       content->set_protocol(protocol);
       // Set the extmap.
       if (!session_extmaps.empty() &&
@@ -3043,45 +3017,46 @@ bool ParseContent(const std::string& message,
     // b=* (zero or more bandwidth information lines)
     if (IsLineType(line, kLineTypeSessionBandwidth)) {
       std::string bandwidth;
-      if (HasAttribute(line, kApplicationSpecificMaximum)) {
-        if (!GetValue(line, kApplicationSpecificMaximum, &bandwidth, error)) {
-          return false;
-        } else {
-          int b = 0;
-          if (!GetValueFromString(line, bandwidth, &b, error)) {
-            return false;
-          }
-          // TODO(deadbeef): Historically, applications may be setting a value
-          // of -1 to mean "unset any previously set bandwidth limit", even
-          // though ommitting the "b=AS" entirely will do just that. Once we've
-          // transitioned applications to doing the right thing, it would be
-          // better to treat this as a hard error instead of just ignoring it.
-          if (b == -1) {
-            RTC_LOG(LS_WARNING)
-                << "Ignoring \"b=AS:-1\"; will be treated as \"no "
-                   "bandwidth limit\".";
-            continue;
-          }
-          if (b < 0) {
-            return ParseFailed(line, "b=AS value can't be negative.", error);
-          }
-          // We should never use more than the default bandwidth for RTP-based
-          // data channels. Don't allow SDP to set the bandwidth, because
-          // that would give JS the opportunity to "break the Internet".
-          // See: https://code.google.com/p/chromium/issues/detail?id=280726
-          if (media_type == cricket::MEDIA_TYPE_DATA &&
-              cricket::IsRtpProtocol(protocol) &&
-              b > cricket::kDataMaxBandwidth / 1000) {
-            rtc::StringBuilder description;
-            description << "RTP-based data channels may not send more than "
-                        << cricket::kDataMaxBandwidth / 1000 << "kbps.";
-            return ParseFailed(line, description.str(), error);
-          }
-          // Prevent integer overflow.
-          b = std::min(b, INT_MAX / 1000);
-          media_desc->set_bandwidth(b * 1000);
-        }
+      std::string bandwidth_type;
+      if (!rtc::tokenize_first(line.substr(kLinePrefixLength),
+                               kSdpDelimiterColonChar, &bandwidth_type,
+                               &bandwidth)) {
+        return ParseFailed(
+            line,
+            "b= syntax error, does not match b=<modifier>:<bandwidth-value>.",
+            error);
       }
+      if (!(bandwidth_type == kApplicationSpecificBandwidth ||
+            bandwidth_type == kTransportSpecificBandwidth)) {
+        // Ignore unknown bandwidth types.
+        continue;
+      }
+      int b = 0;
+      if (!GetValueFromString(line, bandwidth, &b, error)) {
+        return false;
+      }
+      // TODO(deadbeef): Historically, applications may be setting a value
+      // of -1 to mean "unset any previously set bandwidth limit", even
+      // though ommitting the "b=AS" entirely will do just that. Once we've
+      // transitioned applications to doing the right thing, it would be
+      // better to treat this as a hard error instead of just ignoring it.
+      if (bandwidth_type == kApplicationSpecificBandwidth && b == -1) {
+        RTC_LOG(LS_WARNING) << "Ignoring \"b=AS:-1\"; will be treated as \"no "
+                               "bandwidth limit\".";
+        continue;
+      }
+      if (b < 0) {
+        return ParseFailed(
+            line, "b=" + bandwidth_type + " value can't be negative.", error);
+      }
+      // Convert values. Prevent integer overflow.
+      if (bandwidth_type == kApplicationSpecificBandwidth) {
+        b = std::min(b, INT_MAX / 1000) * 1000;
+      } else {
+        b = std::min(b, INT_MAX);
+      }
+      media_desc->set_bandwidth(b);
+      media_desc->set_bandwidth_type(bandwidth_type);
       continue;
     }
 
@@ -3097,7 +3072,7 @@ bool ParseContent(const std::string& message,
 
     if (!IsLineType(line, kLineTypeAttributes)) {
       // TODO(deadbeef): Handle other lines if needed.
-      RTC_LOG(LS_INFO) << "Ignored line: " << line;
+      RTC_LOG(LS_VERBOSE) << "Ignored line: " << line;
       continue;
     }
 
@@ -3107,7 +3082,7 @@ bool ParseContent(const std::string& message,
       // mid-attribute      = "a=mid:" identification-tag
       // identification-tag = token
       // Use the mid identification-tag as the content name.
-      if (!GetValue(line, kAttributeMid, &mline_id, error)) {
+      if (!GetSingleTokenValue(line, kAttributeMid, &mline_id, error)) {
         return false;
       }
       *content_name = mline_id;
@@ -3137,19 +3112,6 @@ bool ParseContent(const std::string& message,
       if (!ParseIceOptions(line, &transport->transport_options, error)) {
         return false;
       }
-    } else if (HasAttribute(line, kOpaqueTransportParametersLine)) {
-      transport->opaque_parameters = cricket::OpaqueTransportParameters();
-      if (!ParseOpaqueTransportLine(
-              line, &transport->opaque_parameters->protocol,
-              &transport->opaque_parameters->parameters, error)) {
-        return false;
-      }
-    } else if (HasAttribute(line, kAltProtocolLine)) {
-      std::string alt_protocol;
-      if (!ParseAltProtocolLine(line, &alt_protocol, error)) {
-        return false;
-      }
-      media_desc->set_alt_protocol(alt_protocol);
     } else if (HasAttribute(line, kAttributeFmtp)) {
       if (!ParseFmtpAttributes(line, media_type, media_desc, error)) {
         return false;
@@ -3165,37 +3127,33 @@ bool ParseContent(const std::string& message,
         return false;
       }
     } else if (cricket::IsDtlsSctp(protocol) &&
-               HasAttribute(line, kAttributeSctpPort)) {
-      if (media_type != cricket::MEDIA_TYPE_DATA) {
-        return ParseFailed(
-            line, "sctp-port attribute found in non-data media description.",
-            error);
+               media_type == cricket::MEDIA_TYPE_DATA) {
+      //
+      // SCTP specific attributes
+      //
+      if (HasAttribute(line, kAttributeSctpPort)) {
+        if (media_desc->as_sctp()->use_sctpmap()) {
+          return ParseFailed(
+              line, "sctp-port attribute can't be used with sctpmap.", error);
+        }
+        int sctp_port;
+        if (!ParseSctpPort(line, &sctp_port, error)) {
+          return false;
+        }
+        media_desc->as_sctp()->set_port(sctp_port);
+      } else if (HasAttribute(line, kAttributeMaxMessageSize)) {
+        int max_message_size;
+        if (!ParseSctpMaxMessageSize(line, &max_message_size, error)) {
+          return false;
+        }
+        media_desc->as_sctp()->set_max_message_size(max_message_size);
+      } else if (HasAttribute(line, kAttributeSctpmap)) {
+        // Ignore a=sctpmap: from early versions of draft-ietf-mmusic-sctp-sdp
+        continue;
       }
-      if (media_desc->as_sctp()->use_sctpmap()) {
-        return ParseFailed(
-            line, "sctp-port attribute can't be used with sctpmap.", error);
-      }
-      int sctp_port;
-      if (!ParseSctpPort(line, &sctp_port, error)) {
-        return false;
-      }
-      media_desc->as_sctp()->set_port(sctp_port);
-    } else if (cricket::IsDtlsSctp(protocol) &&
-               HasAttribute(line, kAttributeMaxMessageSize)) {
-      if (media_type != cricket::MEDIA_TYPE_DATA) {
-        return ParseFailed(
-            line,
-            "max-message-size attribute found in non-data media description.",
-            error);
-      }
-      int max_message_size;
-      if (!ParseSctpMaxMessageSize(line, &max_message_size, error)) {
-        return false;
-      }
-      media_desc->as_sctp()->set_max_message_size(max_message_size);
     } else if (cricket::IsRtpProtocol(protocol)) {
       //
-      // RTP specific attrubtes
+      // RTP specific attributes
       //
       if (HasAttribute(line, kAttributeRtcpMux)) {
         media_desc->set_rtcp_mux(true);
@@ -3311,14 +3269,18 @@ bool ParseContent(const std::string& message,
         }
 
         simulcast = error_or_simulcast.value();
+      } else if (HasAttribute(line, kAttributeRtcp)) {
+        // Ignore and do not log a=rtcp line.
+        // JSEP  section 5.8.2 (media section parsing) says to ignore it.
+        continue;
       } else {
         // Unrecognized attribute in RTP protocol.
-        RTC_LOG(LS_INFO) << "Ignored line: " << line;
+        RTC_LOG(LS_VERBOSE) << "Ignored line: " << line;
         continue;
       }
     } else {
       // Only parse lines that we are interested of.
-      RTC_LOG(LS_INFO) << "Ignored line: " << line;
+      RTC_LOG(LS_VERBOSE) << "Ignored line: " << line;
       continue;
     }
   }
@@ -3667,11 +3629,6 @@ bool ParseRtpmapAttribute(const std::string& line,
     AudioContentDescription* audio_desc = media_desc->as_audio();
     UpdateCodec(payload_type, encoding_name, clock_rate, 0, channels,
                 audio_desc);
-  } else if (media_type == cricket::MEDIA_TYPE_DATA) {
-    RtpDataContentDescription* data_desc = media_desc->as_rtp_data();
-    if (data_desc) {
-      data_desc->AddCodec(cricket::RtpDataCodec(payload_type, encoding_name));
-    }
   }
   return true;
 }
@@ -3681,8 +3638,10 @@ bool ParseFmtpParam(const std::string& line,
                     std::string* value,
                     SdpParseError* error) {
   if (!rtc::tokenize_first(line, kSdpDelimiterEqualChar, parameter, value)) {
-    ParseFailed(line, "Unable to parse fmtp parameter. \'=\' missing.", error);
-    return false;
+    // Support for non-key-value lines like RFC 2198 or RFC 4733.
+    *parameter = "";
+    *value = line;
+    return true;
   }
   // a=fmtp:<payload_type> <param1>=<value1>; <param2>=<value2>; ...
   return true;
@@ -3700,7 +3659,7 @@ bool ParseFmtpAttributes(const std::string& line,
   std::string line_payload;
   std::string line_params;
 
-  // RFC 5576
+  // https://tools.ietf.org/html/rfc4566#section-6
   // a=fmtp:<format> <format specific parameters>
   // At least two fields, whereas the second one is any of the optional
   // parameters.
@@ -3729,16 +3688,14 @@ bool ParseFmtpAttributes(const std::string& line,
 
   cricket::CodecParameterMap codec_params;
   for (auto& iter : fields) {
-    if (iter.find(kSdpDelimiterEqual) == std::string::npos) {
-      // Only fmtps with equals are currently supported. Other fmtp types
-      // should be ignored. Unknown fmtps do not constitute an error.
-      continue;
-    }
-
     std::string name;
     std::string value;
     if (!ParseFmtpParam(rtc::string_trim(iter), &name, &value, error)) {
       return false;
+    }
+    if (codec_params.find(name) != codec_params.end()) {
+      RTC_LOG(LS_INFO) << "Overwriting duplicate fmtp parameter with key \""
+                       << name << "\".";
     }
     codec_params[name] = value;
   }

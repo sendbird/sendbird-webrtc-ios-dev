@@ -17,7 +17,6 @@
 
 #include "api/array_view.h"
 #include "api/video/video_content_type.h"
-#include "api/video/video_frame_marking.h"
 #include "api/video/video_rotation.h"
 #include "api/video/video_timing.h"
 #include "modules/rtp_rtcp/include/rtp_cvo.h"
@@ -132,7 +131,7 @@ bool RtpHeaderParser::RTCP() const {
 }
 
 bool RtpHeaderParser::ParseRtcp(RTPHeader* header) const {
-  assert(header != NULL);
+  RTC_DCHECK(header);
 
   const ptrdiff_t length = _ptrRTPDataEnd - _ptrRTPDataBegin;
   if (length < kRtcpMinParseLength) {
@@ -244,10 +243,6 @@ bool RtpHeaderParser::Parse(RTPHeader* header,
 
   header->extension.has_video_timing = false;
   header->extension.video_timing = {0u, 0u, 0u, 0u, 0u, 0u, false};
-
-  header->extension.has_frame_marking = false;
-  header->extension.frame_marking = {false, false,          false, false,
-                                     false, kNoTemporalIdx, 0,     0};
 
   if (X) {
     /* RTP header extension, RFC 3550.
@@ -368,6 +363,10 @@ void RtpHeaderParser::ParseOneByteExtensionHeader(
               ByteReader<int32_t, 3>::ReadBigEndian(ptr);
           header->extension.hasTransmissionTimeOffset = true;
           break;
+        }
+        case kRtpExtensionCsrcAudioLevel: {
+          RTC_LOG(LS_WARNING) << "Csrc audio level extension not supported";
+          return;
         }
         case kRtpExtensionAudioLevel: {
           if (len != 0) {
@@ -497,15 +496,10 @@ void RtpHeaderParser::ParseOneByteExtensionHeader(
                                       &header->extension.video_timing);
           break;
         }
-        case kRtpExtensionFrameMarking: {
-          if (!FrameMarkingExtension::Parse(rtc::MakeArrayView(ptr, len + 1),
-                                            &header->extension.frame_marking)) {
-            RTC_LOG(LS_WARNING) << "Incorrect frame marking len: " << len;
-            return;
-          }
-          header->extension.has_frame_marking = true;
+        case kRtpExtensionVideoLayersAllocation:
+          RTC_LOG(WARNING) << "VideoLayersAllocation extension unsupported by "
+                              "rtp header parser.";
           break;
-        }
         case kRtpExtensionRtpStreamId: {
           std::string name(reinterpret_cast<const char*>(ptr), len + 1);
           if (IsLegalRsidName(name)) {
@@ -545,6 +539,10 @@ void RtpHeaderParser::ParseOneByteExtensionHeader(
         case kRtpExtensionInbandComfortNoise:
           RTC_LOG(WARNING) << "Inband comfort noise extension unsupported by "
                               "rtp header parser.";
+          break;
+        case kRtpExtensionVideoFrameTrackingId:
+          RTC_LOG(WARNING)
+              << "VideoFrameTrackingId unsupported by rtp header parser.";
           break;
         case kRtpExtensionNone:
         case kRtpExtensionNumberOfExtensions: {

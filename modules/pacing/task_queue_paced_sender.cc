@@ -17,6 +17,7 @@
 #include "rtc_base/event.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/task_utils/to_queued_task.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 namespace {
@@ -31,16 +32,15 @@ constexpr TimeDelta kMinTimeBetweenStatsUpdates = TimeDelta::Millis(1);
 
 TaskQueuePacedSender::TaskQueuePacedSender(
     Clock* clock,
-    PacketRouter* packet_router,
+    PacingController::PacketSender* packet_sender,
     RtcEventLog* event_log,
     const WebRtcKeyValueConfig* field_trials,
     TaskQueueFactory* task_queue_factory,
     TimeDelta hold_back_window)
     : clock_(clock),
       hold_back_window_(hold_back_window),
-      packet_router_(packet_router),
       pacing_controller_(clock,
-                         static_cast<PacingController::PacketSender*>(this),
+                         packet_sender,
                          event_log,
                          field_trials,
                          PacingController::ProcessMode::kDynamic),
@@ -59,6 +59,14 @@ TaskQueuePacedSender::~TaskQueuePacedSender() {
   task_queue_.PostTask([&]() {
     RTC_DCHECK_RUN_ON(&task_queue_);
     is_shutdown_ = true;
+  });
+}
+
+void TaskQueuePacedSender::EnsureStarted() {
+  task_queue_.PostTask([this]() {
+    RTC_DCHECK_RUN_ON(&task_queue_);
+    is_started_ = true;
+    MaybeProcessPackets(Timestamp::MinusInfinity());
   });
 }
 
@@ -122,9 +130,21 @@ void TaskQueuePacedSender::SetPacingRates(DataRate pacing_rate,
 
 void TaskQueuePacedSender::EnqueuePackets(
     std::vector<std::unique_ptr<RtpPacketToSend>> packets) {
+#if RTC_TRACE_EVENTS_ENABLED
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("webrtc"),
+               "TaskQueuePacedSender::EnqueuePackets");
+  for (auto& packet : packets) {
+    TRACE_EVENT2(TRACE_DISABLED_BY_DEFAULT("webrtc"),
+                 "TaskQueuePacedSender::EnqueuePackets::Loop",
+                 "sequence_number", packet->SequenceNumber(), "rtp_timestamp",
+                 packet->Timestamp());
+  }
+#endif
+
   task_queue_.PostTask([this, packets_ = std::move(packets)]() mutable {
     RTC_DCHECK_RUN_ON(&task_queue_);
     for (auto& packet : packets_) {
+      RTC_DCHECK_GE(packet->capture_time_ms(), 0);
       pacing_controller_.EnqueuePacket(std::move(packet));
     }
     MaybeProcessPackets(Timestamp::MinusInfinity());
@@ -176,11 +196,16 @@ TimeDelta TaskQueuePacedSender::OldestPacketWaitTime() const {
   return GetStats().oldest_packet_wait_time;
 }
 
+void TaskQueuePacedSender::OnStatsUpdated(const Stats& stats) {
+  MutexLock lock(&stats_mutex_);
+  current_stats_ = stats;
+}
+
 void TaskQueuePacedSender::MaybeProcessPackets(
     Timestamp scheduled_process_time) {
   RTC_DCHECK_RUN_ON(&task_queue_);
 
-  if (is_shutdown_) {
+  if (is_shutdown_ || !is_started_) {
     return;
   }
 
@@ -202,78 +227,102 @@ void TaskQueuePacedSender::MaybeProcessPackets(
     next_process_time = pacing_controller_.NextSendTime();
   }
 
-  const TimeDelta min_sleep = pacing_controller_.IsProbing()
-                                  ? PacingController::kMinSleepTime
-                                  : hold_back_window_;
-  next_process_time = std::max(now + min_sleep, next_process_time);
+  absl::optional<TimeDelta> time_to_next_process;
+  if (pacing_controller_.IsProbing() &&
+      next_process_time != next_process_time_) {
+    // If we're probing and there isn't already a wakeup scheduled for the next
+    // process time, always post a task and just round sleep time down to
+    // nearest millisecond.
+    if (next_process_time.IsMinusInfinity()) {
+      time_to_next_process = TimeDelta::Zero();
+    } else {
+      time_to_next_process =
+          std::max(TimeDelta::Zero(),
+                   (next_process_time - now).RoundDownTo(TimeDelta::Millis(1)));
+    }
+  } else if (next_process_time_.IsMinusInfinity() ||
+             next_process_time <= next_process_time_ - hold_back_window_) {
+    // Schedule a new task since there is none currently scheduled
+    // (|next_process_time_| is infinite), or the new process time is at least
+    // one holdback window earlier than whatever is currently scheduled.
+    time_to_next_process = std::max(next_process_time - now, hold_back_window_);
+  }
 
-  TimeDelta sleep_time = next_process_time - now;
-  if (next_process_time_.IsMinusInfinity() ||
-      next_process_time <=
-          next_process_time_ - PacingController::kMinSleepTime) {
+  if (time_to_next_process) {
+    // Set a new scheduled process time and post a delayed task.
     next_process_time_ = next_process_time;
 
     task_queue_.PostDelayedTask(
         [this, next_process_time]() { MaybeProcessPackets(next_process_time); },
-        sleep_time.ms<uint32_t>());
+        time_to_next_process->ms<uint32_t>());
   }
 
   MaybeUpdateStats(false);
 }
 
-std::vector<std::unique_ptr<RtpPacketToSend>>
-TaskQueuePacedSender::GeneratePadding(DataSize size) {
-  return packet_router_->GeneratePadding(size.bytes());
-}
-
-void TaskQueuePacedSender::SendRtpPacket(
-    std::unique_ptr<RtpPacketToSend> packet,
-    const PacedPacketInfo& cluster_info) {
-  packet_router_->SendPacket(std::move(packet), cluster_info);
-}
-
 void TaskQueuePacedSender::MaybeUpdateStats(bool is_scheduled_call) {
   if (is_shutdown_) {
+    if (is_scheduled_call) {
+      stats_update_scheduled_ = false;
+    }
     return;
   }
 
   Timestamp now = clock_->CurrentTime();
-  if (!is_scheduled_call &&
-      now - last_stats_time_ < kMinTimeBetweenStatsUpdates) {
-    // Too frequent unscheduled stats update, return early.
-    return;
+  if (is_scheduled_call) {
+    // Allow scheduled task to process packets to clear up an remaining debt
+    // level in an otherwise empty queue.
+    pacing_controller_.ProcessPackets();
+  } else {
+    if (now - last_stats_time_ < kMinTimeBetweenStatsUpdates) {
+      // Too frequent unscheduled stats update, return early.
+      return;
+    }
   }
 
-  rtc::CritScope cs(&stats_crit_);
-  current_stats_.expected_queue_time = pacing_controller_.ExpectedQueueTime();
-  current_stats_.first_sent_packet_time =
-      pacing_controller_.FirstSentPacketTime();
-  current_stats_.oldest_packet_wait_time =
-      pacing_controller_.OldestPacketWaitTime();
-  current_stats_.queue_size = pacing_controller_.QueueSizeData();
+  Stats new_stats;
+  new_stats.expected_queue_time = pacing_controller_.ExpectedQueueTime();
+  new_stats.first_sent_packet_time = pacing_controller_.FirstSentPacketTime();
+  new_stats.oldest_packet_wait_time = pacing_controller_.OldestPacketWaitTime();
+  new_stats.queue_size = pacing_controller_.QueueSizeData();
+  OnStatsUpdated(new_stats);
+
   last_stats_time_ = now;
 
   bool pacer_drained = pacing_controller_.QueueSizePackets() == 0 &&
                        pacing_controller_.CurrentBufferLevel().IsZero();
 
   // If there's anything interesting to get from the pacer and this is a
-  // scheduled call (no scheduled call in flight), post a new scheduled stats
+  // scheduled call (or no scheduled call in flight), post a new scheduled stats
   // update.
-  if (!pacer_drained && (is_scheduled_call || !stats_update_scheduled_)) {
-    task_queue_.PostDelayedTask(
-        [this]() {
-          RTC_DCHECK_RUN_ON(&task_queue_);
-          MaybeUpdateStats(true);
-        },
-        kMaxTimeBetweenStatsUpdates.ms<uint32_t>());
-    stats_update_scheduled_ = true;
-  } else {
+  if (!pacer_drained) {
+    if (!stats_update_scheduled_) {
+      // There is no pending delayed task to update stats, add one.
+      // Treat this call as being scheduled in order to bootstrap scheduling
+      // loop.
+      stats_update_scheduled_ = true;
+      is_scheduled_call = true;
+    }
+
+    // Only if on the scheduled call loop do we want to schedule a new delayed
+    // task.
+    if (is_scheduled_call) {
+      task_queue_.PostDelayedTask(
+          [this]() {
+            RTC_DCHECK_RUN_ON(&task_queue_);
+            MaybeUpdateStats(true);
+          },
+          kMaxTimeBetweenStatsUpdates.ms<uint32_t>());
+    }
+  } else if (is_scheduled_call) {
+    // This is a scheduled call, signing out since there's nothing interesting
+    // left to check.
     stats_update_scheduled_ = false;
   }
 }
 
 TaskQueuePacedSender::Stats TaskQueuePacedSender::GetStats() const {
-  rtc::CritScope cs(&stats_crit_);
+  MutexLock lock(&stats_mutex_);
   return current_stats_;
 }
 

@@ -15,6 +15,7 @@
 #include <windows.h>
 #include <wrl/client.h>
 
+#include "modules/desktop_capture/desktop_capturer.h"
 #include "modules/desktop_capture/desktop_geometry.h"
 #include "rtc_base/constructor_magic.h"
 
@@ -40,7 +41,7 @@ bool GetWindowRect(HWND window, DesktopRect* result);
 // This function should only be used by CroppingWindowCapturerWin. Instead a
 // DesktopRect CropWindowRect(const DesktopRect& rect)
 // should be added as a utility function to help CroppingWindowCapturerWin and
-// WindowCapturerWin to crop out the borders or shadow according to their
+// WindowCapturerWinGdi to crop out the borders or shadow according to their
 // scenarios. But this function is too generic and easy to be misused.
 bool GetCroppedWindowRect(HWND window,
                           bool avoid_cropping_border,
@@ -66,6 +67,33 @@ bool GetDcSize(HDC hdc, DesktopSize* size);
 // function returns false if native APIs fail.
 bool IsWindowMaximized(HWND window, bool* result);
 
+// Checks that the HWND is for a valid window, that window's visibility state is
+// visible, and that it is not minimized.
+bool IsWindowValidAndVisible(HWND window);
+
+// Checks if a window responds to a message within 50ms.
+bool IsWindowResponding(HWND window);
+
+enum GetWindowListFlags {
+  kNone = 0x00,
+  kIgnoreUntitled = 1 << 0,
+  kIgnoreUnresponsive = 1 << 1,
+  kIgnoreCurrentProcessWindows = 1 << 2,
+};
+
+// Retrieves the list of top-level windows on the screen.
+// Some windows will be ignored:
+// - Those that are invisible or minimized.
+// - Program Manager & Start menu.
+// - [with kIgnoreUntitled] windows with no title.
+// - [with kIgnoreUnresponsive] windows that are unresponsive.
+// - [with kIgnoreCurrentProcessWindows] windows owned by the current process.
+// - Any windows with extended styles that match |ex_style_filters|.
+// Returns false if native APIs failed.
+bool GetWindowList(int flags,
+                   DesktopCapturer::SourceList* windows,
+                   LONG ex_style_filters = 0);
+
 typedef HRESULT(WINAPI* DwmIsCompositionEnabledFunc)(BOOL* enabled);
 typedef HRESULT(WINAPI* DwmGetWindowAttributeFunc)(HWND hwnd,
                                                    DWORD flag,
@@ -84,6 +112,13 @@ class WindowCaptureHelperWin {
   bool IsWindowOnCurrentDesktop(HWND hwnd);
   bool IsWindowVisibleOnCurrentDesktop(HWND hwnd);
   bool IsWindowCloaked(HWND hwnd);
+
+  // The optional |ex_style_filters| parameter allows callers to provide
+  // extended window styles (e.g. WS_EX_TOOLWINDOW) and prevent windows that
+  // match from being included in |results|.
+  bool EnumerateCapturableWindows(DesktopCapturer::SourceList* results,
+                                  bool enumerate_current_process_windows,
+                                  LONG ex_style_filters = 0);
 
  private:
   HMODULE dwmapi_library_ = nullptr;

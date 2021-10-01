@@ -202,20 +202,33 @@ void decompressionOutputCallback(void *decoderRef,
   // CVPixelBuffers directly to the renderer.
   // TODO(tkchin): Maybe only set OpenGL/IOSurface keys if we know that that
   // we can pass CVPixelBuffers as native handles in decoder output.
+#if TARGET_OS_SIMULATOR
+  static size_t const attributesSize = 2;
+#else
   static size_t const attributesSize = 3;
-  CFTypeRef keys[attributesSize] = {
-#if defined(WEBRTC_IOS)
-    kCVPixelBufferOpenGLESCompatibilityKey,
-#elif defined(WEBRTC_MAC)
-    kCVPixelBufferOpenGLCompatibilityKey,
 #endif
-    kCVPixelBufferIOSurfacePropertiesKey,
-    kCVPixelBufferPixelFormatTypeKey
-  };
+
+  CFTypeRef keys[attributesSize] = {
+#if defined(WEBRTC_IOS) && TARGET_OS_MACCATALYST
+      kCVPixelBufferMetalCompatibilityKey,
+#elif defined(WEBRTC_IOS)
+      kCVPixelBufferOpenGLESCompatibilityKey,
+#elif defined(WEBRTC_MAC)
+      kCVPixelBufferOpenGLCompatibilityKey,
+#endif
+#if !(TARGET_OS_SIMULATOR)
+      kCVPixelBufferIOSurfacePropertiesKey,
+#endif
+      kCVPixelBufferPixelFormatTypeKey};
   CFDictionaryRef ioSurfaceValue = CreateCFTypeDictionary(nullptr, nullptr, 0);
   int64_t nv12type = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
   CFNumberRef pixelFormat = CFNumberCreate(nullptr, kCFNumberLongType, &nv12type);
+#if TARGET_OS_SIMULATOR
+  CFTypeRef values[attributesSize] = {kCFBooleanTrue, pixelFormat};
+#else
   CFTypeRef values[attributesSize] = {kCFBooleanTrue, ioSurfaceValue, pixelFormat};
+#endif
+
   CFDictionaryRef attributes = CreateCFTypeDictionary(keys, values, attributesSize);
   if (ioSurfaceValue) {
     CFRelease(ioSurfaceValue);

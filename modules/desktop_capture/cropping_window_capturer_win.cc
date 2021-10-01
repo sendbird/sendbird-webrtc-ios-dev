@@ -118,7 +118,7 @@ struct TopWindowVerifierContext : public SelectedWindowContext {
       // firing an assert when enabled, report that the selected window isn't
       // topmost to avoid inadvertent capture of other windows.
       RTC_LOG(LS_ERROR) << "Failed to enumerate windows: " << lastError;
-      RTC_DCHECK(false);
+      RTC_NOTREACHED();
       return false;
     }
   }
@@ -130,6 +130,8 @@ class CroppingWindowCapturerWin : public CroppingWindowCapturer {
  public:
   explicit CroppingWindowCapturerWin(const DesktopCaptureOptions& options)
       : CroppingWindowCapturer(options),
+        enumerate_current_process_windows_(
+            options.enumerate_current_process_windows()),
         full_screen_window_detector_(options.full_screen_window_detector()) {}
 
   void CaptureFrame() override;
@@ -148,19 +150,43 @@ class CroppingWindowCapturerWin : public CroppingWindowCapturer {
 
   WindowCaptureHelperWin window_capture_helper_;
 
+  bool enumerate_current_process_windows_;
+
   rtc::scoped_refptr<FullScreenWindowDetector> full_screen_window_detector_;
 };
 
 void CroppingWindowCapturerWin::CaptureFrame() {
   DesktopCapturer* win_capturer = window_capturer();
   if (win_capturer) {
-    // Update the list of available sources and override source to capture if
-    // FullScreenWindowDetector returns not zero
+    // Feed the actual list of windows into full screen window detector.
     if (full_screen_window_detector_) {
       full_screen_window_detector_->UpdateWindowListIfNeeded(
-          selected_window(),
-          [win_capturer](DesktopCapturer::SourceList* sources) {
-            return win_capturer->GetSourceList(sources);
+          selected_window(), [this](DesktopCapturer::SourceList* sources) {
+            // Get the list of top level windows, including ones with empty
+            // title. win_capturer_->GetSourceList can't be used here
+            // cause it filters out the windows with empty titles and
+            // it uses responsiveness check which could lead to performance
+            // issues.
+            SourceList result;
+            int window_list_flags =
+                enumerate_current_process_windows_
+                    ? GetWindowListFlags::kNone
+                    : GetWindowListFlags::kIgnoreCurrentProcessWindows;
+
+            if (!webrtc::GetWindowList(window_list_flags, &result))
+              return false;
+
+            // Filter out windows not visible on current desktop
+            auto it = std::remove_if(
+                result.begin(), result.end(), [this](const auto& source) {
+                  HWND hwnd = reinterpret_cast<HWND>(source.id);
+                  return !window_capture_helper_
+                              .IsWindowVisibleOnCurrentDesktop(hwnd);
+                });
+            result.erase(it, result.end());
+
+            sources->swap(result);
+            return true;
           });
     }
     win_capturer->SelectSource(GetWindowToCapture());

@@ -64,6 +64,11 @@ bool IsEnabled(const WebRtcKeyValueConfig* trials, absl::string_view key) {
   return absl::StartsWith(trials->Lookup(key), "Enabled");
 }
 
+bool IsDisabled(const WebRtcKeyValueConfig* trials, absl::string_view key) {
+  RTC_DCHECK(trials != nullptr);
+  return absl::StartsWith(trials->Lookup(key), "Disabled");
+}
+
 bool IsRelayed(const rtc::NetworkRoute& route) {
   return route.local.uses_turn() || route.remote.uses_turn();
 }
@@ -82,6 +87,7 @@ RtpTransportControllerSend::RtpTransportControllerSend(
     : clock_(clock),
       event_log_(event_log),
       bitrate_configurator_(bitrate_config),
+      pacer_started_(false),
       process_thread_(std::move(process_thread)),
       use_task_queue_pacer_(IsEnabled(trials, "WebRTC-TaskQueuePacer")),
       process_thread_pacer_(use_task_queue_pacer_
@@ -110,7 +116,7 @@ RtpTransportControllerSend::RtpTransportControllerSend(
       reset_feedback_on_route_change_(
           !IsEnabled(trials, "WebRTC-Bwe-NoFeedbackReset")),
       send_side_bwe_with_overhead_(
-          IsEnabled(trials, "WebRTC-SendSideBwe-WithOverhead")),
+          !IsDisabled(trials, "WebRTC-SendSideBwe-WithOverhead")),
       add_pacing_to_cwin_(
           IsEnabled(trials, "WebRTC-AddPacingToCongestionWindowPushback")),
       relay_bandwidth_cap_("relay_cap", DataRate::PlusInfinity()),
@@ -130,15 +136,14 @@ RtpTransportControllerSend::RtpTransportControllerSend(
   pacer()->SetPacingRates(
       DataRate::BitsPerSec(bitrate_config.start_bitrate_bps), DataRate::Zero());
 
-  if (!use_task_queue_pacer_) {
-    process_thread_->Start();
+  if (absl::StartsWith(trials->Lookup("WebRTC-LazyPacerStart"), "Disabled")) {
+    EnsureStarted();
   }
 }
 
 RtpTransportControllerSend::~RtpTransportControllerSend() {
-  if (!use_task_queue_pacer_) {
-    process_thread_->Stop();
-  }
+  RTC_DCHECK(video_rtp_senders_.empty());
+  process_thread_->Stop();
 }
 
 RtpVideoSenderInterface* RtpTransportControllerSend::CreateRtpVideoSender(
@@ -152,6 +157,7 @@ RtpVideoSenderInterface* RtpTransportControllerSend::CreateRtpVideoSender(
     std::unique_ptr<FecController> fec_controller,
     const RtpSenderFrameEncryptionConfig& frame_encryption_config,
     rtc::scoped_refptr<FrameTransformerInterface> frame_transformer) {
+  RTC_DCHECK_RUN_ON(&main_thread_);
   video_rtp_senders_.push_back(std::make_unique<RtpVideoSender>(
       clock_, suspended_ssrcs, states, rtp_config, rtcp_report_interval_ms,
       send_transport, observers,
@@ -165,6 +171,7 @@ RtpVideoSenderInterface* RtpTransportControllerSend::CreateRtpVideoSender(
 
 void RtpTransportControllerSend::DestroyRtpVideoSender(
     RtpVideoSenderInterface* rtp_video_sender) {
+  RTC_DCHECK_RUN_ON(&main_thread_);
   std::vector<std::unique_ptr<RtpVideoSenderInterface>>::iterator it =
       video_rtp_senders_.end();
   for (it = video_rtp_senders_.begin(); it != video_rtp_senders_.end(); ++it) {
@@ -350,6 +357,7 @@ void RtpTransportControllerSend::OnNetworkRouteChanged(
   }
 }
 void RtpTransportControllerSend::OnNetworkAvailability(bool network_available) {
+  RTC_DCHECK_RUN_ON(&main_thread_);
   RTC_LOG(LS_VERBOSE) << "SignalNetworkState "
                       << (network_available ? "Up" : "Down");
   NetworkAvailability msg;
@@ -466,6 +474,7 @@ RtpTransportControllerSend::ApplyOrLiftRelayCap(bool is_relayed) {
 
 void RtpTransportControllerSend::OnTransportOverheadChanged(
     size_t transport_overhead_bytes_per_packet) {
+  RTC_DCHECK_RUN_ON(&main_thread_);
   if (transport_overhead_bytes_per_packet >= kMaxOverheadBytes) {
     RTC_LOG(LS_ERROR) << "Transport overhead exceeds " << kMaxOverheadBytes;
     return;
@@ -489,6 +498,17 @@ void RtpTransportControllerSend::AccountForAudioPacketsInPacedSender(
 
 void RtpTransportControllerSend::IncludeOverheadInPacedSender() {
   pacer()->SetIncludeOverhead();
+}
+
+void RtpTransportControllerSend::EnsureStarted() {
+  if (!pacer_started_) {
+    pacer_started_ = true;
+    if (use_task_queue_pacer_) {
+      task_queue_pacer_->EnsureStarted();
+    } else {
+      process_thread_->Start();
+    }
+  }
 }
 
 void RtpTransportControllerSend::OnReceivedEstimatedBitrate(uint32_t bitrate) {

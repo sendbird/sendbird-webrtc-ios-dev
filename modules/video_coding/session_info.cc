@@ -49,7 +49,7 @@ void VCMSessionInfo::UpdateDataPointers(const uint8_t* old_base_ptr,
                                         const uint8_t* new_base_ptr) {
   for (PacketIterator it = packets_.begin(); it != packets_.end(); ++it)
     if ((*it).dataPtr != NULL) {
-      assert(old_base_ptr != NULL && new_base_ptr != NULL);
+      RTC_DCHECK(old_base_ptr != NULL && new_base_ptr != NULL);
       (*it).dataPtr = new_base_ptr + ((*it).dataPtr - old_base_ptr);
     }
 }
@@ -95,8 +95,6 @@ int VCMSessionInfo::TemporalId() const {
     return absl::get<RTPVideoHeaderVP9>(
                packets_.front().video_header.video_type_header)
         .temporal_idx;
-  } else if (packets_.front().video_header.codec == kVideoCodecH264) {
-    return packets_.front().video_header.frame_marking.temporal_id;
   } else {
     return kNoTemporalIdx;
   }
@@ -113,8 +111,6 @@ bool VCMSessionInfo::LayerSync() const {
     return absl::get<RTPVideoHeaderVP9>(
                packets_.front().video_header.video_type_header)
         .temporal_up_switch;
-  } else if (packets_.front().video_header.codec == kVideoCodecH264) {
-    return packets_.front().video_header.frame_marking.base_layer_sync;
   } else {
     return false;
   }
@@ -131,8 +127,6 @@ int VCMSessionInfo::Tl0PicId() const {
     return absl::get<RTPVideoHeaderVP9>(
                packets_.front().video_header.video_type_header)
         .tl0_pic_idx;
-  } else if (packets_.front().video_header.codec == kVideoCodecH264) {
-    return packets_.front().video_header.frame_marking.tl0_pic_idx;
   } else {
     return kNoTl0PicIdx;
   }
@@ -354,7 +348,7 @@ VCMSessionInfo::PacketIterator VCMSessionInfo::FindNextPartitionBeginning(
 
 VCMSessionInfo::PacketIterator VCMSessionInfo::FindPartitionEnd(
     PacketIterator it) const {
-  assert((*it).codec() == kVideoCodecVP8);
+  RTC_DCHECK_EQ((*it).codec(), kVideoCodecVP8);
   PacketIterator prev_it = it;
   const int partition_id =
       absl::get<RTPVideoHeaderVP8>((*it).video_header.video_type_header)

@@ -187,13 +187,13 @@ void ConnectionRequest::Prepare(StunMessage* request) {
   uint32_t network_info = connection_->port()->Network()->id();
   network_info = (network_info << 16) | connection_->port()->network_cost();
   request->AddAttribute(std::make_unique<StunUInt32Attribute>(
-      STUN_ATTR_NETWORK_INFO, network_info));
+      STUN_ATTR_GOOG_NETWORK_INFO, network_info));
 
   if (webrtc::field_trial::IsEnabled(
           "WebRTC-PiggybackIceCheckAcknowledgement") &&
       connection_->last_ping_id_received()) {
     request->AddAttribute(std::make_unique<StunByteStringAttribute>(
-        STUN_ATTR_LAST_ICE_CHECK_RECEIVED,
+        STUN_ATTR_GOOG_LAST_ICE_CHECK_RECEIVED,
         connection_->last_ping_id_received().value()));
   }
 
@@ -461,6 +461,7 @@ void Connection::OnReadPacket(const char* data,
     last_data_received_ = rtc::TimeMillis();
     UpdateReceiving(last_data_received_);
     recv_rate_tracker_.AddSamples(size);
+    stats_.packets_received++;
     SignalReadPacket(this, data, size, packet_time_us);
 
     // If timed out sending writability checks, start up again
@@ -479,6 +480,7 @@ void Connection::OnReadPacket(const char* data,
     // If this is a STUN response, then update the writable bit.
     // Log at LS_INFO if we receive a ping on an unwritable connection.
     rtc::LoggingSeverity sev = (!writable() ? rtc::LS_INFO : rtc::LS_VERBOSE);
+    msg->ValidateMessageIntegrity(remote_candidate().password());
     switch (msg->type()) {
       case STUN_BINDING_REQUEST:
         RTC_LOG_V(sev) << ToString() << ": Received "
@@ -504,8 +506,7 @@ void Connection::OnReadPacket(const char* data,
       // id's match.
       case STUN_BINDING_RESPONSE:
       case STUN_BINDING_ERROR_RESPONSE:
-        if (msg->ValidateMessageIntegrity(data, size,
-                                          remote_candidate().password())) {
+        if (msg->IntegrityOk()) {
           requests_.CheckResponse(msg.get());
         }
         // Otherwise silently discard the response message.
@@ -522,8 +523,7 @@ void Connection::OnReadPacket(const char* data,
         break;
       case GOOG_PING_RESPONSE:
       case GOOG_PING_ERROR_RESPONSE:
-        if (msg->ValidateMessageIntegrity32(data, size,
-                                            remote_candidate().password())) {
+        if (msg->IntegrityOk()) {
           requests_.CheckResponse(msg.get());
         }
         break;
@@ -615,7 +615,7 @@ void Connection::HandleStunBindingOrGoogPingRequest(IceMessage* msg) {
   // Note: If packets are re-ordered, we may get incorrect network cost
   // temporarily, but it should get the correct value shortly after that.
   const StunUInt32Attribute* network_attr =
-      msg->GetUInt32(STUN_ATTR_NETWORK_INFO);
+      msg->GetUInt32(STUN_ATTR_GOOG_NETWORK_INFO);
   if (network_attr) {
     uint32_t network_info = network_attr->value();
     uint16_t network_cost = static_cast<uint16_t>(network_info);
@@ -867,7 +867,7 @@ void Connection::HandlePiggybackCheckAcknowledgementIfAny(StunMessage* msg) {
   RTC_DCHECK(msg->type() == STUN_BINDING_REQUEST ||
              msg->type() == GOOG_PING_REQUEST);
   const StunByteStringAttribute* last_ice_check_received_attr =
-      msg->GetByteString(STUN_ATTR_LAST_ICE_CHECK_RECEIVED);
+      msg->GetByteString(STUN_ATTR_GOOG_LAST_ICE_CHECK_RECEIVED);
   if (last_ice_check_received_attr) {
     const std::string request_id = last_ice_check_received_attr->GetString();
     auto iter = absl::c_find_if(
@@ -1371,13 +1371,15 @@ int ProxyConnection::Send(const void* data,
   stats_.sent_total_packets++;
   int sent =
       port_->SendTo(data, size, remote_candidate_.address(), options, true);
+  int64_t now = rtc::TimeMillis();
   if (sent <= 0) {
     RTC_DCHECK(sent < 0);
     error_ = port_->GetError();
     stats_.sent_discarded_packets++;
   } else {
-    send_rate_tracker_.AddSamples(sent);
+    send_rate_tracker_.AddSamplesAtTime(now, sent);
   }
+  last_send_data_ = now;
   return sent;
 }
 

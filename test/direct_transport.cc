@@ -14,9 +14,9 @@
 #include "api/units/time_delta.h"
 #include "call/call.h"
 #include "call/fake_network_pipe.h"
+#include "modules/rtp_rtcp/source/rtp_util.h"
 #include "rtc_base/task_utils/repeating_task.h"
 #include "rtc_base/time_utils.h"
-#include "test/rtp_header_parser.h"
 
 namespace webrtc {
 namespace test {
@@ -26,7 +26,7 @@ Demuxer::Demuxer(const std::map<uint8_t, MediaType>& payload_type_map)
 
 MediaType Demuxer::GetMediaType(const uint8_t* packet_data,
                                 const size_t packet_length) const {
-  if (!RtpHeaderParser::IsRtcp(packet_data, packet_length)) {
+  if (IsRtpPacket(rtc::MakeArrayView(packet_data, packet_length))) {
     RTC_CHECK_GE(packet_length, 2);
     const uint8_t payload_type = packet_data[1] & 0x7f;
     std::map<uint8_t, MediaType>::const_iterator it =
@@ -83,7 +83,7 @@ void DirectTransport::SendPacket(const uint8_t* data, size_t length) {
   int64_t send_time_us = rtc::TimeMicros();
   fake_network_->DeliverPacket(media_type, rtc::CopyOnWriteBuffer(data, length),
                                send_time_us);
-  rtc::CritScope cs(&process_lock_);
+  MutexLock lock(&process_lock_);
   if (!next_process_task_.Running())
     ProcessPackets();
 }
@@ -112,7 +112,7 @@ void DirectTransport::ProcessPackets() {
         if (auto delay_ms = fake_network_->TimeUntilNextProcess())
           return TimeDelta::Millis(*delay_ms);
         // Otherwise stop the task.
-        rtc::CritScope cs(&process_lock_);
+        MutexLock lock(&process_lock_);
         next_process_task_.Stop();
         // Since this task is stopped, return value doesn't matter.
         return TimeDelta::Zero();

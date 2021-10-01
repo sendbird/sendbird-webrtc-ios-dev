@@ -9,6 +9,7 @@
  */
 
 #import "RTCVideoViewShading.h"
+#import "RTCMacros.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -16,6 +17,7 @@ NS_ASSUME_NONNULL_BEGIN
  *  and RTCEAGLVideoView if no external shader is specified. This shader will render
  *  the video in a rectangle without any color or geometric transformations.
  */
+RTC_OBJC_EXPORT
 @interface RTCDefaultShader : NSObject <RTC_OBJC_TYPE (RTCVideoViewShading)>
 
 @end

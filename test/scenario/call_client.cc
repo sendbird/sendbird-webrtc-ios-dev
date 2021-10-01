@@ -9,12 +9,16 @@
  */
 #include "test/scenario/call_client.h"
 
+#include <iostream>
+#include <memory>
 #include <utility>
 
-#include <memory>
 #include "api/rtc_event_log/rtc_event_log.h"
 #include "api/rtc_event_log/rtc_event_log_factory.h"
+#include "api/transport/network_types.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
+#include "modules/rtp_rtcp/source/rtp_util.h"
+#include "test/rtp_header_parser.h"
 
 namespace webrtc {
 namespace test {
@@ -54,7 +58,8 @@ Call* CreateCall(TimeController* time_controller,
                  RtcEventLog* event_log,
                  CallClientConfig config,
                  LoggingNetworkControllerFactory* network_controller_factory,
-                 rtc::scoped_refptr<AudioState> audio_state) {
+                 rtc::scoped_refptr<AudioState> audio_state,
+                 rtc::scoped_refptr<SharedModuleThread> call_thread) {
   CallConfig call_config(event_log);
   call_config.bitrate_config.max_bitrate_bps =
       config.transport.rates.max_rate.bps_or(-1);
@@ -67,7 +72,7 @@ Call* CreateCall(TimeController* time_controller,
   call_config.audio_state = audio_state;
   call_config.trials = config.field_trials;
   return Call::Create(call_config, time_controller->GetClock(),
-                      time_controller->CreateProcessThread("CallModules"),
+                      std::move(call_thread),
                       time_controller->CreateProcessThread("Pacer"));
 }
 
@@ -196,6 +201,12 @@ TimeDelta LoggingNetworkControllerFactory::GetProcessInterval() const {
   return cc_factory_->GetProcessInterval();
 }
 
+void LoggingNetworkControllerFactory::SetRemoteBitrateEstimate(
+    RemoteBitrateReport msg) {
+  if (last_controller_)
+    last_controller_->OnRemoteBitrateReport(msg);
+}
+
 CallClient::CallClient(
     TimeController* time_controller,
     std::unique_ptr<LogWriterFactoryInterface> log_writer_factory,
@@ -204,7 +215,6 @@ CallClient::CallClient(
       clock_(time_controller->GetClock()),
       log_writer_factory_(std::move(log_writer_factory)),
       network_controller_factory_(log_writer_factory_.get(), config.transport),
-      header_parser_(RtpHeaderParser::CreateForTest()),
       task_queue_(time_controller->GetTaskQueueFactory()->CreateTaskQueue(
           "CallClient",
           TaskQueueFactory::Priority::NORMAL)) {
@@ -213,9 +223,14 @@ CallClient::CallClient(
     event_log_ = CreateEventLog(time_controller_->GetTaskQueueFactory(),
                                 log_writer_factory_.get());
     fake_audio_setup_ = InitAudio(time_controller_);
+    RTC_DCHECK(!module_thread_);
+    module_thread_ = SharedModuleThread::Create(
+        time_controller_->CreateProcessThread("CallThread"),
+        [this]() { module_thread_ = nullptr; });
+
     call_.reset(CreateCall(time_controller_, event_log_.get(), config,
                            &network_controller_factory_,
-                           fake_audio_setup_.audio_state));
+                           fake_audio_setup_.audio_state, module_thread_));
     transport_ = std::make_unique<NetworkNodeTransport>(clock_, call_.get());
   });
 }
@@ -223,6 +238,7 @@ CallClient::CallClient(
 CallClient::~CallClient() {
   SendTask([&] {
     call_.reset();
+    RTC_DCHECK(!module_thread_);  // Should be set to null in the lambda above.
     fake_audio_setup_ = {};
     rtc::Event done;
     event_log_->StopLogging([&done] { done.Set(); });
@@ -262,9 +278,23 @@ DataRate CallClient::padding_rate() const {
   return network_controller_factory_.GetUpdate().pacer_config->pad_rate();
 }
 
+void CallClient::SetRemoteBitrate(DataRate bitrate) {
+  RemoteBitrateReport msg;
+  msg.bandwidth = bitrate;
+  msg.receive_time = clock_->CurrentTime();
+  network_controller_factory_.SetRemoteBitrateEstimate(msg);
+}
+
+void CallClient::UpdateBitrateConstraints(
+    const BitrateConstraints& constraints) {
+  SendTask([this, &constraints]() {
+    call_->GetTransportControllerSend()->SetSdpBitrateParameters(constraints);
+  });
+}
+
 void CallClient::OnPacketReceived(EmulatedIpPacket packet) {
   MediaType media_type = MediaType::ANY;
-  if (!RtpHeaderParser::IsRtcp(packet.cdata(), packet.data.size())) {
+  if (IsRtpPacket(packet.data)) {
     auto ssrc = RtpHeaderParser::GetSsrc(packet.cdata(), packet.data.size());
     RTC_CHECK(ssrc.has_value());
     media_type = ssrc_media_types_[*ssrc];
@@ -307,11 +337,6 @@ uint32_t CallClient::GetNextAudioLocalSsrc() {
 uint32_t CallClient::GetNextRtxSsrc() {
   RTC_CHECK_LT(next_rtx_ssrc_index_, kNumSsrcs);
   return kSendRtxSsrcs[next_rtx_ssrc_index_++];
-}
-
-void CallClient::AddExtensions(std::vector<RtpExtension> extensions) {
-  for (const auto& extension : extensions)
-    header_parser_->RegisterRtpHeaderExtension(extension);
 }
 
 void CallClient::SendTask(std::function<void()> task) {

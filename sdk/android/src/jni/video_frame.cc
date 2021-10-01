@@ -14,10 +14,9 @@
 
 #include "api/scoped_refptr.h"
 #include "common_video/include/video_frame_buffer.h"
-#include "rtc_base/bind.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/keep_ref_until_done.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/ref_counted_object.h"
 #include "rtc_base/time_utils.h"
 #include "sdk/android/generated_video_jni/VideoFrame_jni.h"
 #include "sdk/android/src/jni/jni_helpers.h"
@@ -78,8 +77,8 @@ rtc::scoped_refptr<AndroidVideoI420Buffer> AndroidVideoI420Buffer::Adopt(
     int width,
     int height,
     const JavaRef<jobject>& j_video_frame_buffer) {
-  return new rtc::RefCountedObject<AndroidVideoI420Buffer>(
-      jni, width, height, j_video_frame_buffer);
+  return rtc::make_ref_counted<AndroidVideoI420Buffer>(jni, width, height,
+                                                       j_video_frame_buffer);
 }
 
 AndroidVideoI420Buffer::AndroidVideoI420Buffer(
@@ -124,8 +123,7 @@ int64_t GetJavaVideoFrameTimestampNs(JNIEnv* jni,
 rtc::scoped_refptr<AndroidVideoBuffer> AndroidVideoBuffer::Adopt(
     JNIEnv* jni,
     const JavaRef<jobject>& j_video_frame_buffer) {
-  return new rtc::RefCountedObject<AndroidVideoBuffer>(jni,
-                                                       j_video_frame_buffer);
+  return rtc::make_ref_counted<AndroidVideoBuffer>(jni, j_video_frame_buffer);
 }
 
 rtc::scoped_refptr<AndroidVideoBuffer> AndroidVideoBuffer::Create(
@@ -152,14 +150,14 @@ const ScopedJavaGlobalRef<jobject>& AndroidVideoBuffer::video_frame_buffer()
   return j_video_frame_buffer_;
 }
 
-rtc::scoped_refptr<AndroidVideoBuffer> AndroidVideoBuffer::CropAndScale(
-    JNIEnv* jni,
+rtc::scoped_refptr<VideoFrameBuffer> AndroidVideoBuffer::CropAndScale(
     int crop_x,
     int crop_y,
     int crop_width,
     int crop_height,
     int scale_width,
     int scale_height) {
+  JNIEnv* jni = AttachCurrentThreadIfNeeded();
   return Adopt(jni, Java_Buffer_cropAndScale(jni, j_video_frame_buffer_, crop_x,
                                              crop_y, crop_width, crop_height,
                                              scale_width, scale_height));
@@ -181,6 +179,10 @@ rtc::scoped_refptr<I420BufferInterface> AndroidVideoBuffer::ToI420() {
   JNIEnv* jni = AttachCurrentThreadIfNeeded();
   ScopedJavaLocalRef<jobject> j_i420_buffer =
       Java_Buffer_toI420(jni, j_video_frame_buffer_);
+  // In case I420 conversion fails, we propagate the nullptr.
+  if (j_i420_buffer.is_null()) {
+    return nullptr;
+  }
 
   // We don't need to retain the buffer because toI420 returns a new object that
   // we are assumed to take the ownership of.
