@@ -34,11 +34,11 @@ SDK_DSYM_NAME = 'WebRTC.dSYM'
 SDK_XCFRAMEWORK_NAME = 'WebRTC.xcframework'
 
 ENABLED_ARCHS = [
-    'device:arm64', 'simulator:arm64', 'simulator:x64',
+    'device:arm64', 'device:arm', 'simulator:arm64', 'simulator:x64', 'simulator:x86',
     'arm64', 'x64'
 ]
 DEFAULT_ARCHS = [
-    'device:arm64', 'simulator:arm64', 'simulator:x64'
+    'device:arm64', 'device:arm', 'simulator:arm64', 'simulator:x64', 'simulator:x86'
 ]
 IOS_DEPLOYMENT_TARGET = '9.0'
 LIBVPX_BUILD_VP9 = True
@@ -313,10 +313,14 @@ def main():
     for framework_path in framework_paths:
         cmd += [
             '-framework',
-            os.path.abspath(os.path.join(framework_path, SDK_FRAMEWORK_NAME)),
-            '-debug-symbols',
-            os.path.abspath(os.path.join(framework_path, SDK_DSYM_NAME))
+            os.path.abspath(os.path.join(framework_path, SDK_FRAMEWORK_NAME))
         ]
+        
+        if os.path.exists(os.path.join(framework_path, SDK_DSYM_NAME)):
+            cmd += [
+                '-debug-symbols',
+                os.path.abspath(os.path.join(framework_path, SDK_DSYM_NAME))
+            ]
 
     _RunCommand(cmd)
 
