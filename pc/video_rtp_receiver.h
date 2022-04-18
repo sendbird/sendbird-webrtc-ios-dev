@@ -141,26 +141,15 @@ class VideoRtpReceiver : public RtpReceiverInternal {
   rtc::Thread* const worker_thread_;
 
   const std::string id_;
-  // See documentation for `stopped_` below for when a valid media channel
-  // has been assigned and when this pointer will be null.
   cricket::VideoMediaChannel* media_channel_ RTC_GUARDED_BY(worker_thread_) =
       nullptr;
   absl::optional<uint32_t> ssrc_ RTC_GUARDED_BY(worker_thread_);
-  // |source_| is held here to be able to change the state of the source when
+  // `source_` is held here to be able to change the state of the source when
   // the VideoRtpReceiver is stopped.
   const rtc::scoped_refptr<VideoRtpTrackSource> source_;
   const rtc::scoped_refptr<VideoTrackProxyWithInternal<VideoTrack>> track_;
   std::vector<rtc::scoped_refptr<MediaStreamInterface>> streams_
       RTC_GUARDED_BY(&signaling_thread_checker_);
-  // `stopped` is state that's used on the signaling thread to indicate whether
-  // a valid `media_channel_` has been assigned and configured. When an instance
-  // of VideoRtpReceiver is initially created, `stopped_` is true and will
-  // remain true until either `SetupMediaChannel` or
-  // `SetupUnsignaledMediaChannel` is called after assigning a media channel.
-  // After that, `stopped_` will remain false until `Stop()` is called.
-  // Note, for checking the state of the class on the worker thread,
-  // check `media_channel_` instead, as that's the main worker thread state.
-  bool stopped_ RTC_GUARDED_BY(&signaling_thread_checker_) = true;
   RtpReceiverObserverInterface* observer_
       RTC_GUARDED_BY(&signaling_thread_checker_) = nullptr;
   bool received_first_packet_ RTC_GUARDED_BY(&signaling_thread_checker_) =
@@ -173,10 +162,10 @@ class VideoRtpReceiver : public RtpReceiverInternal {
   rtc::scoped_refptr<FrameTransformerInterface> frame_transformer_
       RTC_GUARDED_BY(worker_thread_);
   // Stores the minimum jitter buffer delay. Handles caching cases
-  // if |SetJitterBufferMinimumDelay| is called before start.
+  // if `SetJitterBufferMinimumDelay` is called before start.
   JitterBufferDelay delay_ RTC_GUARDED_BY(worker_thread_);
 
-  // Records if we should generate a keyframe when |media_channel_| gets set up
+  // Records if we should generate a keyframe when `media_channel_` gets set up
   // or switched.
   bool saved_generate_keyframe_ RTC_GUARDED_BY(worker_thread_) = false;
   bool saved_encoded_sink_enabled_ RTC_GUARDED_BY(worker_thread_) = false;

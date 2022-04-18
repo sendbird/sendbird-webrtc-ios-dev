@@ -345,7 +345,7 @@ RtpTransmissionManager::GetAudioTransceiver() const {
       return transceiver;
     }
   }
-  RTC_NOTREACHED();
+  RTC_DCHECK_NOTREACHED();
   return nullptr;
 }
 
@@ -360,7 +360,7 @@ RtpTransmissionManager::GetVideoTransceiver() const {
       return transceiver;
     }
   }
-  RTC_NOTREACHED();
+  RTC_DCHECK_NOTREACHED();
   return nullptr;
 }
 
@@ -378,7 +378,8 @@ void RtpTransmissionManager::AddAudioTrack(AudioTrackInterface* track,
   }
 
   // Normal case; we've never seen this track before.
-  auto new_sender = CreateSender(cricket::MEDIA_TYPE_AUDIO, track->id(), track,
+  auto new_sender = CreateSender(cricket::MEDIA_TYPE_AUDIO, track->id(),
+                                 rtc::scoped_refptr<AudioTrackInterface>(track),
                                  {stream->id()}, {});
   new_sender->internal()->SetMediaChannel(voice_media_channel());
   GetAudioTransceiver()->internal()->AddSender(new_sender);
@@ -424,7 +425,8 @@ void RtpTransmissionManager::AddVideoTrack(VideoTrackInterface* track,
   }
 
   // Normal case; we've never seen this track before.
-  auto new_sender = CreateSender(cricket::MEDIA_TYPE_VIDEO, track->id(), track,
+  auto new_sender = CreateSender(cricket::MEDIA_TYPE_VIDEO, track->id(),
+                                 rtc::scoped_refptr<VideoTrackInterface>(track),
                                  {stream->id()}, {});
   new_sender->internal()->SetMediaChannel(video_media_channel());
   GetVideoTransceiver()->internal()->AddSender(new_sender);
@@ -527,7 +529,7 @@ void RtpTransmissionManager::OnRemoteSenderAdded(
   } else if (media_type == cricket::MEDIA_TYPE_VIDEO) {
     CreateVideoReceiver(stream, sender_info);
   } else {
-    RTC_NOTREACHED() << "Invalid media type";
+    RTC_DCHECK_NOTREACHED() << "Invalid media type";
   }
 }
 
@@ -562,7 +564,7 @@ void RtpTransmissionManager::OnRemoteSenderRemoved(
       stream->RemoveTrack(video_track);
     }
   } else {
-    RTC_NOTREACHED() << "Invalid media type";
+    RTC_DCHECK_NOTREACHED() << "Invalid media type";
   }
   if (receiver) {
     RTC_DCHECK(!closed_);
@@ -636,7 +638,7 @@ std::vector<RtpSenderInfo>* RtpTransmissionManager::GetLocalSenderInfos(
 const RtpSenderInfo* RtpTransmissionManager::FindSenderInfo(
     const std::vector<RtpSenderInfo>& infos,
     const std::string& stream_id,
-    const std::string sender_id) const {
+    const std::string& sender_id) const {
   for (const RtpSenderInfo& sender_info : infos) {
     if (sender_info.stream_id == stream_id &&
         sender_info.sender_id == sender_id) {

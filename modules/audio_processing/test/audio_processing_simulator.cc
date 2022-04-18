@@ -20,6 +20,7 @@
 
 #include "api/audio/echo_canceller3_config_json.h"
 #include "api/audio/echo_canceller3_factory.h"
+#include "api/audio/echo_detector_creator.h"
 #include "modules/audio_processing/aec_dump/aec_dump_factory.h"
 #include "modules/audio_processing/echo_control_mobile_impl.h"
 #include "modules/audio_processing/include/audio_processing.h"
@@ -188,6 +189,10 @@ AudioProcessingSimulator::AudioProcessingSimulator(
       builder->SetEchoControlFactory(std::move(echo_control_factory));
     }
 
+    if (settings_.use_ed && *settings.use_ed) {
+      builder->SetEchoDetector(CreateEchoDetector());
+    }
+
     // Create an audio processing object.
     ap_ = builder->Create();
     RTC_CHECK(ap_);
@@ -206,7 +211,7 @@ void AudioProcessingSimulator::ProcessStream(bool fixed_interface) {
   if (settings_.simulate_mic_gain) {
     if (settings_.aec_dump_input_filename) {
       // When the analog gain is simulated and an AEC dump is used as input, set
-      // the undo level to |aec_dump_mic_level_| to virtually restore the
+      // the undo level to `aec_dump_mic_level_` to virtually restore the
       // unmodified microphone signal level.
       fake_recording_device_.SetUndoMicLevel(aec_dump_mic_level_);
     }
@@ -261,7 +266,7 @@ void AudioProcessingSimulator::ProcessStream(bool fixed_interface) {
 
   // Store the mic level suggested by AGC.
   // Note that when the analog gain is simulated and an AEC dump is used as
-  // input, |analog_mic_level_| will not be used with set_stream_analog_level().
+  // input, `analog_mic_level_` will not be used with set_stream_analog_level().
   analog_mic_level_ = ap_->recommended_stream_analog_level();
   if (settings_.simulate_mic_gain) {
     fake_recording_device_.SetMicLevel(analog_mic_level_);
@@ -487,8 +492,6 @@ void AudioProcessingSimulator::ConfigureAudioProcessor() {
     if (settings_.agc2_use_adaptive_gain) {
       apm_config.gain_controller2.adaptive_digital.enabled =
           *settings_.agc2_use_adaptive_gain;
-      apm_config.gain_controller2.adaptive_digital.level_estimator =
-          settings_.agc2_adaptive_level_estimator;
     }
   }
   if (settings_.use_pre_amplifier) {
@@ -540,14 +543,6 @@ void AudioProcessingSimulator::ConfigureAudioProcessor() {
     apm_config.high_pass_filter.enabled = *settings_.use_hpf;
   }
 
-  if (settings_.use_le) {
-    apm_config.level_estimation.enabled = *settings_.use_le;
-  }
-
-  if (settings_.use_vad) {
-    apm_config.voice_detection.enabled = *settings_.use_vad;
-  }
-
   if (settings_.use_agc) {
     apm_config.gain_controller1.enabled = *settings_.use_agc;
   }
@@ -573,10 +568,6 @@ void AudioProcessingSimulator::ConfigureAudioProcessor() {
   if (settings_.analog_agc_disable_digital_adaptive) {
     apm_config.gain_controller1.analog_gain_controller.enable_digital_adaptive =
         *settings_.analog_agc_disable_digital_adaptive;
-  }
-
-  if (settings_.use_ed) {
-    apm_config.residual_echo_detector.enabled = *settings_.use_ed;
   }
 
   if (settings_.maximum_internal_processing_rate) {

@@ -11,6 +11,7 @@
 #define CALL_CALL_CONFIG_H_
 
 #include "api/fec_controller.h"
+#include "api/metronome/metronome.h"
 #include "api/neteq/neteq_factory.h"
 #include "api/network_state_predictor.h"
 #include "api/rtc_error.h"
@@ -28,7 +29,7 @@ class AudioProcessing;
 class RtcEventLog;
 
 struct CallConfig {
-  // If |network_task_queue| is set to nullptr, Call will assume that network
+  // If `network_task_queue` is set to nullptr, Call will assume that network
   // related callbacks will be made on the same TQ as the Call instance was
   // constructed on.
   explicit CallConfig(RtcEventLog* event_log,
@@ -75,6 +76,8 @@ struct CallConfig {
   // RtpTransportControllerSend to use for this call.
   RtpTransportControllerSendFactoryInterface*
       rtp_transport_controller_send_factory = nullptr;
+
+  Metronome* metronome = nullptr;
 };
 
 }  // namespace webrtc

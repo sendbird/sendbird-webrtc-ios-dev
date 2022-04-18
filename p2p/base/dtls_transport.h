@@ -22,7 +22,6 @@
 #include "p2p/base/ice_transport_internal.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/buffer_queue.h"
-#include "rtc_base/constructor_magic.h"
 #include "rtc_base/ssl_stream_adapter.h"
 #include "rtc_base/stream.h"
 #include "rtc_base/strings/string_builder.h"
@@ -39,6 +38,9 @@ namespace cricket {
 class StreamInterfaceChannel : public rtc::StreamInterface {
  public:
   explicit StreamInterfaceChannel(IceTransportInternal* ice_transport);
+
+  StreamInterfaceChannel(const StreamInterfaceChannel&) = delete;
+  StreamInterfaceChannel& operator=(const StreamInterfaceChannel&) = delete;
 
   // Push in a packet; this gets pulled out from Read().
   bool OnPacketReceived(const char* data, size_t size);
@@ -60,8 +62,6 @@ class StreamInterfaceChannel : public rtc::StreamInterface {
   IceTransportInternal* const ice_transport_;  // owned by DtlsTransport
   rtc::StreamState state_ RTC_GUARDED_BY(sequence_checker_);
   rtc::BufferQueue packets_ RTC_GUARDED_BY(sequence_checker_);
-
-  RTC_DISALLOW_COPY_AND_ASSIGN(StreamInterfaceChannel);
 };
 
 // This class provides a DTLS SSLStreamAdapter inside a TransportChannel-style
@@ -94,13 +94,13 @@ class StreamInterfaceChannel : public rtc::StreamInterface {
 // as the constructor.
 class DtlsTransport : public DtlsTransportInternal {
  public:
-  // |ice_transport| is the ICE transport this DTLS transport is wrapping.  It
+  // `ice_transport` is the ICE transport this DTLS transport is wrapping.  It
   // must outlive this DTLS transport.
   //
-  // |crypto_options| are the options used for the DTLS handshake. This affects
+  // `crypto_options` are the options used for the DTLS handshake. This affects
   // whether GCM crypto suites are negotiated.
   //
-  // |event_log| is an optional RtcEventLog for logging state changes. It should
+  // `event_log` is an optional RtcEventLog for logging state changes. It should
   // outlive the DtlsTransport.
   DtlsTransport(
       IceTransportInternal* ice_transport,
@@ -109,6 +109,9 @@ class DtlsTransport : public DtlsTransportInternal {
       rtc::SSLProtocolVersion max_version = rtc::SSL_PROTOCOL_DTLS_12);
 
   ~DtlsTransport() override;
+
+  DtlsTransport(const DtlsTransport&) = delete;
+  DtlsTransport& operator=(const DtlsTransport&) = delete;
 
   webrtc::DtlsTransportState dtls_state() const override;
   const std::string& transport_name() const override;
@@ -248,8 +251,6 @@ class DtlsTransport : public DtlsTransportInternal {
   bool writable_ = false;
 
   webrtc::RtcEventLog* const event_log_;
-
-  RTC_DISALLOW_COPY_AND_ASSIGN(DtlsTransport);
 };
 
 }  // namespace cricket

@@ -10,7 +10,6 @@
 
 #include "modules/video_coding/frame_buffer.h"
 
-#include <assert.h>
 #include <string.h>
 
 #include "api/video/encoded_image.h"
@@ -242,7 +241,7 @@ void VCMFrameBuffer::SetState(VCMFrameBufferStateEnum state) {
 
     case kStateEmpty:
       // Should only be set to empty through Reset().
-      RTC_NOTREACHED();
+      RTC_DCHECK_NOTREACHED();
       break;
   }
   _state = state;

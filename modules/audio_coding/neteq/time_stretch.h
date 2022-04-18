@@ -11,11 +11,9 @@
 #ifndef MODULES_AUDIO_CODING_NETEQ_TIME_STRETCH_H_
 #define MODULES_AUDIO_CODING_NETEQ_TIME_STRETCH_H_
 
-#include <assert.h>
 #include <string.h>  // memset, size_t
 
 #include "modules/audio_coding/neteq/audio_multi_vector.h"
-#include "rtc_base/constructor_magic.h"
 
 namespace webrtc {
 
@@ -50,6 +48,9 @@ class TimeStretch {
 
   virtual ~TimeStretch() {}
 
+  TimeStretch(const TimeStretch&) = delete;
+  TimeStretch& operator=(const TimeStretch&) = delete;
+
   // This method performs the processing common to both Accelerate and
   // PreemptiveExpand.
   ReturnCodes Process(const int16_t* input,
@@ -59,7 +60,7 @@ class TimeStretch {
                       size_t* length_change_samples);
 
  protected:
-  // Sets the parameters |best_correlation| and |peak_index| to suitable
+  // Sets the parameters `best_correlation` and `peak_index` to suitable
   // values when the signal contains no active speech. This method must be
   // implemented by the sub-classes.
   virtual void SetParametersForPassiveSpeech(size_t input_length,
@@ -92,13 +93,13 @@ class TimeStretch {
   const BackgroundNoise& background_noise_;
   int16_t max_input_value_;
   int16_t downsampled_input_[kDownsampledLen];
-  // Adding 1 to the size of |auto_correlation_| because of how it is used
+  // Adding 1 to the size of `auto_correlation_` because of how it is used
   // by the peak-detection algorithm.
   int16_t auto_correlation_[kCorrelationLen + 1];
 
  private:
-  // Calculates the auto-correlation of |downsampled_input_| and writes the
-  // result to |auto_correlation_|.
+  // Calculates the auto-correlation of `downsampled_input_` and writes the
+  // result to `auto_correlation_`.
   void AutoCorrelation();
 
   // Performs a simple voice-activity detection based on the input parameters.
@@ -106,8 +107,6 @@ class TimeStretch {
                        int32_t vec2_energy,
                        size_t peak_index,
                        int scaling) const;
-
-  RTC_DISALLOW_COPY_AND_ASSIGN(TimeStretch);
 };
 
 }  // namespace webrtc

@@ -42,8 +42,8 @@ using EchoEmulationConfig = ::webrtc::webrtc_pc_e2e::
 constexpr int16_t kGeneratedAudioMaxAmplitude = 32000;
 constexpr int kDefaultSamplingFrequencyInHz = 48000;
 
-// Sets mandatory entities in injectable components like |pcf_dependencies|
-// and |pc_dependencies| if they are omitted. Also setup required
+// Sets mandatory entities in injectable components like `pcf_dependencies`
+// and `pc_dependencies` if they are omitted. Also setup required
 // dependencies, that won't be specially provided by factory and will be just
 // transferred to peer connection creation code.
 void SetMandatoryEntities(InjectableComponents* components,
@@ -73,8 +73,8 @@ void SetMandatoryEntities(InjectableComponents* components,
 
 // Returns mapping from stream label to optional spatial index.
 // If we have stream label "Foo" and mapping contains
-// 1. |absl::nullopt| means "Foo" isn't simulcast/SVC stream
-// 2. |kAnalyzeAnySpatialStream| means all simulcast/SVC streams are required
+// 1. `absl::nullopt` means "Foo" isn't simulcast/SVC stream
+// 2. `kAnalyzeAnySpatialStream` means all simulcast/SVC streams are required
 // 3. Concrete value means that particular simulcast/SVC stream have to be
 //    analyzed.
 std::map<std::string, absl::optional<int>>
@@ -261,7 +261,7 @@ PeerConnectionDependencies CreatePCDependencies(
   PeerConnectionDependencies pc_deps(observer);
 
   auto port_allocator = std::make_unique<cricket::BasicPortAllocator>(
-      pc_dependencies->network_manager);
+      pc_dependencies->network_manager, pc_dependencies->packet_socket_factory);
 
   // This test does not support TCP
   int flags = cricket::PORTALLOCATOR_DISABLE_TCP;
@@ -300,7 +300,6 @@ std::unique_ptr<TestPeer> TestPeerFactory::CreateTestPeer(
     std::unique_ptr<PeerConfigurerImpl> configurer,
     std::unique_ptr<MockPeerConnectionObserver> observer,
     absl::optional<RemotePeerAudioConfig> remote_audio_config,
-    double bitrate_multiplier,
     absl::optional<PeerConnectionE2EQualityTestFixture::EchoEmulationConfig>
         echo_emulation_config) {
   std::unique_ptr<InjectableComponents> components =
@@ -326,7 +325,7 @@ std::unique_ptr<TestPeer> TestPeerFactory::CreateTestPeer(
           params->audio_config, remote_audio_config, echo_emulation_config,
           components->pcf_dependencies->task_queue_factory.get());
   WrapVideoEncoderFactory(
-      params->name.value(), bitrate_multiplier,
+      params->name.value(), params->video_encoder_bitrate_multiplier,
       CalculateRequiredSpatialIndexPerStream(params->video_configs),
       components->pcf_dependencies.get(), video_analyzer_helper_);
   WrapVideoDecoderFactory(params->name.value(),

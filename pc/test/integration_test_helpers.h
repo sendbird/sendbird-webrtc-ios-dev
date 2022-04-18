@@ -149,8 +149,8 @@ static const char kDataChannelLabel[] = "data_channel";
 
 // SRTP cipher name negotiated by the tests. This must be updated if the
 // default changes.
-static const int kDefaultSrtpCryptoSuite = rtc::SRTP_AES128_CM_SHA1_80;
-static const int kDefaultSrtpCryptoSuiteGcm = rtc::SRTP_AEAD_AES_256_GCM;
+static const int kDefaultSrtpCryptoSuite = rtc::kSrtpAes128CmSha1_80;
+static const int kDefaultSrtpCryptoSuiteGcm = rtc::kSrtpAeadAes256Gcm;
 
 static const SocketAddress kDefaultLocalAddress("192.168.1.1", 0);
 
@@ -213,32 +213,6 @@ class MockRtpReceiverObserver : public webrtc::RtpReceiverObserverInterface {
 class PeerConnectionIntegrationWrapper : public webrtc::PeerConnectionObserver,
                                          public SignalingMessageReceiver {
  public:
-  // Different factory methods for convenience.
-  // TODO(deadbeef): Could use the pattern of:
-  //
-  // PeerConnectionIntegrationWrapper =
-  //     WrapperBuilder.WithConfig(...).WithOptions(...).build();
-  //
-  // To reduce some code duplication.
-  static PeerConnectionIntegrationWrapper* CreateWithDtlsIdentityStore(
-      const std::string& debug_name,
-      std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
-      rtc::Thread* network_thread,
-      rtc::Thread* worker_thread) {
-    PeerConnectionIntegrationWrapper* client(
-        new PeerConnectionIntegrationWrapper(debug_name));
-    webrtc::PeerConnectionDependencies dependencies(nullptr);
-    dependencies.cert_generator = std::move(cert_generator);
-    if (!client->Init(nullptr, nullptr, std::move(dependencies), network_thread,
-                      worker_thread, nullptr,
-                      /*reset_encoder_factory=*/false,
-                      /*reset_decoder_factory=*/false)) {
-      delete client;
-      return nullptr;
-    }
-    return client;
-  }
-
   webrtc::PeerConnectionFactoryInterface* pc_factory() const {
     return peer_connection_factory_.get();
   }
@@ -414,14 +388,29 @@ class PeerConnectionIntegrationWrapper : public webrtc::PeerConnectionObserver,
 
   void CreateDataChannel(const std::string& label,
                          const webrtc::DataChannelInit* init) {
-    data_channel_ = pc()->CreateDataChannel(label, init);
-    ASSERT_TRUE(data_channel_.get() != nullptr);
-    data_observer_.reset(new MockDataChannelObserver(data_channel_));
+    data_channels_.push_back(pc()->CreateDataChannel(label, init));
+    ASSERT_TRUE(data_channels_.back().get() != nullptr);
+    data_observers_.push_back(
+        std::make_unique<MockDataChannelObserver>(data_channels_.back()));
   }
 
-  DataChannelInterface* data_channel() { return data_channel_; }
+  // Return the last observed data channel.
+  DataChannelInterface* data_channel() {
+    if (data_channels_.size() == 0) {
+      return nullptr;
+    }
+    return data_channels_.back();
+  }
+  // Return all data channels.
+  const std::vector<rtc::scoped_refptr<DataChannelInterface>>& data_channels() {
+    return data_channels_;
+  }
+
   const MockDataChannelObserver* data_observer() const {
-    return data_observer_.get();
+    if (data_observers_.size() == 0) {
+      return nullptr;
+    }
+    return data_observers_.back().get();
   }
 
   int audio_frames_received() const {
@@ -684,15 +673,15 @@ class PeerConnectionIntegrationWrapper : public webrtc::PeerConnectionObserver,
     // Concealing more than 20% of samples during a renegotiation is
     // unacceptable.
     // Worst bots:
-    // linux_more_configs bot at conceal rate 0.516
-    // linux_x86_dbg bot at conceal rate 0.854
+    // Nondebug: Linux32 Release at conceal rate 0.606597 (CI run)
+    // Debug: linux_x86_dbg bot at conceal rate 0.854
     if (delta_samples > 0) {
 #if !defined(NDEBUG)
-      EXPECT_GT(0.95, 1.0 * delta_concealed / delta_samples)
+      EXPECT_LT(1.0 * delta_concealed / delta_samples, 0.95)
           << "Concealed " << delta_concealed << " of " << delta_samples
           << " samples";
 #else
-      EXPECT_GT(0.6, 1.0 * delta_concealed / delta_samples)
+      EXPECT_LT(1.0 * delta_concealed / delta_samples, 0.7)
           << "Concealed " << delta_concealed << " of " << delta_samples
           << " samples";
 #endif
@@ -705,6 +694,7 @@ class PeerConnectionIntegrationWrapper : public webrtc::PeerConnectionObserver,
   }
 
  private:
+  // Constructor used by friend class PeerConnectionIntegrationBaseTest.
   explicit PeerConnectionIntegrationWrapper(const std::string& debug_name)
       : debug_name_(debug_name) {}
 
@@ -793,7 +783,8 @@ class PeerConnectionIntegrationWrapper : public webrtc::PeerConnectionObserver,
       const PeerConnectionInterface::RTCConfiguration* config,
       webrtc::PeerConnectionDependencies dependencies) {
     PeerConnectionInterface::RTCConfiguration modified_config;
-    // If |config| is null, this will result in a default configuration being
+    modified_config.sdp_semantics = sdp_semantics_;
+    // If `config` is null, this will result in a default configuration being
     // used.
     if (config) {
       modified_config = *config;
@@ -950,7 +941,7 @@ class PeerConnectionIntegrationWrapper : public webrtc::PeerConnectionObserver,
     }
   }
 
-  // Simulate sending a blob of SDP with delay |signaling_delay_ms_| (0 by
+  // Simulate sending a blob of SDP with delay `signaling_delay_ms_` (0 by
   // default).
   void SendSdpMessage(SdpType type, const std::string& msg) {
     if (signaling_delay_ms_ == 0) {
@@ -971,7 +962,7 @@ class PeerConnectionIntegrationWrapper : public webrtc::PeerConnectionObserver,
     }
   }
 
-  // Simulate trickling an ICE candidate with delay |signaling_delay_ms_| (0 by
+  // Simulate trickling an ICE candidate with delay `signaling_delay_ms_` (0 by
   // default).
   void SendIceMessage(const std::string& sdp_mid,
                       int sdp_mline_index,
@@ -1109,14 +1100,15 @@ class PeerConnectionIntegrationWrapper : public webrtc::PeerConnectionObserver,
   void OnDataChannel(
       rtc::scoped_refptr<DataChannelInterface> data_channel) override {
     RTC_LOG(LS_INFO) << debug_name_ << ": OnDataChannel";
-    data_channel_ = data_channel;
-    data_observer_.reset(new MockDataChannelObserver(data_channel));
+    data_channels_.push_back(data_channel);
+    data_observers_.push_back(
+        std::make_unique<MockDataChannelObserver>(data_channel));
   }
 
   std::string debug_name_;
 
   std::unique_ptr<rtc::FakeNetworkManager> fake_network_manager_;
-  // Reference to the mDNS responder owned by |fake_network_manager_| after set.
+  // Reference to the mDNS responder owned by `fake_network_manager_` after set.
   webrtc::FakeMdnsResponder* mdns_responder_ = nullptr;
 
   rtc::scoped_refptr<webrtc::PeerConnectionInterface> peer_connection_;
@@ -1144,7 +1136,7 @@ class PeerConnectionIntegrationWrapper : public webrtc::PeerConnectionObserver,
   // them, if required.
   std::vector<rtc::scoped_refptr<webrtc::VideoTrackSource>>
       video_track_sources_;
-  // |local_video_renderer_| attached to the first created local video track.
+  // `local_video_renderer_` attached to the first created local video track.
   std::unique_ptr<webrtc::FakeVideoTrackRenderer> local_video_renderer_;
 
   SdpSemantics sdp_semantics_;
@@ -1153,8 +1145,9 @@ class PeerConnectionIntegrationWrapper : public webrtc::PeerConnectionObserver,
   std::function<void(cricket::SessionDescription*)> generated_sdp_munger_;
   std::function<void()> remote_offer_handler_;
   rtc::MockAsyncResolver* remote_async_resolver_ = nullptr;
-  rtc::scoped_refptr<DataChannelInterface> data_channel_;
-  std::unique_ptr<MockDataChannelObserver> data_observer_;
+  // All data channels either created or observed on this peerconnection
+  std::vector<rtc::scoped_refptr<DataChannelInterface>> data_channels_;
+  std::vector<std::unique_ptr<MockDataChannelObserver>> data_observers_;
 
   std::vector<std::unique_ptr<MockRtpReceiverObserver>> rtp_receiver_observers_;
 
@@ -1391,7 +1384,7 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
                 webrtc::PeerConnectionInterface::kIceConnectionCompleted);
   }
 
-  // When |event_log_factory| is null, the default implementation of the event
+  // When `event_log_factory` is null, the default implementation of the event
   // log factory will be used.
   std::unique_ptr<PeerConnectionIntegrationWrapper> CreatePeerConnectionWrapper(
       const std::string& debug_name,
@@ -1561,12 +1554,14 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
       cricket::ProtocolType type = cricket::ProtocolType::PROTO_UDP,
       const std::string& common_name = "test turn server") {
     rtc::Thread* thread = network_thread();
+    rtc::SocketFactory* socket_factory = fss_.get();
     std::unique_ptr<cricket::TestTurnServer> turn_server =
         network_thread()->Invoke<std::unique_ptr<cricket::TestTurnServer>>(
-            RTC_FROM_HERE,
-            [thread, internal_address, external_address, type, common_name] {
+            RTC_FROM_HERE, [thread, socket_factory, internal_address,
+                            external_address, type, common_name] {
               return std::make_unique<cricket::TestTurnServer>(
-                  thread, internal_address, external_address, type,
+                  thread, socket_factory, internal_address, external_address,
+                  type,
                   /*ignore_bad_certs=*/true, common_name);
             });
     turn_servers_.push_back(std::move(turn_server));
@@ -1642,8 +1637,8 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
 
   PeerConnectionIntegrationWrapper* caller() { return caller_.get(); }
 
-  // Set the |caller_| to the |wrapper| passed in and return the
-  // original |caller_|.
+  // Set the `caller_` to the `wrapper` passed in and return the
+  // original `caller_`.
   PeerConnectionIntegrationWrapper* SetCallerPcWrapperAndReturnCurrent(
       PeerConnectionIntegrationWrapper* wrapper) {
     PeerConnectionIntegrationWrapper* old = caller_.release();
@@ -1653,8 +1648,8 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
 
   PeerConnectionIntegrationWrapper* callee() { return callee_.get(); }
 
-  // Set the |callee_| to the |wrapper| passed in and return the
-  // original |callee_|.
+  // Set the `callee_` to the `wrapper` passed in and return the
+  // original `callee_`.
   PeerConnectionIntegrationWrapper* SetCalleePcWrapperAndReturnCurrent(
       PeerConnectionIntegrationWrapper* wrapper) {
     PeerConnectionIntegrationWrapper* old = callee_.release();
@@ -1675,7 +1670,7 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
 
   // Expects the provided number of new frames to be received within
   // kMaxWaitForFramesMs. The new expected frames are specified in
-  // |media_expectations|. Returns false if any of the expectations were
+  // `media_expectations`. Returns false if any of the expectations were
   // not met.
   bool ExpectNewFrames(const MediaExpectations& media_expectations) {
     // Make sure there are no bogus tracks confusing the issue.
@@ -1829,11 +1824,11 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
   SdpSemantics sdp_semantics_;
 
  private:
-  // |ss_| is used by |network_thread_| so it must be destroyed later.
+  // `ss_` is used by `network_thread_` so it must be destroyed later.
   std::unique_ptr<rtc::VirtualSocketServer> ss_;
   std::unique_ptr<rtc::FirewallSocketServer> fss_;
-  // |network_thread_| and |worker_thread_| are used by both
-  // |caller_| and |callee_| so they must be destroyed
+  // `network_thread_` and `worker_thread_` are used by both
+  // `caller_` and `callee_` so they must be destroyed
   // later.
   std::unique_ptr<rtc::Thread> network_thread_;
   std::unique_ptr<rtc::Thread> worker_thread_;

@@ -27,9 +27,14 @@ const WindowId kNullWindowId = 0;
 //   - On Windows: integer display device index.
 //   - On OSX: CGDirectDisplayID cast to intptr_t.
 //   - On Linux (with X11): TBD.
+//   - On ChromeOS: display::Display::id() is an int64_t.
 // On Windows, ScreenId is implementation dependent: sending a ScreenId from one
 // implementation to another usually won't work correctly.
-typedef intptr_t ScreenId;
+#if defined(CHROMEOS)
+  typedef int64_t ScreenId;
+#else
+  typedef intptr_t ScreenId;
+#endif
 
 // The screen id corresponds to all screen combined together.
 const ScreenId kFullDesktopScreenId = -1;
@@ -39,7 +44,7 @@ const ScreenId kInvalidScreenId = -2;
 // Integers to attach to each DesktopFrame to differentiate the generator of
 // the frame. The entries in this namespace should remain in sync with the
 // SequentialDesktopCapturerId enum, which is logged via UMA.
-// |kScreenCapturerWinGdi| and |kScreenCapturerWinDirectx| values are preserved
+// `kScreenCapturerWinGdi` and `kScreenCapturerWinDirectx` values are preserved
 // to maintain compatibility
 namespace DesktopCapturerId {
 constexpr uint32_t CreateFourCC(char a, char b, char c, char d) {

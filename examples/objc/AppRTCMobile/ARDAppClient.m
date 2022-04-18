@@ -13,6 +13,7 @@
 #import "sdk/objc/api/peerconnection/RTCAudioTrack.h"
 #import "sdk/objc/api/peerconnection/RTCConfiguration.h"
 #import "sdk/objc/api/peerconnection/RTCFileLogger.h"
+#import "sdk/objc/api/peerconnection/RTCIceCandidateErrorEvent.h"
 #import "sdk/objc/api/peerconnection/RTCIceServer.h"
 #import "sdk/objc/api/peerconnection/RTCMediaConstraints.h"
 #import "sdk/objc/api/peerconnection/RTCMediaStream.h"
@@ -64,7 +65,7 @@ static int64_t const kARDAppClientRtcEventLogMaxSizeInBytes = 5e6;  // 5 MB.
 static int const kKbpsMultiplier = 1000;
 
 // We need a proxy to NSTimer because it causes a strong retain cycle. When
-// using the proxy, |invalidate| must be called before it properly deallocs.
+// using the proxy, `invalidate` must be called before it properly deallocs.
 @interface ARDTimerProxy : NSObject
 
 - (instancetype)initWithInterval:(NSTimeInterval)interval
@@ -423,6 +424,17 @@ static int const kKbpsMultiplier = 1000;
         [[ARDICECandidateMessage alloc] initWithCandidate:candidate];
     [self sendSignalingMessage:message];
   });
+}
+
+- (void)peerConnection:(RTC_OBJC_TYPE(RTCPeerConnection) *)peerConnection
+    didFailToGatherIceCandidate:(RTC_OBJC_TYPE(RTCIceCandidateErrorEvent) *)event {
+  RTCLog(@"Failed to gather ICE candidate. address: %@, port: %d, url: %@, errorCode: %d, "
+         @"errorText: %@",
+         event.address,
+         event.port,
+         event.url,
+         event.errorCode,
+         event.errorText);
 }
 
 - (void)peerConnection:(RTC_OBJC_TYPE(RTCPeerConnection) *)peerConnection

@@ -138,7 +138,7 @@ class WgcCapturerWinTest : public ::testing::TestWithParam<CaptureType>,
   }
 
   void StartWindowThreadMessageLoop() {
-    window_thread_->PostTask(RTC_FROM_HERE, [this]() {
+    window_thread_->PostTask([this]() {
       MSG msg;
       BOOL gm;
       while ((gm = ::GetMessage(&msg, NULL, 0, 0)) != 0 && gm != -1) {
@@ -238,7 +238,7 @@ class WgcCapturerWinTest : public ::testing::TestWithParam<CaptureType>,
   }
 
   // DesktopCapturer::Callback interface
-  // The capturer synchronously invokes this method before |CaptureFrame()|
+  // The capturer synchronously invokes this method before `CaptureFrame()`
   // returns.
   void OnCaptureResult(DesktopCapturer::Result result,
                        std::unique_ptr<DesktopFrame> frame) override {

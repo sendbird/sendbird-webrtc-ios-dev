@@ -30,8 +30,12 @@ namespace cricket {
 
 class RTC_EXPORT BasicPortAllocator : public PortAllocator {
  public:
-  // note: The (optional) relay_port_factory is owned by caller
-  // and must have a life time that exceeds that of BasicPortAllocator.
+  // The NetworkManager is a mandatory argument. The other arguments are
+  // optional. All these objects are owned by caller and must have a life time
+  // that exceeds that of BasicPortAllocator.
+  // TODO(bugs.webrtc.org/13145): The SocketFactory should be mandatory, but
+  // currenly isn't. When not specified, one is created internally, based on the
+  // socket server associated with the thread calling CreateSession.
   BasicPortAllocator(rtc::NetworkManager* network_manager,
                      rtc::PacketSocketFactory* socket_factory,
                      webrtc::TurnCustomizer* customizer = nullptr,
@@ -46,10 +50,7 @@ class RTC_EXPORT BasicPortAllocator : public PortAllocator {
 
   // Set to kDefaultNetworkIgnoreMask by default.
   void SetNetworkIgnoreMask(int network_ignore_mask) override;
-  int network_ignore_mask() const {
-    CheckRunOnValidThreadIfInitialized();
-    return network_ignore_mask_;
-  }
+  int GetNetworkIgnoreMask() const;
 
   rtc::NetworkManager* network_manager() const {
     CheckRunOnValidThreadIfInitialized();
@@ -76,6 +77,8 @@ class RTC_EXPORT BasicPortAllocator : public PortAllocator {
     CheckRunOnValidThreadIfInitialized();
     return relay_port_factory_;
   }
+
+  void SetVpnList(const std::vector<rtc::NetworkMask>& vpn_list) override;
 
  private:
   void OnIceRegathering(PortAllocatorSession* session,
@@ -227,9 +230,7 @@ class RTC_EXPORT BasicPortAllocatorSession : public PortAllocatorSession {
   void DisableEquivalentPhases(rtc::Network* network,
                                PortConfiguration* config,
                                uint32_t* flags);
-  void AddAllocatedPort(Port* port,
-                        AllocationSequence* seq,
-                        bool prepare_address);
+  void AddAllocatedPort(Port* port, AllocationSequence* seq);
   void OnCandidateReady(Port* port, const Candidate& c);
   void OnCandidateError(Port* port, const IceCandidateErrorEvent& event);
   void OnPortComplete(Port* port);
@@ -255,7 +256,7 @@ class RTC_EXPORT BasicPortAllocatorSession : public PortAllocatorSession {
   void PrunePortsAndRemoveCandidates(
       const std::vector<PortData*>& port_data_list);
   // Gets filtered and sanitized candidates generated from a port and
-  // append to |candidates|.
+  // append to `candidates`.
   void GetCandidatesFromPort(const PortData& data,
                              std::vector<Candidate>* candidates) const;
   Port* GetBestTurnPortForNetwork(const std::string& network_name) const;
@@ -287,7 +288,7 @@ class RTC_EXPORT BasicPortAllocatorSession : public PortAllocatorSession {
 // Records configuration information useful in creating ports.
 // TODO(deadbeef): Rename "relay" to "turn_server" in this struct.
 struct RTC_EXPORT PortConfiguration {
-  // TODO(jiayl): remove |stun_address| when Chrome is updated.
+  // TODO(jiayl): remove `stun_address` when Chrome is updated.
   rtc::SocketAddress stun_address;
   ServerAddresses stun_servers;
   std::string username;
@@ -338,7 +339,7 @@ class AllocationSequence : public sigslot::has_slots<> {
 
     // kInit --> kRunning --> {kCompleted|kStopped}
   };
-  // |port_allocation_complete_callback| is called when AllocationSequence is
+  // `port_allocation_complete_callback` is called when AllocationSequence is
   // done with allocating ports. This signal is useful when port allocation
   // fails which doesn't result in any candidates. Using this signal
   // BasicPortAllocatorSession can send its candidate discovery conclusion
@@ -409,7 +410,7 @@ class AllocationSequence : public sigslot::has_slots<> {
   int phase_;
   std::function<void()> port_allocation_complete_callback_;
   // This counter is sampled and passed together with tasks when tasks are
-  // posted. If the sampled counter doesn't match |epoch_| on reception, the
+  // posted. If the sampled counter doesn't match `epoch_` on reception, the
   // posted task is ignored.
   int epoch_ = 0;
   webrtc::ScopedTaskSafety safety_;

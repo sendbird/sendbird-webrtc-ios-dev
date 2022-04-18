@@ -36,7 +36,7 @@ constexpr int kOverheadIpv4Udp = 20 + 8;
 
 class SocketReader : public sigslot::has_slots<> {
  public:
-  explicit SocketReader(rtc::AsyncSocket* socket, rtc::Thread* network_thread)
+  explicit SocketReader(rtc::Socket* socket, rtc::Thread* network_thread)
       : socket_(socket), network_thread_(network_thread) {
     socket_->SignalReadEvent.connect(this, &SocketReader::OnReadEvent);
     size_ = 128 * 1024;
@@ -44,7 +44,7 @@ class SocketReader : public sigslot::has_slots<> {
   }
   ~SocketReader() override { delete[] buf_; }
 
-  void OnReadEvent(rtc::AsyncSocket* socket) {
+  void OnReadEvent(rtc::Socket* socket) {
     RTC_DCHECK(socket_ == socket);
     RTC_DCHECK(network_thread_->IsCurrent());
     int64_t timestamp;
@@ -60,7 +60,7 @@ class SocketReader : public sigslot::has_slots<> {
   }
 
  private:
-  rtc::AsyncSocket* const socket_;
+  rtc::Socket* const socket_;
   rtc::Thread* const network_thread_;
   char* buf_;
   size_t size_;
@@ -207,13 +207,13 @@ TEST(NetworkEmulationManagerTest, Run) {
 
   rtc::CopyOnWriteBuffer data("Hello");
   for (uint64_t j = 0; j < 2; j++) {
-    rtc::AsyncSocket* s1 = nullptr;
-    rtc::AsyncSocket* s2 = nullptr;
+    rtc::Socket* s1 = nullptr;
+    rtc::Socket* s2 = nullptr;
     t1->Invoke<void>(RTC_FROM_HERE, [&] {
-      s1 = t1->socketserver()->CreateAsyncSocket(AF_INET, SOCK_DGRAM);
+      s1 = t1->socketserver()->CreateSocket(AF_INET, SOCK_DGRAM);
     });
     t2->Invoke<void>(RTC_FROM_HERE, [&] {
-      s2 = t2->socketserver()->CreateAsyncSocket(AF_INET, SOCK_DGRAM);
+      s2 = t2->socketserver()->CreateSocket(AF_INET, SOCK_DGRAM);
     });
 
     SocketReader r1(s1, t1);
@@ -235,10 +235,8 @@ TEST(NetworkEmulationManagerTest, Run) {
     t2->Invoke<void>(RTC_FROM_HERE, [&] { s2->Connect(a1); });
 
     for (uint64_t i = 0; i < 1000; i++) {
-      t1->PostTask(RTC_FROM_HERE,
-                   [&]() { s1->Send(data.data(), data.size()); });
-      t2->PostTask(RTC_FROM_HERE,
-                   [&]() { s2->Send(data.data(), data.size()); });
+      t1->PostTask([&]() { s1->Send(data.data(), data.size()); });
+      t2->PostTask([&]() { s2->Send(data.data(), data.size()); });
     }
 
     network_manager.time_controller()->AdvanceTime(TimeDelta::Seconds(1));
@@ -363,13 +361,13 @@ TEST(NetworkEmulationManagerTest, DebugStatsCollectedInDebugMode) {
 
   rtc::CopyOnWriteBuffer data("Hello");
   for (uint64_t j = 0; j < 2; j++) {
-    rtc::AsyncSocket* s1 = nullptr;
-    rtc::AsyncSocket* s2 = nullptr;
+    rtc::Socket* s1 = nullptr;
+    rtc::Socket* s2 = nullptr;
     t1->Invoke<void>(RTC_FROM_HERE, [&] {
-      s1 = t1->socketserver()->CreateAsyncSocket(AF_INET, SOCK_DGRAM);
+      s1 = t1->socketserver()->CreateSocket(AF_INET, SOCK_DGRAM);
     });
     t2->Invoke<void>(RTC_FROM_HERE, [&] {
-      s2 = t2->socketserver()->CreateAsyncSocket(AF_INET, SOCK_DGRAM);
+      s2 = t2->socketserver()->CreateSocket(AF_INET, SOCK_DGRAM);
     });
 
     SocketReader r1(s1, t1);
@@ -391,10 +389,8 @@ TEST(NetworkEmulationManagerTest, DebugStatsCollectedInDebugMode) {
     t2->Invoke<void>(RTC_FROM_HERE, [&] { s2->Connect(a1); });
 
     for (uint64_t i = 0; i < 1000; i++) {
-      t1->PostTask(RTC_FROM_HERE,
-                   [&]() { s1->Send(data.data(), data.size()); });
-      t2->PostTask(RTC_FROM_HERE,
-                   [&]() { s2->Send(data.data(), data.size()); });
+      t1->PostTask([&]() { s1->Send(data.data(), data.size()); });
+      t2->PostTask([&]() { s2->Send(data.data(), data.size()); });
     }
 
     network_manager.time_controller()->AdvanceTime(TimeDelta::Seconds(1));
@@ -467,13 +463,13 @@ TEST(NetworkEmulationManagerTest, ThroughputStats) {
   constexpr int64_t kSinglePacketSize = kUdpPayloadSize + kOverheadIpv4Udp;
   rtc::CopyOnWriteBuffer data(kUdpPayloadSize);
 
-  rtc::AsyncSocket* s1 = nullptr;
-  rtc::AsyncSocket* s2 = nullptr;
+  rtc::Socket* s1 = nullptr;
+  rtc::Socket* s2 = nullptr;
   t1->Invoke<void>(RTC_FROM_HERE, [&] {
-    s1 = t1->socketserver()->CreateAsyncSocket(AF_INET, SOCK_DGRAM);
+    s1 = t1->socketserver()->CreateSocket(AF_INET, SOCK_DGRAM);
   });
   t2->Invoke<void>(RTC_FROM_HERE, [&] {
-    s2 = t2->socketserver()->CreateAsyncSocket(AF_INET, SOCK_DGRAM);
+    s2 = t2->socketserver()->CreateSocket(AF_INET, SOCK_DGRAM);
   });
 
   SocketReader r1(s1, t1);
@@ -498,8 +494,8 @@ TEST(NetworkEmulationManagerTest, ThroughputStats) {
   const int kNumPacketsSent = 11;
   const TimeDelta kDelay = TimeDelta::Millis(100);
   for (int i = 0; i < kNumPacketsSent; i++) {
-    t1->PostTask(RTC_FROM_HERE, [&]() { s1->Send(data.data(), data.size()); });
-    t2->PostTask(RTC_FROM_HERE, [&]() { s2->Send(data.data(), data.size()); });
+    t1->PostTask([&]() { s1->Send(data.data(), data.size()); });
+    t2->PostTask([&]() { s2->Send(data.data(), data.size()); });
     network_manager.time_controller()->AdvanceTime(kDelay);
   }
 

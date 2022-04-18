@@ -10,7 +10,6 @@
 
 #include "modules/audio_device/linux/audio_device_alsa_linux.h"
 
-#include <assert.h>
 
 #include "modules/audio_device/audio_device_config.h"
 #include "rtc_base/logging.h"
@@ -542,8 +541,6 @@ int32_t AudioDeviceLinuxALSA::MicrophoneVolumeIsAvailable(bool& available) {
 
 int32_t AudioDeviceLinuxALSA::SetMicrophoneVolume(uint32_t volume) {
   return (_mixerManager.SetMicrophoneVolume(volume));
-
-  return 0;
 }
 
 int32_t AudioDeviceLinuxALSA::MicrophoneVolume(uint32_t& volume) const {
@@ -856,8 +853,6 @@ int32_t AudioDeviceLinuxALSA::InitPlayoutLocked() {
   } else {
     return -1;
   }
-
-  return 0;
 }
 
 int32_t AudioDeviceLinuxALSA::InitRecording() {
@@ -1000,8 +995,6 @@ int32_t AudioDeviceLinuxALSA::InitRecordingLocked() {
   } else {
     return -1;
   }
-
-  return 0;
 }
 
 int32_t AudioDeviceLinuxALSA::StartRecording() {

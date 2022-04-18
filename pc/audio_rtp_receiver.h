@@ -133,7 +133,6 @@ class AudioRtpReceiver : public ObserverInterface,
       RTC_GUARDED_BY(&signaling_thread_checker_);
   bool cached_track_enabled_ RTC_GUARDED_BY(&signaling_thread_checker_);
   double cached_volume_ RTC_GUARDED_BY(&signaling_thread_checker_) = 1.0;
-  bool stopped_ RTC_GUARDED_BY(&signaling_thread_checker_) = true;
   RtpReceiverObserverInterface* observer_
       RTC_GUARDED_BY(&signaling_thread_checker_) = nullptr;
   bool received_first_packet_ RTC_GUARDED_BY(&signaling_thread_checker_) =
@@ -144,7 +143,7 @@ class AudioRtpReceiver : public ObserverInterface,
   rtc::scoped_refptr<DtlsTransportInterface> dtls_transport_
       RTC_GUARDED_BY(&signaling_thread_checker_);
   // Stores and updates the playout delay. Handles caching cases if
-  // |SetJitterBufferMinimumDelay| is called before start.
+  // `SetJitterBufferMinimumDelay` is called before start.
   JitterBufferDelay delay_ RTC_GUARDED_BY(worker_thread_);
   rtc::scoped_refptr<FrameTransformerInterface> frame_transformer_
       RTC_GUARDED_BY(worker_thread_);

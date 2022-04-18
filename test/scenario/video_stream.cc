@@ -49,7 +49,7 @@ uint8_t CodecTypeToPayloadType(VideoCodecType codec_type) {
     case VideoCodecType::kVideoCodecH264:
       return CallTest::kPayloadTypeH264;
     default:
-      RTC_NOTREACHED();
+      RTC_DCHECK_NOTREACHED();
   }
   return {};
 }
@@ -64,7 +64,7 @@ std::string CodecTypeToCodecName(VideoCodecType codec_type) {
     case VideoCodecType::kVideoCodecH264:
       return cricket::kH264CodecName;
     default:
-      RTC_NOTREACHED();
+      RTC_DCHECK_NOTREACHED();
   }
   return {};
 }
@@ -73,7 +73,6 @@ VideoEncoderConfig::ContentType ConvertContentType(
   switch (content_type) {
     case VideoStreamConfig::Encoder::ContentType::kVideo:
       return VideoEncoderConfig::ContentType::kRealtimeVideo;
-      break;
     case VideoStreamConfig::Encoder::ContentType::kScreen:
       return VideoEncoderConfig::ContentType::kScreen;
   }
@@ -223,7 +222,7 @@ CreateEncoderSpecificSettings(VideoStreamConfig config) {
     case Codec::kVideoCodecAV1:
       return nullptr;
     case Codec::kVideoCodecMultiplex:
-      RTC_NOTREACHED();
+      RTC_DCHECK_NOTREACHED();
       return nullptr;
   }
 }
@@ -383,7 +382,7 @@ SendVideoStream::SendVideoStream(CallClient* sender,
             } else if (config_.encoder.codec == Codec::kVideoCodecGeneric) {
               encoder = std::make_unique<test::FakeEncoder>(sender_->clock_);
             } else {
-              RTC_NOTREACHED();
+              RTC_DCHECK_NOTREACHED();
             }
             fake_encoders_.push_back(encoder.get());
             if (config_.encoder.fake.max_rate.IsFinite())

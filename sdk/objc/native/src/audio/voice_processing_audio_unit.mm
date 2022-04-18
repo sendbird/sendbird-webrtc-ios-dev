@@ -10,7 +10,6 @@
 
 #import "voice_processing_audio_unit.h"
 
-#include "absl/base/macros.h"
 #include "rtc_base/checks.h"
 #include "system_wrappers/include/metrics.h"
 
@@ -332,19 +331,19 @@ bool VoiceProcessingAudioUnit::Initialize(Float64 sample_rate) {
   return true;
 }
 
-bool VoiceProcessingAudioUnit::Start() {
+OSStatus VoiceProcessingAudioUnit::Start() {
   RTC_DCHECK_GE(state_, kUninitialized);
   RTCLog(@"Starting audio unit.");
 
   OSStatus result = AudioOutputUnitStart(vpio_unit_);
   if (result != noErr) {
     RTCLogError(@"Failed to start audio unit. Error=%ld", (long)result);
-    return false;
+    return result;
   } else {
     RTCLog(@"Started audio unit");
   }
   state_ = kStarted;
-  return true;
+  return noErr;
 }
 
 bool VoiceProcessingAudioUnit::Stop() {
@@ -466,13 +465,11 @@ void VoiceProcessingAudioUnit::DisposeAudioUnit() {
     switch (state_) {
       case kStarted:
         Stop();
-        // Fall through.
-        ABSL_FALLTHROUGH_INTENDED;
+        [[fallthrough]];
       case kInitialized:
         Uninitialize();
         break;
       case kUninitialized:
-        ABSL_FALLTHROUGH_INTENDED;
       case kInitRequired:
         break;
     }
