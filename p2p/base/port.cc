@@ -194,8 +194,10 @@ Port::~Port() {
     ++iter;
   }
 
-  for (uint32_t i = 0; i < list.size(); i++)
+  for (uint32_t i = 0; i < list.size(); i++) {
+    list[i]->SignalDestroyed.disconnect(this);
     delete list[i];
+  }
 }
 
 const std::string& Port::Type() const {
@@ -606,6 +608,15 @@ rtc::DiffServCodePoint Port::StunDscpValue() const {
   return rtc::DSCP_NO_CHANGE;
 }
 
+void Port::DestroyAllConnections() {
+  RTC_DCHECK_RUN_ON(thread_);
+  for (auto kv : connections_) {
+    kv.second->SignalDestroyed.disconnect(this);
+    kv.second->Destroy();
+  }
+  connections_.clear();
+}
+
 void Port::set_timeout_delay(int delay) {
   RTC_DCHECK_RUN_ON(thread_);
   // Although this method is meant to only be used by tests, some downstream
@@ -655,7 +666,7 @@ bool Port::MaybeIceRoleConflict(const rtc::SocketAddress& addr,
     remote_tiebreaker = stun_attr->value();
   }
 
-  // If |remote_ufrag| is same as port local username fragment and
+  // If `remote_ufrag` is same as port local username fragment and
   // tie breaker value received in the ping message matches port
   // tiebreaker value this must be a loopback call.
   // We will treat this as valid scenario.
@@ -697,7 +708,7 @@ bool Port::MaybeIceRoleConflict(const rtc::SocketAddress& addr,
       }
       break;
     default:
-      RTC_NOTREACHED();
+      RTC_DCHECK_NOTREACHED();
   }
   return ret;
 }
@@ -715,7 +726,7 @@ bool Port::HandleIncomingPacket(rtc::AsyncPacketSocket* socket,
                                 size_t size,
                                 const rtc::SocketAddress& remote_addr,
                                 int64_t packet_time_us) {
-  RTC_NOTREACHED();
+  RTC_DCHECK_NOTREACHED();
   return false;
 }
 

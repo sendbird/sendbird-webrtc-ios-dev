@@ -240,6 +240,7 @@ CFStringRef ExtractProfile(const webrtc::H264ProfileLevelId &profile_level_id) {
 
     case webrtc::H264Profile::kProfileConstrainedHigh:
     case webrtc::H264Profile::kProfileHigh:
+    case webrtc::H264Profile::kProfilePredictiveHigh444:
       switch (profile_level_id.level) {
         case webrtc::H264Level::kLevel3:
           return kVTProfileLevel_H264_High_3_0;
@@ -273,7 +274,7 @@ CFStringRef ExtractProfile(const webrtc::H264ProfileLevelId &profile_level_id) {
 }
 
 // The function returns the max allowed sample rate (pixels per second) that
-// can be processed by given encoder with |profile_level_id|.
+// can be processed by given encoder with `profile_level_id`.
 // See https://www.itu.int/rec/dologin_pub.asp?lang=e&id=T-REC-H.264-201610-S!!PDF-E&type=items
 // for details.
 NSUInteger GetMaxSampleRate(const webrtc::H264ProfileLevelId &profile_level_id) {
@@ -537,6 +538,10 @@ NSUInteger GetMaxSampleRate(const webrtc::H264ProfileLevelId &profile_level_id) 
   return NO;
 }
 
+- (BOOL)supportsNativeHandle {
+  return YES;
+}
+
 #pragma mark - Private
 
 - (NSInteger)releaseEncoder {
@@ -602,7 +607,7 @@ NSUInteger GetMaxSampleRate(const webrtc::H264ProfileLevelId &profile_level_id) 
   // buffers retrieved from the encoder's pixel buffer pool.
   const size_t attributesSize = 3;
   CFTypeRef keys[attributesSize] = {
-#if defined(WEBRTC_IOS) && TARGET_OS_MACCATALYST
+#if defined(WEBRTC_IOS) && (TARGET_OS_MACCATALYST || TARGET_OS_SIMULATOR)
       kCVPixelBufferMetalCompatibilityKey,
 #elif defined(WEBRTC_IOS)
       kCVPixelBufferOpenGLESCompatibilityKey,
@@ -723,7 +728,7 @@ NSUInteger GetMaxSampleRate(const webrtc::H264ProfileLevelId &profile_level_id) 
   if (_compressionSession) {
     SetVTSessionProperty(_compressionSession, kVTCompressionPropertyKey_AverageBitRate, bitrateBps);
 
-    // With zero |_maxAllowedFrameRate|, we fall back to automatic frame rate detection.
+    // With zero `_maxAllowedFrameRate`, we fall back to automatic frame rate detection.
     if (_maxAllowedFrameRate > 0) {
       SetVTSessionProperty(
           _compressionSession, kVTCompressionPropertyKey_ExpectedFrameRate, frameRate);

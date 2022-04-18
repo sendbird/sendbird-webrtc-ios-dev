@@ -16,6 +16,7 @@
 
 #include "logging/rtc_event_log/encoder/rtc_event_log_encoder_legacy.h"
 #include "logging/rtc_event_log/encoder/rtc_event_log_encoder_new_format.h"
+#include "logging/rtc_event_log/encoder/rtc_event_log_encoder_v3.h"
 #include "logging/rtc_event_log/events/rtc_event_alr_state.h"
 #include "logging/rtc_event_log/events/rtc_event_audio_network_adaptation.h"
 #include "logging/rtc_event_log/events/rtc_event_audio_playout.h"
@@ -60,6 +61,9 @@ class RtcEventLogEncoderTest
         break;
       case RtcEventLog::EncodingType::NewFormat:
         encoder_ = std::make_unique<RtcEventLogEncoderNewFormat>();
+        break;
+      case RtcEventLog::EncodingType::ProtoFree:
+        encoder_ = std::make_unique<RtcEventLogEncoderV3>();
         break;
     }
     encoded_ =
@@ -174,7 +178,7 @@ void RtcEventLogEncoderTest::TestRtpPackets() {
     extension_map = gen_.NewRtpHeaderExtensionMap(true);
   }
 
-  // Simulate |event_count_| RTP packets, with SSRCs assigned randomly
+  // Simulate `event_count_` RTP packets, with SSRCs assigned randomly
   // out of the small pool above.
   std::map<uint32_t, std::vector<std::unique_ptr<EventType>>> events_by_ssrc;
   for (size_t i = 0; i < event_count_; ++i) {
@@ -1284,6 +1288,9 @@ class RtcEventLogEncoderSimpleTest
         break;
       case RtcEventLog::EncodingType::NewFormat:
         encoder_ = std::make_unique<RtcEventLogEncoderNewFormat>();
+        break;
+      case RtcEventLog::EncodingType::ProtoFree:
+        encoder_ = std::make_unique<RtcEventLogEncoderV3>();
         break;
     }
     encoded_ =

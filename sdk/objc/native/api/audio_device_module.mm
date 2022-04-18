@@ -14,17 +14,15 @@
 #include "rtc_base/ref_counted_object.h"
 
 #include "sdk/objc/native/src/audio/audio_device_module_ios.h"
-#import "sdk/objc/native/src/audio/audio_source_sink.h"
 
 namespace webrtc {
 
-rtc::scoped_refptr<AudioDeviceModule> CreateAudioDeviceModule(bool bypass_voice_processing, webrtc::AudioSourceSink* audioSink) {
-  RTC_DLOG(INFO) << __FUNCTION__;
+rtc::scoped_refptr<AudioDeviceModule> CreateAudioDeviceModule(bool bypass_voice_processing) {
+  RTC_DLOG(LS_INFO) << __FUNCTION__;
 #if defined(WEBRTC_IOS)
-  return new rtc::RefCountedObject<ios_adm::AudioDeviceModuleIOS>(bypass_voice_processing, audioSink);
+  return rtc::make_ref_counted<ios_adm::AudioDeviceModuleIOS>(bypass_voice_processing);
 #else
-  RTC_LOG(LERROR)
-      << "current platform is not supported => this module will self destruct!";
+  RTC_LOG(LS_ERROR) << "current platform is not supported => this module will self destruct!";
   return nullptr;
 #endif
 }

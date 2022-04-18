@@ -20,7 +20,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/string_utils.h"
-#include "rtc_base/win32.h"
+#include "rtc_base/win/windows_version.h"
 
 namespace webrtc {
 
@@ -79,7 +79,7 @@ BOOL CALLBACK GetWindowListHandler(HWND hwnd, LPARAM param) {
   DesktopCapturer::Source window;
   window.id = reinterpret_cast<WindowId>(hwnd);
 
-  // GetWindowText* are potentially blocking operations if |hwnd| is
+  // GetWindowText* are potentially blocking operations if `hwnd` is
   // owned by the current process. The APIs will send messages to the window's
   // message loop, and if the message loop is waiting on this operation we will
   // enter a deadlock.
@@ -179,7 +179,8 @@ bool GetCroppedWindowRect(HWND window,
   // As of Windows8, transparent resize borders are added by the OS at
   // left/bottom/right sides of a resizeable window. If the cropped window
   // doesn't remove these borders, the background will be exposed a bit.
-  if (rtc::IsWindows8OrLater() || is_maximized) {
+  if (rtc::rtc_win::GetVersion() >= rtc::rtc_win::Version::VERSION_WIN8 ||
+      is_maximized) {
     // Only apply this cropping to windows with a resize border (otherwise,
     // it'd clip the edges of captured pop-up windows without this border).
     LONG style = GetWindowLong(window, GWL_STYLE);
@@ -228,7 +229,7 @@ bool GetWindowContentRect(HWND window, DesktopRect* result) {
     // - We assume a window has same border width in each side.
     // So we shrink half of the width difference from all four sides.
     const int shrink = ((width - result->width()) / 2);
-    // When |shrink| is negative, DesktopRect::Extend() shrinks itself.
+    // When `shrink` is negative, DesktopRect::Extend() shrinks itself.
     result->Extend(shrink, 0, shrink, 0);
     // Usually this should not happen, just in case we have received a strange
     // window, which has only left and right borders.
@@ -311,7 +312,7 @@ WindowCaptureHelperWin::WindowCaptureHelperWin() {
             GetProcAddress(dwmapi_library_, "DwmGetWindowAttribute"));
   }
 
-  if (rtc::IsWindows10OrLater()) {
+  if (rtc::rtc_win::GetVersion() >= rtc::rtc_win::Version::VERSION_WIN10) {
     if (FAILED(::CoCreateInstance(__uuidof(VirtualDesktopManager), nullptr,
                                   CLSCTX_ALL,
                                   IID_PPV_ARGS(&virtual_desktop_manager_)))) {
@@ -364,7 +365,7 @@ bool WindowCaptureHelperWin::IsWindowChromeNotification(HWND hwnd) {
   return false;
 }
 
-// |content_rect| is preferred because,
+// `content_rect` is preferred because,
 // 1. WindowCapturerWinGdi is using GDI capturer, which cannot capture DX
 // output.
 //    So ScreenCapturer should be used as much as possible to avoid

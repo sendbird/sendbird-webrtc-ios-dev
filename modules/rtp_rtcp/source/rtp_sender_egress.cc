@@ -41,11 +41,9 @@ bool IsTrialSetTo(const WebRtcKeyValueConfig* field_trials,
 
 RtpSenderEgress::NonPacedPacketSender::NonPacedPacketSender(
     RtpSenderEgress* sender,
-    SequenceNumberAssigner* sequence_number_assigner)
-    : transport_sequence_number_(0),
-      sender_(sender),
-      sequence_number_assigner_(sequence_number_assigner) {
-  RTC_DCHECK(sequence_number_assigner_);
+    PacketSequencer* sequencer)
+    : transport_sequence_number_(0), sender_(sender), sequencer_(sequencer) {
+  RTC_DCHECK(sequencer);
 }
 RtpSenderEgress::NonPacedPacketSender::~NonPacedPacketSender() = default;
 
@@ -57,22 +55,17 @@ void RtpSenderEgress::NonPacedPacketSender::EnqueuePackets(
   }
   auto fec_packets = sender_->FetchFecPackets();
   if (!fec_packets.empty()) {
-    // Don't generate sequence numbers for flexfec, they are already running on
-    // an internally maintained sequence.
-    const bool generate_sequence_numbers = !sender_->FlexFecSsrc().has_value();
-
-    for (auto& packet : fec_packets) {
-      if (generate_sequence_numbers) {
-        sequence_number_assigner_->AssignSequenceNumber(packet.get());
-      }
-      PrepareForSend(packet.get());
-    }
     EnqueuePackets(std::move(fec_packets));
   }
 }
 
 void RtpSenderEgress::NonPacedPacketSender::PrepareForSend(
     RtpPacketToSend* packet) {
+  // Assign sequence numbers, but not for flexfec which is already running on
+  // an internally maintained sequence number series.
+  if (packet->Ssrc() != sender_->FlexFecSsrc()) {
+    sequencer_->Sequence(*packet);
+  }
   if (!packet->SetExtension<TransportSequenceNumber>(
           ++transport_sequence_number_)) {
     --transport_sequence_number_;
@@ -139,6 +132,21 @@ void RtpSenderEgress::SendPacket(RtpPacketToSend* packet,
                                  const PacedPacketInfo& pacing_info) {
   RTC_DCHECK_RUN_ON(&pacer_checker_);
   RTC_DCHECK(packet);
+
+  if (packet->Ssrc() == ssrc_ &&
+      packet->packet_type() != RtpPacketMediaType::kRetransmission) {
+    if (last_sent_seq_.has_value()) {
+      RTC_DCHECK_EQ(static_cast<uint16_t>(*last_sent_seq_ + 1),
+                    packet->SequenceNumber());
+    }
+    last_sent_seq_ = packet->SequenceNumber();
+  } else if (packet->Ssrc() == rtx_ssrc_) {
+    if (last_sent_rtx_seq_.has_value()) {
+      RTC_DCHECK_EQ(static_cast<uint16_t>(*last_sent_rtx_seq_ + 1),
+                    packet->SequenceNumber());
+    }
+    last_sent_rtx_seq_ = packet->SequenceNumber();
+  }
 
   RTC_DCHECK(packet->packet_type().has_value());
   RTC_DCHECK(HasCorrectSsrc(*packet));
@@ -274,7 +282,7 @@ void RtpSenderEgress::SendPacket(RtpPacketToSend* packet,
   }
 
   if (send_success) {
-    // |media_has_been_sent_| is used by RTPSender to figure out if it can send
+    // `media_has_been_sent_` is used by RTPSender to figure out if it can send
     // padding in the absence of transport-cc or abs-send-time.
     // In those cases media must be sent first to set a reference timestamp.
     media_has_been_sent_ = true;
@@ -426,7 +434,7 @@ void RtpSenderEgress::AddPacketToTransportFeedback(
         break;
       case RtpPacketMediaType::kRetransmission:
         // For retransmissions, we're want to remove the original media packet
-        // if the rentrasmit arrives - so populate that in the packet info.
+        // if the retransmit arrives - so populate that in the packet info.
         packet_info.media_ssrc = ssrc_;
         packet_info.rtp_sequence_number =
             *packet.retransmitted_sequence_number();
@@ -437,8 +445,6 @@ void RtpSenderEgress::AddPacketToTransportFeedback(
         // or lost.
         break;
     }
-    // TODO(bugs.webrtc.org/12713): Remove once downstream usage is gone.
-    packet_info.ssrc = packet_info.media_ssrc.value_or(0);
 
     transport_feedback_observer_->OnAddPacket(packet_info);
   }

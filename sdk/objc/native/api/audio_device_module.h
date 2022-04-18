@@ -17,16 +17,13 @@
 
 namespace webrtc {
 
-class AudioSourceSink;
-
-// If |bypass_voice_processing| is true, WebRTC will attempt to disable hardware
+// If `bypass_voice_processing` is true, WebRTC will attempt to disable hardware
 // audio processing on iOS.
-// Warning: Setting |bypass_voice_processing| will have unpredictable
+// Warning: Setting `bypass_voice_processing` will have unpredictable
 // consequences for the audio path in the device. It is not advisable to use in
 // most scenarios.
 rtc::scoped_refptr<AudioDeviceModule> CreateAudioDeviceModule(
-    bool bypass_voice_processing = false,
-    AudioSourceSink* audioSink = nullptr);
+    bool bypass_voice_processing = false);
 
 }  // namespace webrtc
 

@@ -1,16 +1,12 @@
 # WebRTC coding style guide
 
 <?% config.freshness.owner = 'danilchap' %?>
-<?% config.freshness.reviewed = '2021-05-12' %?>
+<?% config.freshness.reviewed = '2022-01-17' %?>
 
 ## General advice
 
 Some older parts of the code violate the style guide in various ways.
-
-* If making small changes to such code, follow the style guide when it's
-  reasonable to do so, but in matters of formatting etc., it is often better to
-  be consistent with the surrounding code.
-* If making large changes to such code, consider first cleaning it up in a
+If making large changes to such code, consider first cleaning it up in a
   separate CL.
 
 ## C++
@@ -20,23 +16,19 @@ WebRTC follows the [Chromium C++ style guide][chr-style] and the
 style guide trumps the Google style guide, and the rules in this file trump them
 both.
 
-[chr-style]: https://chromium.googlesource.com/chromium/src/+/HEAD/styleguide/c++/c++.md
+[chr-style]: https://chromium.googlesource.com/chromium/src/+/main/styleguide/c++/c++.md
 [goog-style]: https://google.github.io/styleguide/cppguide.html
 
 ### C++ version
 
-WebRTC is written in C++14, but with some restrictions:
+WebRTC is written in C++17, but with some restrictions:
 
-* We only allow the subset of C++14 (language and library) that is not banned by
-  Chromium; see the [list of banned C++ features in Chromium][chromium-cpp].
-* We only allow the subset of C++14 that is also valid C++17; otherwise, users
-  would not be able to compile WebRTC in C++17 mode.
+* We only allow the subset of C++17 (language and library) that is not banned by
+  Chromium; see the [list of banned C++ features in Chromium][chr-style-cpp].
+* We only allow the subset of C++17 that is also valid C++20; otherwise, users
+  would not be able to compile WebRTC in C++20 mode.
 
-[chromium-cpp]: https://chromium-cpp.appspot.com/
-
-Unlike the Chromium and Google C++ style guides, we do not allow C++20-style
-designated initializers, because we want to stay compatible with compilers that
-do not yet support them.
+[chr-style-cpp]: https://chromium.googlesource.com/chromium/src/+/main/styleguide/c++/c++-features.md
 
 ### Abseil
 
@@ -108,7 +100,7 @@ In other words, rename the existing function, and provide an inline wrapper
 using the original name that calls it. That way, callers who are willing to
 call it using the `DEPRECATED_`-prefixed name don't get the warning.
 
-[ABSL_DEPRECATED]: https://source.chromium.org/chromium/chromium/src/+/master:third_party/abseil-cpp/absl/base/attributes.h?q=ABSL_DEPRECATED
+[ABSL_DEPRECATED]: https://source.chromium.org/chromium/chromium/src/+/main:third_party/abseil-cpp/absl/base/attributes.h?q=ABSL_DEPRECATED
 
 ### ArrayView
 
@@ -141,9 +133,7 @@ The following smart pointer types are recommended:
    * `rtc::scoped_refptr` for all objects with shared ownership
 
 Use of `std::shared_ptr` is *not permitted*. It is banned in the Chromium style
-guide (overriding the Google style guide), and offers no compelling advantage
-over `rtc::scoped_refptr` (which is cloned from the corresponding Chromium
-type). See the
+guide (overriding the Google style guide). See the
 [list of banned C++ library features in Chromium][chr-std-shared-ptr] for more
 information.
 
@@ -152,7 +142,7 @@ In most cases, one will want to explicitly control lifetimes, and therefore use
 exist both from the API users and internally, with no way to invalidate pointers
 held by the API user, `rtc::scoped_refptr` can be appropriate.
 
-[chr-std-shared-ptr]: https://chromium-cpp.appspot.com/#library-blocklist
+[chr-std-shared-ptr]: https://chromium.googlesource.com/chromium/src/+/main/styleguide/c++/c++-features.md#shared-pointers-banned
 
 ### `std::bind`
 
@@ -180,11 +170,8 @@ headers you need.
 There's a substantial chunk of legacy C code in WebRTC, and a lot of it is old
 enough that it violates the parts of the C++ style guide that also applies to C
 (naming etc.) for the simple reason that it pre-dates the use of the current C++
-style guide for this code base.
-
-* If making small changes to C code, mimic the style of the surrounding code.
-* If making large changes to C code, consider converting the whole thing to C++
-  first.
+style guide for this code base. If making large changes to C code, consider
+converting the whole thing to C++ first.
 
 ## Java
 
@@ -197,13 +184,13 @@ WebRTC follows the [Google Java style guide][goog-java-style].
 WebRTC follows the
 [Chromium Objective-C and Objective-C++ style guide][chr-objc-style].
 
-[chr-objc-style]: https://chromium.googlesource.com/chromium/src/+/HEAD/styleguide/objective-c/objective-c.md
+[chr-objc-style]: https://chromium.googlesource.com/chromium/src/+/main/styleguide/objective-c/objective-c.md
 
 ## Python
 
 WebRTC follows [Chromium's Python style][chr-py-style].
 
-[chr-py-style]: https://chromium.googlesource.com/chromium/src/+/HEAD/styleguide/python/python.md
+[chr-py-style]: https://chromium.googlesource.com/chromium/src/+/main/styleguide/python/python.md
 
 ## Build files
 

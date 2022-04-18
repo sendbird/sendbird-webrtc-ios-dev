@@ -18,7 +18,6 @@
 #include "api/dtmf_sender_interface.h"
 #include "api/scoped_refptr.h"
 #include "pc/proxy.h"
-#include "rtc_base/constructor_magic.h"
 #include "rtc_base/location.h"
 #include "rtc_base/ref_count.h"
 #include "rtc_base/task_utils/pending_task_safety_flag.h"
@@ -38,11 +37,11 @@ class DtmfProviderInterface {
   // Returns true if the audio sender is capable of sending DTMF. Otherwise
   // returns false.
   virtual bool CanInsertDtmf() = 0;
-  // Sends DTMF |code|.
-  // The |duration| indicates the length of the DTMF tone in ms.
+  // Sends DTMF `code`.
+  // The `duration` indicates the length of the DTMF tone in ms.
   // Returns true on success and false on failure.
   virtual bool InsertDtmf(int code, int duration) = 0;
-  // Returns a |sigslot::signal0<>| signal. The signal should fire before
+  // Returns a `sigslot::signal0<>` signal. The signal should fire before
   // the provider is destroyed.
   virtual sigslot::signal0<>* GetOnDestroyedSignal() = 0;
 
@@ -72,6 +71,9 @@ class DtmfSender : public DtmfSenderInterface, public sigslot::has_slots<> {
   DtmfSender(rtc::Thread* signaling_thread, DtmfProviderInterface* provider);
   virtual ~DtmfSender();
 
+  DtmfSender(const DtmfSender&) = delete;
+  DtmfSender& operator=(const DtmfSender&) = delete;
+
  private:
   DtmfSender();
 
@@ -96,8 +98,6 @@ class DtmfSender : public DtmfSenderInterface, public sigslot::has_slots<> {
   // For cancelling the tasks which feed the DTMF provider one tone at a time.
   rtc::scoped_refptr<PendingTaskSafetyFlag> safety_flag_ RTC_GUARDED_BY(
       signaling_thread_) RTC_PT_GUARDED_BY(signaling_thread_) = nullptr;
-
-  RTC_DISALLOW_COPY_AND_ASSIGN(DtmfSender);
 };
 
 // Define proxy for DtmfSenderInterface.
