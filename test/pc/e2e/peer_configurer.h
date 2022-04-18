@@ -43,9 +43,12 @@ class PeerConfigurerImpl final
                     PeerConnectionE2EQualityTestFixture::CapturingDeviceIndex>;
 
   PeerConfigurerImpl(rtc::Thread* network_thread,
-                     rtc::NetworkManager* network_manager)
-      : components_(std::make_unique<InjectableComponents>(network_thread,
-                                                           network_manager)),
+                     rtc::NetworkManager* network_manager,
+                     rtc::PacketSocketFactory* packet_socket_factory)
+      : components_(
+            std::make_unique<InjectableComponents>(network_thread,
+                                                   network_manager,
+                                                   packet_socket_factory)),
         params_(std::make_unique<Params>()) {}
 
   PeerConfigurer* SetName(absl::string_view name) override {
@@ -145,6 +148,18 @@ class PeerConfigurerImpl final
     params_->audio_config = std::move(config);
     return this;
   }
+  PeerConfigurer* SetUseUlpFEC(bool value) override {
+    params_->use_ulp_fec = value;
+    return this;
+  }
+  PeerConfigurer* SetUseFlexFEC(bool value) override {
+    params_->use_flex_fec = value;
+    return this;
+  }
+  PeerConfigurer* SetVideoEncoderBitrateMultiplier(double multiplier) override {
+    params_->video_encoder_bitrate_multiplier = multiplier;
+    return this;
+  }
   PeerConfigurer* SetNetEqFactory(
       std::unique_ptr<NetEqFactory> neteq_factory) override {
     components_->pcf_dependencies->neteq_factory = std::move(neteq_factory);
@@ -168,6 +183,12 @@ class PeerConfigurerImpl final
     params_->bitrate_settings = bitrate_settings;
     return this;
   }
+  PeerConfigurer* SetVideoCodecs(
+      std::vector<PeerConnectionE2EQualityTestFixture::VideoCodecConfig>
+          video_codecs) override {
+    params_->video_codecs = std::move(video_codecs);
+    return this;
+  }
 
   PeerConfigurer* SetIceTransportFactory(
       std::unique_ptr<IceTransportFactory> factory) override {
@@ -178,6 +199,7 @@ class PeerConfigurerImpl final
 
   InjectableComponents* components() { return components_.get(); }
   Params* params() { return params_.get(); }
+  const Params& params() const { return *params_; }
   std::vector<VideoSource>* video_sources() { return &video_sources_; }
 
   // Returns InjectableComponents and transfer ownership to the caller.
@@ -210,19 +232,53 @@ class PeerConfigurerImpl final
   std::vector<VideoSource> video_sources_;
 };
 
-// Set missing params to default values if it is required:
-//  * Generate video stream labels if some of them are missing
-//  * Generate audio stream labels if some of them are missing
-//  * Set video source generation mode if it is not specified
-//  * Video codecs under test
-void SetDefaultValuesForMissingParams(
-    PeerConnectionE2EQualityTestFixture::RunParams* run_params,
-    std::vector<std::unique_ptr<PeerConfigurerImpl>>* peers);
-// Validate peer's parameters, also ensure uniqueness of all video stream
-// labels.
-void ValidateParams(
-    const PeerConnectionE2EQualityTestFixture::RunParams& run_params,
-    const std::vector<std::unique_ptr<PeerConfigurerImpl>>& peers);
+class DefaultNamesProvider {
+ public:
+  // Caller have to ensure that default names array will outlive names provider
+  // instance.
+  explicit DefaultNamesProvider(
+      absl::string_view prefix,
+      rtc::ArrayView<const absl::string_view> default_names = {});
+
+  void MaybeSetName(absl::optional<std::string>& name);
+
+ private:
+  std::string GenerateName();
+
+  std::string GenerateNameInternal();
+
+  const std::string prefix_;
+  const rtc::ArrayView<const absl::string_view> default_names_;
+
+  std::set<std::string> known_names_;
+  size_t counter_ = 0;
+};
+
+class PeerParamsPreprocessor {
+ public:
+  PeerParamsPreprocessor();
+
+  // Set missing params to default values if it is required:
+  //  * Generate video stream labels if some of them are missing
+  //  * Generate audio stream labels if some of them are missing
+  //  * Set video source generation mode if it is not specified
+  //  * Video codecs under test
+  void SetDefaultValuesForMissingParams(PeerConfigurerImpl& peer);
+
+  // Validate peer's parameters, also ensure uniqueness of all video stream
+  // labels.
+  void ValidateParams(const PeerConfigurerImpl& peer);
+
+ private:
+  DefaultNamesProvider peer_names_provider;
+
+  std::set<std::string> peer_names;
+  std::set<std::string> video_labels;
+  std::set<std::string> audio_labels;
+  std::set<std::string> video_sync_groups;
+  std::set<std::string> audio_sync_groups;
+  int media_streams_count = 0;
+};
 
 }  // namespace webrtc_pc_e2e
 }  // namespace webrtc

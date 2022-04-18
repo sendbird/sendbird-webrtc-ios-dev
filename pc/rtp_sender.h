@@ -56,7 +56,7 @@ class RtpSenderInternal : public RtpSenderInterface {
   virtual void SetMediaChannel(cricket::MediaChannel* media_channel) = 0;
 
   // Used to set the SSRC of the sender, once a local description has been set.
-  // If |ssrc| is 0, this indiates that the sender should disconnect from the
+  // If `ssrc` is 0, this indiates that the sender should disconnect from the
   // underlying transport (this occurs if the sender isn't seen in a local
   // description).
   virtual void SetSsrc(uint32_t ssrc) = 0;
@@ -69,7 +69,7 @@ class RtpSenderInternal : public RtpSenderInterface {
 
   virtual void Stop() = 0;
 
-  // |GetParameters| and |SetParameters| operate with a transactional model.
+  // `GetParameters` and `SetParameters` operate with a transactional model.
   // Allow access to get/set parameters without invalidating transaction id.
   virtual RtpParameters GetParametersInternal() const = 0;
   virtual RTCError SetParametersInternal(const RtpParameters& parameters) = 0;
@@ -104,25 +104,36 @@ class RtpSenderBase : public RtpSenderInternal, public ObserverInterface {
 
   bool SetTrack(MediaStreamTrackInterface* track) override;
   rtc::scoped_refptr<MediaStreamTrackInterface> track() const override {
+    // This method is currently called from the worker thread by
+    // RTCStatsCollector::PrepareTransceiverStatsInfosAndCallStats_s_w_n.
+    // RTC_DCHECK_RUN_ON(signaling_thread_);
     return track_;
   }
 
   RtpParameters GetParameters() const override;
   RTCError SetParameters(const RtpParameters& parameters) override;
 
-  // |GetParameters| and |SetParameters| operate with a transactional model.
+  // `GetParameters` and `SetParameters` operate with a transactional model.
   // Allow access to get/set parameters without invalidating transaction id.
   RtpParameters GetParametersInternal() const override;
   RTCError SetParametersInternal(const RtpParameters& parameters) override;
 
   // Used to set the SSRC of the sender, once a local description has been set.
-  // If |ssrc| is 0, this indiates that the sender should disconnect from the
+  // If `ssrc` is 0, this indiates that the sender should disconnect from the
   // underlying transport (this occurs if the sender isn't seen in a local
   // description).
   void SetSsrc(uint32_t ssrc) override;
-  uint32_t ssrc() const override { return ssrc_; }
+  uint32_t ssrc() const override {
+    // This method is currently called from the worker thread by
+    // RTCStatsCollector::PrepareTransceiverStatsInfosAndCallStats_s_w_n.
+    // RTC_DCHECK_RUN_ON(signaling_thread_);
+    return ssrc_;
+  }
 
-  std::vector<std::string> stream_ids() const override { return stream_ids_; }
+  std::vector<std::string> stream_ids() const override {
+    RTC_DCHECK_RUN_ON(signaling_thread_);
+    return stream_ids_;
+  }
   void set_stream_ids(const std::vector<std::string>& stream_ids) override {
     stream_ids_ = stream_ids;
   }
@@ -135,6 +146,7 @@ class RtpSenderBase : public RtpSenderInternal, public ObserverInterface {
     init_parameters_.encodings = init_send_encodings;
   }
   std::vector<RtpEncodingParameters> init_send_encodings() const override {
+    RTC_DCHECK_RUN_ON(signaling_thread_);
     return init_parameters_.encodings;
   }
 
@@ -143,6 +155,7 @@ class RtpSenderBase : public RtpSenderInternal, public ObserverInterface {
     dtls_transport_ = dtls_transport;
   }
   rtc::scoped_refptr<DtlsTransportInterface> dtls_transport() const override {
+    RTC_DCHECK_RUN_ON(signaling_thread_);
     return dtls_transport_;
   }
 
@@ -168,11 +181,14 @@ class RtpSenderBase : public RtpSenderInternal, public ObserverInterface {
   void SetEncoderToPacketizerFrameTransformer(
       rtc::scoped_refptr<FrameTransformerInterface> frame_transformer) override;
 
-  void SetTransceiverAsStopped() override { is_transceiver_stopped_ = true; }
+  void SetTransceiverAsStopped() override {
+    RTC_DCHECK_RUN_ON(signaling_thread_);
+    is_transceiver_stopped_ = true;
+  }
 
  protected:
-  // If |set_streams_observer| is not null, it is invoked when SetStreams()
-  // is called. |set_streams_observer| is not owned by this object. If not
+  // If `set_streams_observer` is not null, it is invoked when SetStreams()
+  // is called. `set_streams_observer` is not owned by this object. If not
   // null, it must be valid at least until this sender becomes stopped.
   RtpSenderBase(rtc::Thread* worker_thread,
                 const std::string& id,
@@ -195,10 +211,11 @@ class RtpSenderBase : public RtpSenderInternal, public ObserverInterface {
   virtual void AddTrackToStats() {}
   virtual void RemoveTrackFromStats() {}
 
-  rtc::Thread* worker_thread_;
+  rtc::Thread* const signaling_thread_;
+  rtc::Thread* const worker_thread_;
   uint32_t ssrc_ = 0;
-  bool stopped_ = false;
-  bool is_transceiver_stopped_ = false;
+  bool stopped_ RTC_GUARDED_BY(signaling_thread_) = false;
+  bool is_transceiver_stopped_ RTC_GUARDED_BY(signaling_thread_) = false;
   int attachment_id_ = 0;
   const std::string id_;
 
@@ -210,10 +227,10 @@ class RtpSenderBase : public RtpSenderInternal, public ObserverInterface {
 
   rtc::scoped_refptr<DtlsTransportInterface> dtls_transport_;
   rtc::scoped_refptr<FrameEncryptorInterface> frame_encryptor_;
-  // |last_transaction_id_| is used to verify that |SetParameters| is receiving
-  // the parameters object that was last returned from |GetParameters|.
+  // `last_transaction_id_` is used to verify that `SetParameters` is receiving
+  // the parameters object that was last returned from `GetParameters`.
   // As such, it is used for internal verification and is not observable by the
-  // the client. It is marked as mutable to enable |GetParameters| to be a
+  // the client. It is marked as mutable to enable `GetParameters` to be a
   // const method.
   mutable absl::optional<std::string> last_transaction_id_;
   std::vector<std::string> disabled_rids_;
@@ -258,7 +275,7 @@ class LocalAudioSinkAdapter : public AudioTrackSinkInterface,
   void SetSink(cricket::AudioSource::Sink* sink) override;
 
   cricket::AudioSource::Sink* sink_;
-  // Critical section protecting |sink_|.
+  // Critical section protecting `sink_`.
   Mutex lock_;
   int num_preferred_channels_ = -1;
 };
@@ -269,8 +286,8 @@ class AudioRtpSender : public DtmfProviderInterface, public RtpSenderBase {
   // The sender is initialized with no track to send and no associated streams.
   // StatsCollector provided so that Add/RemoveLocalAudioTrack can be called
   // at the appropriate times.
-  // If |set_streams_observer| is not null, it is invoked when SetStreams()
-  // is called. |set_streams_observer| is not owned by this object. If not
+  // If `set_streams_observer` is not null, it is invoked when SetStreams()
+  // is called. `set_streams_observer` is not owned by this object. If not
   // null, it must be valid at least until this sender becomes stopped.
   static rtc::scoped_refptr<AudioRtpSender> Create(
       rtc::Thread* worker_thread,
@@ -325,7 +342,7 @@ class AudioRtpSender : public DtmfProviderInterface, public RtpSenderBase {
   rtc::scoped_refptr<DtmfSenderInterface> dtmf_sender_proxy_;
   bool cached_track_enabled_ = false;
 
-  // Used to pass the data callback from the |track_| to the other end of
+  // Used to pass the data callback from the `track_` to the other end of
   // cricket::AudioSource.
   std::unique_ptr<LocalAudioSinkAdapter> sink_adapter_;
 };
@@ -334,8 +351,8 @@ class VideoRtpSender : public RtpSenderBase {
  public:
   // Construct an RtpSender for video with the given sender ID.
   // The sender is initialized with no track to send and no associated streams.
-  // If |set_streams_observer| is not null, it is invoked when SetStreams()
-  // is called. |set_streams_observer| is not owned by this object. If not
+  // If `set_streams_observer` is not null, it is invoked when SetStreams()
+  // is called. `set_streams_observer` is not owned by this object. If not
   // null, it must be valid at least until this sender becomes stopped.
   static rtc::scoped_refptr<VideoRtpSender> Create(
       rtc::Thread* worker_thread,

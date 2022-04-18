@@ -26,6 +26,11 @@ class MockDcSctpSocket : public DcSctpSocketInterface {
 
   MOCK_METHOD(void, Connect, (), (override));
 
+  MOCK_METHOD(void,
+              RestoreFromState,
+              (const DcSctpSocketHandoverState&),
+              (override));
+
   MOCK_METHOD(void, Shutdown, (), (override));
 
   MOCK_METHOD(void, Close, (), (override));
@@ -57,6 +62,19 @@ class MockDcSctpSocket : public DcSctpSocketInterface {
               SetBufferedAmountLowThreshold,
               (StreamID stream_id, size_t bytes),
               (override));
+
+  MOCK_METHOD(Metrics, GetMetrics, (), (const, override));
+
+  MOCK_METHOD(HandoverReadinessStatus,
+              GetHandoverReadiness,
+              (),
+              (const, override));
+  MOCK_METHOD(absl::optional<DcSctpSocketHandoverState>,
+              GetHandoverStateAndClose,
+              (),
+              (override));
+
+  MOCK_METHOD(SctpImplementation, peer_implementation, (), (const));
 };
 
 }  // namespace dcsctp

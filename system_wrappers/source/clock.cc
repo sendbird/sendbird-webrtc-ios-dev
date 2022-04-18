@@ -94,8 +94,8 @@ class RealTimeClock : public Clock {
   }
 
   NtpTime ConvertTimestampToNtpTime(Timestamp timestamp) override {
-    // This method does not check |use_system_independent_ntp_time_| because
-    // all callers never used the old behavior of |CurrentNtpTime|.
+    // This method does not check `use_system_independent_ntp_time_` because
+    // all callers never used the old behavior of `CurrentNtpTime`.
     return TimeMicrosToNtp(timestamp.us());
   }
 
@@ -248,10 +248,7 @@ class UnixRealTimeClock : public RealTimeClock {
  protected:
   timeval CurrentTimeVal() override {
     struct timeval tv;
-    struct timezone tz;
-    tz.tz_minuteswest = 0;
-    tz.tz_dsttime = 0;
-    gettimeofday(&tv, &tz);
+    gettimeofday(&tv, nullptr);
     return tv;
   }
 };

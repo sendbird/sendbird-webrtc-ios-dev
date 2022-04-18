@@ -21,6 +21,7 @@
 #include "media/sctp/sctp_transport_internal.h"
 #include "rtc_base/gunit.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/physical_socket_server.h"
 
 #ifdef WEBRTC_ANDROID
 #include "pc/test/android_test_initializer.h"
@@ -54,14 +55,14 @@ class PeerConnectionEndToEndBaseTest : public sigslot::has_slots<>,
  public:
   typedef std::vector<rtc::scoped_refptr<DataChannelInterface>> DataChannelList;
 
-  explicit PeerConnectionEndToEndBaseTest(SdpSemantics sdp_semantics) {
-    network_thread_ = rtc::Thread::CreateWithSocketServer();
-    worker_thread_ = rtc::Thread::Create();
+  explicit PeerConnectionEndToEndBaseTest(SdpSemantics sdp_semantics)
+      : network_thread_(std::make_unique<rtc::Thread>(&pss_)),
+        worker_thread_(rtc::Thread::Create()) {
     RTC_CHECK(network_thread_->Start());
     RTC_CHECK(worker_thread_->Start());
-    caller_ = new rtc::RefCountedObject<PeerConnectionTestWrapper>(
+    caller_ = rtc::make_ref_counted<PeerConnectionTestWrapper>(
         "caller", network_thread_.get(), worker_thread_.get());
-    callee_ = new rtc::RefCountedObject<PeerConnectionTestWrapper>(
+    callee_ = rtc::make_ref_counted<PeerConnectionTestWrapper>(
         "callee", network_thread_.get(), worker_thread_.get());
     webrtc::PeerConnectionInterface::IceServer ice_server;
     ice_server.uri = "stun:stun.l.google.com:19302";
@@ -125,14 +126,16 @@ class PeerConnectionEndToEndBaseTest : public sigslot::has_slots<>,
   }
 
   void OnCallerAddedDataChanel(DataChannelInterface* dc) {
-    caller_signaled_data_channels_.push_back(dc);
+    caller_signaled_data_channels_.push_back(
+        rtc::scoped_refptr<DataChannelInterface>(dc));
   }
 
   void OnCalleeAddedDataChannel(DataChannelInterface* dc) {
-    callee_signaled_data_channels_.push_back(dc);
+    callee_signaled_data_channels_.push_back(
+        rtc::scoped_refptr<DataChannelInterface>(dc));
   }
 
-  // Tests that |dc1| and |dc2| can send to and receive from each other.
+  // Tests that `dc1` and `dc2` can send to and receive from each other.
   void TestDataChannelSendAndReceive(DataChannelInterface* dc1,
                                      DataChannelInterface* dc2,
                                      size_t size = 6) {
@@ -191,6 +194,7 @@ class PeerConnectionEndToEndBaseTest : public sigslot::has_slots<>,
   }
 
  protected:
+  rtc::PhysicalSocketServer pss_;
   std::unique_ptr<rtc::Thread> network_thread_;
   std::unique_ptr<rtc::Thread> worker_thread_;
   rtc::scoped_refptr<PeerConnectionTestWrapper> caller_;
@@ -256,7 +260,7 @@ rtc::scoped_refptr<webrtc::AudioDecoderFactory>
 CreateForwardingMockDecoderFactory(
     webrtc::AudioDecoderFactory* real_decoder_factory) {
   rtc::scoped_refptr<webrtc::MockAudioDecoderFactory> mock_decoder_factory =
-      new rtc::RefCountedObject<StrictMock<webrtc::MockAudioDecoderFactory>>;
+      rtc::make_ref_counted<StrictMock<webrtc::MockAudioDecoderFactory>>();
   EXPECT_CALL(*mock_decoder_factory, GetSupportedDecoders())
       .Times(AtLeast(1))
       .WillRepeatedly(Invoke([real_decoder_factory] {
@@ -430,26 +434,22 @@ TEST_P(PeerConnectionEndToEndTest, CallWithCustomCodec) {
 
   std::vector<webrtc::AudioCodecPairId> encoder_id1, encoder_id2, decoder_id1,
       decoder_id2;
-  CreatePcs(rtc::scoped_refptr<webrtc::AudioEncoderFactory>(
-                new rtc::RefCountedObject<IdLoggingAudioEncoderFactory>(
-                    webrtc::CreateAudioEncoderFactory<
-                        AudioEncoderUnicornSparklesRainbow>(),
-                    &encoder_id1)),
-            rtc::scoped_refptr<webrtc::AudioDecoderFactory>(
-                new rtc::RefCountedObject<IdLoggingAudioDecoderFactory>(
-                    webrtc::CreateAudioDecoderFactory<
-                        AudioDecoderUnicornSparklesRainbow>(),
-                    &decoder_id1)),
-            rtc::scoped_refptr<webrtc::AudioEncoderFactory>(
-                new rtc::RefCountedObject<IdLoggingAudioEncoderFactory>(
-                    webrtc::CreateAudioEncoderFactory<
-                        AudioEncoderUnicornSparklesRainbow>(),
-                    &encoder_id2)),
-            rtc::scoped_refptr<webrtc::AudioDecoderFactory>(
-                new rtc::RefCountedObject<IdLoggingAudioDecoderFactory>(
-                    webrtc::CreateAudioDecoderFactory<
-                        AudioDecoderUnicornSparklesRainbow>(),
-                    &decoder_id2)));
+  CreatePcs(rtc::make_ref_counted<IdLoggingAudioEncoderFactory>(
+                webrtc::CreateAudioEncoderFactory<
+                    AudioEncoderUnicornSparklesRainbow>(),
+                &encoder_id1),
+            rtc::make_ref_counted<IdLoggingAudioDecoderFactory>(
+                webrtc::CreateAudioDecoderFactory<
+                    AudioDecoderUnicornSparklesRainbow>(),
+                &decoder_id1),
+            rtc::make_ref_counted<IdLoggingAudioEncoderFactory>(
+                webrtc::CreateAudioEncoderFactory<
+                    AudioEncoderUnicornSparklesRainbow>(),
+                &encoder_id2),
+            rtc::make_ref_counted<IdLoggingAudioDecoderFactory>(
+                webrtc::CreateAudioDecoderFactory<
+                    AudioDecoderUnicornSparklesRainbow>(),
+                &decoder_id2));
   GetAndAddUserMedia();
   Negotiate();
   WaitForCallEstablished();

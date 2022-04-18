@@ -91,19 +91,19 @@ class ChannelSendInterface {
                                                 int payload_frequency) = 0;
   virtual bool SendTelephoneEventOutband(int event, int duration_ms) = 0;
   virtual void OnBitrateAllocation(BitrateAllocationUpdate update) = 0;
-  virtual int GetBitrate() const = 0;
+  virtual int GetTargetBitrate() const = 0;
   virtual void SetInputMute(bool muted) = 0;
 
   virtual void ProcessAndEncodeAudio(
       std::unique_ptr<AudioFrame> audio_frame) = 0;
   virtual RtpRtcpInterface* GetRtpRtcp() const = 0;
 
-  // In RTP we currently rely on RTCP packets (|ReceivedRTCPPacket|) to inform
+  // In RTP we currently rely on RTCP packets (`ReceivedRTCPPacket`) to inform
   // about RTT.
   // In media transport we rely on the TargetTransferRateObserver instead.
   // In other words, if you are using RTP, you should expect
-  // |ReceivedRTCPPacket| to be called, if you are using media transport,
-  // |OnTargetTransferRate| will be called.
+  // `ReceivedRTCPPacket` to be called, if you are using media transport,
+  // `OnTargetTransferRate` will be called.
   //
   // In future, RTP media will move to the media transport implementation and
   // these conditions will be removed.

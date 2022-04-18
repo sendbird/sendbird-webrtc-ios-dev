@@ -126,7 +126,7 @@ struct RTC_EXPORT RtpCodecCapability {
   RtpCodecCapability();
   ~RtpCodecCapability();
 
-  // Build MIME "type/subtype" string from |name| and |kind|.
+  // Build MIME "type/subtype" string from `name` and `kind`.
   std::string mime_type() const { return MediaTypeToString(kind) + "/" + name; }
 
   // Used to identify the codec. Equivalent to MIME subtype.
@@ -277,11 +277,6 @@ struct RTC_EXPORT RtpExtension {
       const std::vector<RtpExtension>& extensions,
       absl::string_view uri,
       Filter filter);
-  ABSL_DEPRECATED(
-      "Use RtpExtension::FindHeaderExtensionByUri with filter argument")
-  static const RtpExtension* FindHeaderExtensionByUri(
-      const std::vector<RtpExtension>& extensions,
-      absl::string_view uri);
 
   // Returns the header extension with the given URI and encrypt parameter,
   // if found, otherwise nullptr.
@@ -291,6 +286,9 @@ struct RTC_EXPORT RtpExtension {
       bool encrypt);
 
   // Returns a list of extensions where any extension URI is unique.
+  // The returned list will be sorted by uri first, then encrypt and id last.
+  // Having the list sorted allows the caller fo compare filtered lists for
+  // equality to detect when changes have been made.
   static const std::vector<RtpExtension> DeduplicateHeaderExtensions(
       const std::vector<RtpExtension>& extensions,
       Filter filter);
@@ -489,8 +487,6 @@ struct RTC_EXPORT RtpEncodingParameters {
 
   // Specifies the number of temporal layers for video (if the feature is
   // supported by the codec implementation).
-  // TODO(asapersson): Different number of temporal layers are not supported
-  // per simulcast layer.
   // Screencast support is experimental.
   absl::optional<int> num_temporal_layers;
 
@@ -537,7 +533,7 @@ struct RTC_EXPORT RtpCodecParameters {
   RtpCodecParameters(const RtpCodecParameters&);
   ~RtpCodecParameters();
 
-  // Build MIME "type/subtype" string from |name| and |kind|.
+  // Build MIME "type/subtype" string from `name` and `kind`.
   std::string mime_type() const { return MediaTypeToString(kind) + "/" + name; }
 
   // Used to identify the codec. Equivalent to MIME subtype.
@@ -562,7 +558,7 @@ struct RTC_EXPORT RtpCodecParameters {
   absl::optional<int> num_channels;
 
   // The maximum packetization time to be used by an RtpSender.
-  // If |ptime| is also set, this will be ignored.
+  // If `ptime` is also set, this will be ignored.
   // TODO(deadbeef): Not implemented.
   absl::optional<int> max_ptime;
 
@@ -607,7 +603,7 @@ struct RTC_EXPORT RtpCapabilities {
 
   // Supported Forward Error Correction (FEC) mechanisms. Note that the RED,
   // ulpfec and flexfec codecs used by these mechanisms will still appear in
-  // |codecs|.
+  // `codecs`.
   std::vector<FecMechanism> fec;
 
   bool operator==(const RtpCapabilities& o) const {

@@ -16,7 +16,6 @@
 #include "api/array_view.h"
 #include "api/rtp_headers.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
-#include "rtc_base/constructor_magic.h"
 #include "rtc_base/copy_on_write_buffer.h"
 
 namespace webrtc {
@@ -54,13 +53,16 @@ class Packet {
 
   virtual ~Packet();
 
+  Packet(const Packet&) = delete;
+  Packet& operator=(const Packet&) = delete;
+
   // Parses the first bytes of the RTP payload, interpreting them as RED headers
-  // according to RFC 2198. The headers will be inserted into |headers|. The
+  // according to RFC 2198. The headers will be inserted into `headers`. The
   // caller of the method assumes ownership of the objects in the list, and
   // must delete them properly.
   bool ExtractRedHeaders(std::list<RTPHeader*>* headers) const;
 
-  // Deletes all RTPHeader objects in |headers|, but does not delete |headers|
+  // Deletes all RTPHeader objects in `headers`, but does not delete `headers`
   // itself.
   static void DeleteRedHeaders(std::list<RTPHeader*>* headers);
 
@@ -95,8 +97,6 @@ class Packet {
   size_t virtual_payload_length_bytes_ = 0;
   const double time_ms_;     // Used to denote a packet's arrival time.
   const bool valid_header_;
-
-  RTC_DISALLOW_COPY_AND_ASSIGN(Packet);
 };
 
 }  // namespace test

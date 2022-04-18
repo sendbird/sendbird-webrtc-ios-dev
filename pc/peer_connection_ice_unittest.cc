@@ -224,16 +224,16 @@ class PeerConnectionIceBaseTest : public ::testing::Test {
     for (const auto& transceiver : pc->GetTransceiversInternal()) {
       if (transceiver->media_type() == cricket::MEDIA_TYPE_AUDIO) {
         auto dtls_transport = pc->LookupDtlsTransportByMidInternal(
-            transceiver->internal()->channel()->content_name());
+            transceiver->internal()->channel()->mid());
         return dtls_transport->ice_transport()->internal()->GetIceRole();
       }
     }
-    RTC_NOTREACHED();
+    RTC_DCHECK_NOTREACHED();
     return cricket::ICEROLE_UNKNOWN;
   }
 
   // Returns a list of (ufrag, pwd) pairs in the order that they appear in
-  // |description|, or the empty list if |description| is null.
+  // `description`, or the empty list if `description` is null.
   std::vector<std::pair<std::string, std::string>> GetIceCredentials(
       const SessionDescriptionInterface* description) {
     std::vector<std::pair<std::string, std::string>> ice_credentials;
@@ -548,7 +548,7 @@ TEST_P(PeerConnectionIceTest,
   ASSERT_TRUE(
       caller->SetRemoteDescription(callee->CreateAnswerAndSetAsLocal()));
 
-  // |candidate.transport_name()| is empty.
+  // `candidate.transport_name()` is empty.
   cricket::Candidate candidate = CreateLocalUdpCandidate(kCalleeAddress);
   auto* audio_content = cricket::GetFirstAudioContent(
       caller->pc()->local_description()->description());
@@ -589,7 +589,7 @@ TEST_P(PeerConnectionIceTest,
   ASSERT_TRUE(
       caller->SetRemoteDescription(callee->CreateAnswerAndSetAsLocal()));
 
-  // Add one candidate via |AddIceCandidate|.
+  // Add one candidate via `AddIceCandidate`.
   cricket::Candidate candidate1 = CreateLocalUdpCandidate(kCallerAddress1);
   ASSERT_TRUE(callee->AddIceCandidate(&candidate1));
 
@@ -800,7 +800,7 @@ TEST_P(PeerConnectionIceTest,
       std::move(jsep_candidate), [&operation_completed](RTCError result) {
         EXPECT_FALSE(result.ok());
         EXPECT_EQ(result.message(),
-                  std::string("Error processing ICE candidate"));
+                  std::string("The remote description was null"));
         operation_completed = true;
       });
   EXPECT_TRUE_WAIT(operation_completed, kWaitTimeout);
@@ -844,6 +844,7 @@ TEST_P(PeerConnectionIceTest, LocalDescriptionUpdatedWhenContinualGathering) {
   const SocketAddress kLocalAddress("1.1.1.1", 0);
 
   RTCConfiguration config;
+  config.sdp_semantics = SdpSemantics::kUnifiedPlan;
   config.continual_gathering_policy =
       PeerConnectionInterface::GATHER_CONTINUALLY;
   auto caller = CreatePeerConnectionWithAudioVideo(config);
@@ -866,6 +867,7 @@ TEST_P(PeerConnectionIceTest,
   const SocketAddress kLocalAddress("1.1.1.1", 0);
 
   RTCConfiguration config;
+  config.sdp_semantics = SdpSemantics::kUnifiedPlan;
   config.continual_gathering_policy =
       PeerConnectionInterface::GATHER_CONTINUALLY;
   auto caller = CreatePeerConnectionWithAudioVideo(config);
@@ -892,6 +894,7 @@ TEST_P(PeerConnectionIceTest,
   const SocketAddress kLocalAddress("1.1.1.1", 0);
 
   RTCConfiguration config;
+  config.sdp_semantics = SdpSemantics::kUnifiedPlan;
   config.continual_gathering_policy = PeerConnectionInterface::GATHER_ONCE;
   auto caller = CreatePeerConnectionWithAudioVideo(config);
   caller->network()->AddInterface(kLocalAddress);
@@ -1005,7 +1008,7 @@ TEST_P(PeerConnectionIceTest,
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
   auto initial_ice_credentials =
       GetIceCredentials(caller->pc()->local_description());
-  // ICE restart becomes needed while an O/A is pending and |caller| is the
+  // ICE restart becomes needed while an O/A is pending and `caller` is the
   // offerer.
   caller->pc()->RestartIce();
   ASSERT_TRUE(
@@ -1025,7 +1028,7 @@ TEST_P(PeerConnectionIceTest,
   auto initial_ice_credentials =
       GetIceCredentials(caller->pc()->local_description());
   ASSERT_TRUE(caller->SetRemoteDescription(callee->CreateOfferAndSetAsLocal()));
-  // ICE restart becomes needed while an O/A is pending and |caller| is the
+  // ICE restart becomes needed while an O/A is pending and `caller` is the
   // answerer.
   caller->pc()->RestartIce();
   ASSERT_TRUE(
@@ -1044,7 +1047,7 @@ TEST_P(PeerConnectionIceTest, RestartIceTriggeredByRemoteSide) {
   auto initial_ice_credentials =
       GetIceCredentials(caller->pc()->local_description());
 
-  // Remote restart and O/A exchange with |caller| as the answerer should
+  // Remote restart and O/A exchange with `caller` as the answerer should
   // restart ICE locally as well.
   callee->pc()->RestartIce();
   ASSERT_TRUE(callee->ExchangeOfferAnswerWith(caller.get()));
@@ -1082,7 +1085,7 @@ TEST_F(PeerConnectionIceTestUnifiedPlan,
   auto callee = CreatePeerConnectionWithAudioVideo();
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
-  // ICE restart becomes needed while an O/A is pending and |caller| is the
+  // ICE restart becomes needed while an O/A is pending and `caller` is the
   // offerer.
   caller->observer()->clear_legacy_renegotiation_needed();
   caller->observer()->clear_latest_negotiation_needed_event();
@@ -1105,7 +1108,7 @@ TEST_F(PeerConnectionIceTestUnifiedPlan,
   // Establish initial credentials as the caller.
   ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
   ASSERT_TRUE(caller->SetRemoteDescription(callee->CreateOfferAndSetAsLocal()));
-  // ICE restart becomes needed while an O/A is pending and |caller| is the
+  // ICE restart becomes needed while an O/A is pending and `caller` is the
   // answerer.
   caller->observer()->clear_legacy_renegotiation_needed();
   caller->observer()->clear_latest_negotiation_needed_event();
@@ -1130,7 +1133,7 @@ TEST_F(PeerConnectionIceTestUnifiedPlan,
   caller->pc()->RestartIce();
   caller->observer()->clear_legacy_renegotiation_needed();
   caller->observer()->clear_latest_negotiation_needed_event();
-  // Remote restart and O/A exchange with |caller| as the answerer should
+  // Remote restart and O/A exchange with `caller` as the answerer should
   // restart ICE locally as well.
   callee->pc()->RestartIce();
   ASSERT_TRUE(callee->ExchangeOfferAnswerWith(caller.get()));
@@ -1392,6 +1395,7 @@ class PeerConnectionIceConfigTest : public ::testing::Test {
 
 TEST_F(PeerConnectionIceConfigTest, SetStunCandidateKeepaliveInterval) {
   RTCConfiguration config;
+  config.sdp_semantics = SdpSemantics::kUnifiedPlan;
   config.stun_candidate_keepalive_interval = 123;
   config.ice_candidate_pool_size = 1;
   CreatePeerConnection(config);
@@ -1408,6 +1412,7 @@ TEST_F(PeerConnectionIceConfigTest, SetStunCandidateKeepaliveInterval) {
 
 TEST_F(PeerConnectionIceConfigTest, SetStableWritableConnectionInterval) {
   RTCConfiguration config;
+  config.sdp_semantics = SdpSemantics::kUnifiedPlan;
   config.stable_writable_connection_ping_interval_ms = 3500;
   CreatePeerConnection(config);
   EXPECT_TRUE(pc_->SetConfiguration(config).ok());
@@ -1418,6 +1423,7 @@ TEST_F(PeerConnectionIceConfigTest, SetStableWritableConnectionInterval) {
 TEST_F(PeerConnectionIceConfigTest,
        SetStableWritableConnectionInterval_FailsValidation) {
   RTCConfiguration config;
+  config.sdp_semantics = SdpSemantics::kUnifiedPlan;
   CreatePeerConnection(config);
   ASSERT_TRUE(pc_->SetConfiguration(config).ok());
   config.stable_writable_connection_ping_interval_ms = 5000;
@@ -1428,6 +1434,7 @@ TEST_F(PeerConnectionIceConfigTest,
 TEST_F(PeerConnectionIceConfigTest,
        SetStableWritableConnectionInterval_DefaultValue_FailsValidation) {
   RTCConfiguration config;
+  config.sdp_semantics = SdpSemantics::kUnifiedPlan;
   CreatePeerConnection(config);
   ASSERT_TRUE(pc_->SetConfiguration(config).ok());
   config.ice_check_interval_strong_connectivity = 2500;
@@ -1438,6 +1445,7 @@ TEST_F(PeerConnectionIceConfigTest,
 
 TEST_P(PeerConnectionIceTest, IceCredentialsCreateOffer) {
   RTCConfiguration config;
+  config.sdp_semantics = SdpSemantics::kUnifiedPlan;
   config.ice_candidate_pool_size = 1;
   auto pc = CreatePeerConnectionWithAudioVideo(config);
   ASSERT_NE(pc->port_allocator_, nullptr);
@@ -1455,6 +1463,7 @@ TEST_P(PeerConnectionIceTest, IceCredentialsCreateOffer) {
 
 TEST_P(PeerConnectionIceTest, IceCredentialsCreateAnswer) {
   RTCConfiguration config;
+  config.sdp_semantics = SdpSemantics::kUnifiedPlan;
   config.ice_candidate_pool_size = 1;
   auto pc = CreatePeerConnectionWithAudioVideo(config);
   ASSERT_NE(pc->port_allocator_, nullptr);
@@ -1492,7 +1501,7 @@ TEST_P(PeerConnectionIceTest, PrefersMidOverMLineIndex) {
   ASSERT_TRUE(
       caller->SetRemoteDescription(callee->CreateAnswerAndSetAsLocal()));
 
-  // |candidate.transport_name()| is empty.
+  // `candidate.transport_name()` is empty.
   cricket::Candidate candidate = CreateLocalUdpCandidate(kCalleeAddress);
   auto* audio_content = cricket::GetFirstAudioContent(
       caller->pc()->local_description()->description());
