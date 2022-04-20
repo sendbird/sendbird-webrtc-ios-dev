@@ -57,7 +57,7 @@
 
 namespace rtc {
 namespace {
-// SRTP cipher suite table. |internal_name| is used to construct a
+// SRTP cipher suite table. `internal_name` is used to construct a
 // colon-separated profile strings which is needed by
 // SSL_CTX_set_tlsext_use_srtp().
 struct SrtpCipherMapEntry {
@@ -73,10 +73,10 @@ struct SslCipherMapEntry {
 
 // This isn't elegant, but it's better than an external reference
 constexpr SrtpCipherMapEntry kSrtpCipherMap[] = {
-    {"SRTP_AES128_CM_SHA1_80", SRTP_AES128_CM_SHA1_80},
-    {"SRTP_AES128_CM_SHA1_32", SRTP_AES128_CM_SHA1_32},
-    {"SRTP_AEAD_AES_128_GCM", SRTP_AEAD_AES_128_GCM},
-    {"SRTP_AEAD_AES_256_GCM", SRTP_AEAD_AES_256_GCM}};
+    {"SRTP_AES128_CM_SHA1_80", kSrtpAes128CmSha1_80},
+    {"SRTP_AES128_CM_SHA1_32", kSrtpAes128CmSha1_32},
+    {"SRTP_AEAD_AES_128_GCM", kSrtpAeadAes128Gcm},
+    {"SRTP_AEAD_AES_256_GCM", kSrtpAeadAes256Gcm}};
 
 #ifndef OPENSSL_IS_BORINGSSL
 // The "SSL_CIPHER_standard_name" function is only available in OpenSSL when
@@ -842,7 +842,7 @@ void OpenSSLStreamAdapter::SetTimeout(int delay_ms) {
           }
           ContinueSSL();
         } else {
-          RTC_NOTREACHED();
+          RTC_DCHECK_NOTREACHED();
         }
         // This callback will never run again (stopped above).
         return webrtc::TimeDelta::PlusInfinity();
@@ -1093,9 +1093,10 @@ SSL_CTX* OpenSSLStreamAdapter::SetupSSLContext() {
   // Select list of available ciphers. Note that !SHA256 and !SHA384 only
   // remove HMAC-SHA256 and HMAC-SHA384 cipher suites, not GCM cipher suites
   // with SHA256 or SHA384 as the handshake hash.
-  // This matches the list of SSLClientSocketOpenSSL in Chromium.
+  // This matches the list of SSLClientSocketImpl in Chromium.
   SSL_CTX_set_cipher_list(
-      ctx, "DEFAULT:!NULL:!aNULL:!SHA256:!SHA384:!aECDH:!AESGCM+AES256:!aPSK");
+      ctx,
+      "DEFAULT:!NULL:!aNULL:!SHA256:!SHA384:!aECDH:!AESGCM+AES256:!aPSK:!3DES");
 
   if (!srtp_ciphers_.empty()) {
     if (SSL_CTX_set_tlsext_use_srtp(ctx, srtp_ciphers_.c_str())) {

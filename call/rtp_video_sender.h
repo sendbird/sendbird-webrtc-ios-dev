@@ -35,7 +35,6 @@
 #include "modules/rtp_rtcp/source/rtp_sender_video.h"
 #include "modules/rtp_rtcp/source/rtp_sequence_number_map.h"
 #include "modules/rtp_rtcp/source/rtp_video_header.h"
-#include "rtc_base/constructor_magic.h"
 #include "rtc_base/rate_limiter.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/thread_annotations.h"
@@ -74,7 +73,7 @@ class RtpVideoSender : public RtpVideoSenderInterface,
   // Rtp modules are assumed to be sorted in simulcast index order.
   RtpVideoSender(
       Clock* clock,
-      std::map<uint32_t, RtpState> suspended_ssrcs,
+      const std::map<uint32_t, RtpState>& suspended_ssrcs,
       const std::map<uint32_t, RtpPayloadState>& states,
       const RtpConfig& rtp_config,
       int rtcp_report_interval_ms,
@@ -89,12 +88,15 @@ class RtpVideoSender : public RtpVideoSenderInterface,
       rtc::scoped_refptr<FrameTransformerInterface> frame_transformer);
   ~RtpVideoSender() override;
 
+  RtpVideoSender(const RtpVideoSender&) = delete;
+  RtpVideoSender& operator=(const RtpVideoSender&) = delete;
+
   // RtpVideoSender will only route packets if being active, all packets will be
   // dropped otherwise.
   void SetActive(bool active) RTC_LOCKS_EXCLUDED(mutex_) override;
   // Sets the sending status of the rtp modules and appropriately sets the
   // payload router to active if any rtp modules are active.
-  void SetActiveModules(const std::vector<bool> active_modules)
+  void SetActiveModules(std::vector<bool> active_modules)
       RTC_LOCKS_EXCLUDED(mutex_) override;
   bool IsActive() RTC_LOCKS_EXCLUDED(mutex_) override;
 
@@ -151,11 +153,11 @@ class RtpVideoSender : public RtpVideoSenderInterface,
 
  private:
   bool IsActiveLocked() RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
-  void SetActiveModulesLocked(const std::vector<bool> active_modules)
+  void SetActiveModulesLocked(std::vector<bool> active_modules)
       RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   void UpdateModuleSendingState() RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   void ConfigureProtection();
-  void ConfigureSsrcs();
+  void ConfigureSsrcs(const std::map<uint32_t, RtpState>& suspended_ssrcs);
   void ConfigureRids();
   bool NackEnabled() const;
   uint32_t GetPacketizationOverheadRate() const;
@@ -168,14 +170,17 @@ class RtpVideoSender : public RtpVideoSenderInterface,
   const bool send_side_bwe_with_overhead_;
   const bool use_frame_rate_for_overhead_;
   const bool has_packet_feedback_;
-  const bool simulate_vp9_structure_;
+  const bool simulate_generic_structure_;
 
-  // TODO(holmer): Remove mutex_ once RtpVideoSender runs on the
+  // Semantically equivalent to checking for `transport_->GetWorkerQueue()`
+  // but some tests need to be updated to call from the correct context.
+  RTC_NO_UNIQUE_ADDRESS SequenceChecker transport_checker_;
+
+  // TODO(bugs.webrtc.org/13517): Remove mutex_ once RtpVideoSender runs on the
   // transport task queue.
   mutable Mutex mutex_;
   bool active_ RTC_GUARDED_BY(mutex_);
-
-  std::map<uint32_t, RtpState> suspended_ssrcs_;
+  bool registered_for_feedback_ RTC_GUARDED_BY(transport_checker_) = false;
 
   const std::unique_ptr<FecController> fec_controller_;
   bool fec_allowed_ RTC_GUARDED_BY(mutex_);
@@ -189,7 +194,7 @@ class RtpVideoSender : public RtpVideoSenderInterface,
 
   // When using the generic descriptor we want all simulcast streams to share
   // one frame id space (so that the SFU can switch stream without having to
-  // rewrite the frame id), therefore |shared_frame_id| has to live in a place
+  // rewrite the frame id), therefore `shared_frame_id` has to live in a place
   // where we are aware of all the different streams.
   int64_t shared_frame_id_ = 0;
   std::vector<RtpPayloadParams> params_ RTC_GUARDED_BY(mutex_);
@@ -207,8 +212,6 @@ class RtpVideoSender : public RtpVideoSenderInterface,
   // This map is set at construction time and never changed, but it's
   // non-trivial to make it properly const.
   std::map<uint32_t, RtpRtcpInterface*> ssrc_to_rtp_module_;
-
-  RTC_DISALLOW_COPY_AND_ASSIGN(RtpVideoSender);
 };
 
 }  // namespace webrtc

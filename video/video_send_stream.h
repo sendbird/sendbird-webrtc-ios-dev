@@ -58,6 +58,7 @@ class VideoSendStream : public webrtc::VideoSendStream {
       Clock* clock,
       int num_cpu_cores,
       TaskQueueFactory* task_queue_factory,
+      TaskQueueBase* network_queue,
       RtcpRttStats* call_stats,
       RtpTransportControllerSendInterface* transport,
       BitrateAllocatorInterface* bitrate_allocator,
@@ -74,8 +75,7 @@ class VideoSendStream : public webrtc::VideoSendStream {
   void DeliverRtcp(const uint8_t* packet, size_t length);
 
   // webrtc::VideoSendStream implementation.
-  void UpdateActiveSimulcastLayers(
-      const std::vector<bool> active_layers) override;
+  void UpdateActiveSimulcastLayers(std::vector<bool> active_layers) override;
   void Start() override;
   void Stop() override;
   bool started() override;

@@ -77,7 +77,7 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
   ~VideoSendStreamImpl() override;
 
   void DeliverRtcp(const uint8_t* packet, size_t length);
-  void UpdateActiveSimulcastLayers(const std::vector<bool> active_layers);
+  void UpdateActiveSimulcastLayers(std::vector<bool> active_layers);
   void Start();
   void Stop();
 
@@ -107,7 +107,7 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
       VideoLayersAllocation allocation) override;
 
   // Implements EncodedImageCallback. The implementation routes encoded frames
-  // to the |payload_router_| and |config.pre_encode_callback| if set.
+  // to the `payload_router_` and `config.pre_encode_callback` if set.
   // Called on an arbitrary encoder callback thread.
   EncodedImageCallback::Result OnEncodedImage(
       const EncodedImage& encoded_image,

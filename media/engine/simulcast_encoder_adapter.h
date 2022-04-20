@@ -25,8 +25,8 @@
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_encoder.h"
 #include "api/video_codecs/video_encoder_factory.h"
+#include "common_video/framerate_controller.h"
 #include "modules/video_coding/include/video_codec_interface.h"
-#include "modules/video_coding/utility/framerate_controller.h"
 #include "rtc_base/atomic_ops.h"
 #include "rtc_base/experiments/encoder_info_settings.h"
 #include "rtc_base/system/no_unique_address.h"
@@ -43,8 +43,8 @@ class RTC_EXPORT SimulcastEncoderAdapter : public VideoEncoder {
   // TODO(bugs.webrtc.org/11000): Remove when downstream usage is gone.
   SimulcastEncoderAdapter(VideoEncoderFactory* primarty_factory,
                           const SdpVideoFormat& format);
-  // |primary_factory| produces the first-choice encoders to use.
-  // |fallback_factory|, if non-null, is used to create fallback encoder that
+  // `primary_factory` produces the first-choice encoders to use.
+  // `fallback_factory`, if non-null, is used to create fallback encoder that
   // will be used if InitEncode() fails for the primary encoder.
   SimulcastEncoderAdapter(VideoEncoderFactory* primary_factory,
                           VideoEncoderFactory* fallback_factory,
@@ -120,11 +120,11 @@ class RTC_EXPORT SimulcastEncoderAdapter : public VideoEncoder {
     void set_is_keyframe_needed() { is_keyframe_needed_ = true; }
     bool is_paused() const { return is_paused_; }
     void set_is_paused(bool is_paused) { is_paused_ = is_paused; }
-    absl::optional<float> target_fps() const {
+    absl::optional<double> target_fps() const {
       return framerate_controller_ == nullptr
                  ? absl::nullopt
-                 : absl::optional<float>(
-                       framerate_controller_->GetTargetRate());
+                 : absl::optional<double>(
+                       framerate_controller_->GetMaxFramerate());
     }
 
     std::unique_ptr<EncoderContext> ReleaseEncoderContext() &&;
@@ -147,7 +147,7 @@ class RTC_EXPORT SimulcastEncoderAdapter : public VideoEncoder {
   void DestroyStoredEncoders();
 
   // This method creates encoder. May reuse previously created encoders from
-  // |cached_encoder_contexts_|. It's const because it's used from
+  // `cached_encoder_contexts_`. It's const because it's used from
   // const GetEncoderInfo().
   std::unique_ptr<EncoderContext> FetchOrCreateEncoderContext(
       bool is_lowest_quality_stream) const;
@@ -182,7 +182,7 @@ class RTC_EXPORT SimulcastEncoderAdapter : public VideoEncoder {
 
   // Store previously created and released encoders , so they don't have to be
   // recreated. Remaining encoders are destroyed by the destructor.
-  // Marked as |mutable| becuase we may need to temporarily create encoder in
+  // Marked as `mutable` becuase we may need to temporarily create encoder in
   // GetEncoderInfo(), which is const.
   mutable std::list<std::unique_ptr<EncoderContext>> cached_encoder_contexts_;
 

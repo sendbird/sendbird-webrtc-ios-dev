@@ -10,7 +10,6 @@
 
 #include "modules/video_capture/windows/device_info_ds.h"
 
-#include <assert.h>
 #include <dvdmedia.h>
 
 #include "modules/video_capture/video_capture_config.h"
@@ -390,6 +389,9 @@ int32_t DeviceInfoDS::CreateCapabilityMap(const char* deviceUniqueIdUTF8)
         RTC_LOG(LS_INFO) << "Device support FORMAT_VideoInfo2";
         supportFORMAT_VideoInfo = true;
       }
+
+      FreeMediaType(pmt);
+      pmt = NULL;
     }
   }
   if (supportFORMAT_VideoInfo2) {

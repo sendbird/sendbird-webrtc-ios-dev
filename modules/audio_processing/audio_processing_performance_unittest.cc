@@ -343,7 +343,6 @@ class TimedThreadApiProcessor {
     frame_data_.input_stream_config.set_sample_rate_hz(
         simulation_config_->sample_rate_hz);
     frame_data_.input_stream_config.set_num_channels(num_channels_);
-    frame_data_.input_stream_config.set_has_keyboard(false);
     populate_audio_frame(input_level_, num_channels_,
                          (simulation_config_->sample_rate_hz *
                           AudioProcessing::kChunkSizeMs / 1000),
@@ -353,7 +352,6 @@ class TimedThreadApiProcessor {
     frame_data_.output_stream_config.set_sample_rate_hz(
         simulation_config_->sample_rate_hz);
     frame_data_.output_stream_config.set_num_channels(1);
-    frame_data_.output_stream_config.set_has_keyboard(false);
   }
 
   bool ReadyToProcess() {
@@ -367,7 +365,7 @@ class TimedThreadApiProcessor {
 
     // Should not be reached, but the return statement is needed for the code to
     // build successfully on Android.
-    RTC_NOTREACHED();
+    RTC_DCHECK_NOTREACHED();
     return false;
   }
 
@@ -443,8 +441,6 @@ class CallSimulator : public ::testing::TestWithParam<SimulationConfig> {
       apm_config.gain_controller1.enabled = true;
       apm_config.gain_controller1.mode =
           AudioProcessing::Config::GainController1::kAdaptiveDigital;
-      apm_config.level_estimation.enabled = true;
-      apm_config.voice_detection.enabled = true;
       apm->ApplyConfig(apm_config);
     };
 
@@ -456,8 +452,6 @@ class CallSimulator : public ::testing::TestWithParam<SimulationConfig> {
       apm_config.noise_suppression.enabled = true;
       apm_config.gain_controller1.mode =
           AudioProcessing::Config::GainController1::kAdaptiveDigital;
-      apm_config.level_estimation.enabled = true;
-      apm_config.voice_detection.enabled = true;
       apm->ApplyConfig(apm_config);
     };
 
@@ -467,43 +461,38 @@ class CallSimulator : public ::testing::TestWithParam<SimulationConfig> {
       AudioProcessing::Config apm_config = apm->GetConfig();
       apm_config.echo_canceller.enabled = false;
       apm_config.gain_controller1.enabled = false;
-      apm_config.level_estimation.enabled = false;
       apm_config.noise_suppression.enabled = false;
-      apm_config.voice_detection.enabled = false;
       apm->ApplyConfig(apm_config);
     };
 
     int num_capture_channels = 1;
     switch (simulation_config_.simulation_settings) {
       case SettingsType::kDefaultApmMobile: {
-        apm_.reset(AudioProcessingBuilderForTesting().Create());
+        apm_ = AudioProcessingBuilderForTesting().Create();
         ASSERT_TRUE(!!apm_);
         set_default_mobile_apm_runtime_settings(apm_.get());
         break;
       }
       case SettingsType::kDefaultApmDesktop: {
-        Config config;
-        apm_.reset(AudioProcessingBuilderForTesting().Create(config));
+        apm_ = AudioProcessingBuilderForTesting().Create();
         ASSERT_TRUE(!!apm_);
         set_default_desktop_apm_runtime_settings(apm_.get());
         break;
       }
       case SettingsType::kAllSubmodulesTurnedOff: {
-        apm_.reset(AudioProcessingBuilderForTesting().Create());
+        apm_ = AudioProcessingBuilderForTesting().Create();
         ASSERT_TRUE(!!apm_);
         turn_off_default_apm_runtime_settings(apm_.get());
         break;
       }
       case SettingsType::kDefaultApmDesktopWithoutDelayAgnostic: {
-        Config config;
-        apm_.reset(AudioProcessingBuilderForTesting().Create(config));
+        apm_ = AudioProcessingBuilderForTesting().Create();
         ASSERT_TRUE(!!apm_);
         set_default_desktop_apm_runtime_settings(apm_.get());
         break;
       }
       case SettingsType::kDefaultApmDesktopWithoutExtendedFilter: {
-        Config config;
-        apm_.reset(AudioProcessingBuilderForTesting().Create(config));
+        apm_ = AudioProcessingBuilderForTesting().Create();
         ASSERT_TRUE(!!apm_);
         set_default_desktop_apm_runtime_settings(apm_.get());
         break;
@@ -544,7 +533,7 @@ class CallSimulator : public ::testing::TestWithParam<SimulationConfig> {
   // Thread related variables.
   Random rand_gen_;
 
-  std::unique_ptr<AudioProcessing> apm_;
+  rtc::scoped_refptr<AudioProcessing> apm_;
   const SimulationConfig simulation_config_;
   FrameCounters frame_counters_;
   LockedFlag capture_call_checker_;

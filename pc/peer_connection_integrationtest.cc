@@ -203,7 +203,7 @@ class DummyDtmfObserver : public DtmfSenderObserverInterface {
   std::vector<std::string> tones_;
 };
 
-// Assumes |sender| already has an audio track added and the offer/answer
+// Assumes `sender` already has an audio track added and the offer/answer
 // exchange is done.
 void TestDtmfFromSenderToReceiver(PeerConnectionIntegrationWrapper* sender,
                                   PeerConnectionIntegrationWrapper* receiver) {
@@ -288,7 +288,7 @@ TEST_P(PeerConnectionIntegrationTest, EndToEndCallWithSdes) {
                                     webrtc::kEnumCounterKeyProtocolDtls));
 }
 
-// Basic end-to-end test specifying the |enable_encrypted_rtp_header_extensions|
+// Basic end-to-end test specifying the `enable_encrypted_rtp_header_extensions`
 // option to offer encrypted versions of all header extensions alongside the
 // unencrypted versions.
 TEST_P(PeerConnectionIntegrationTest,
@@ -473,7 +473,7 @@ TEST_P(PeerConnectionIntegrationTest,
   ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
 
   // Remove receive video (i.e., callee sender track).
-  callee()->pc()->RemoveTrack(callee_sender);
+  callee()->pc()->RemoveTrackOrError(callee_sender);
 
   caller()->CreateAndSetAndSignalOffer();
   ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
@@ -505,7 +505,7 @@ TEST_P(PeerConnectionIntegrationTest,
   ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
 
   // Remove send video (i.e., caller sender track).
-  caller()->pc()->RemoveTrack(caller_sender);
+  caller()->pc()->RemoveTrackOrError(caller_sender);
 
   caller()->CreateAndSetAndSignalOffer();
   ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
@@ -963,7 +963,7 @@ TEST_F(PeerConnectionIntegrationTestPlanB, EnableAudioAfterRejecting) {
 
   // Remove audio track, and set offer_to_receive_audio to false to cause the
   // m= section to be completely disabled, not just "recvonly".
-  caller()->pc()->RemoveTrack(sender);
+  caller()->pc()->RemoveTrackOrError(sender);
   PeerConnectionInterface::RTCOfferAnswerOptions options;
   options.offer_to_receive_audio = 0;
   caller()->SetOfferAnswerOptions(options);
@@ -1762,7 +1762,7 @@ TEST_P(PeerConnectionIntegrationTest,
   PeerConnectionFactory::Options callee_options;
   callee_options.crypto_options.srtp.enable_aes128_sha1_32_crypto_cipher =
       false;
-  int expected_cipher_suite = rtc::SRTP_AES128_CM_SHA1_80;
+  int expected_cipher_suite = rtc::kSrtpAes128CmSha1_80;
   TestNegotiatedCipherSuite(caller_options, callee_options,
                             expected_cipher_suite);
 }
@@ -1774,7 +1774,7 @@ TEST_P(PeerConnectionIntegrationTest,
       false;
   PeerConnectionFactory::Options callee_options;
   callee_options.crypto_options.srtp.enable_aes128_sha1_32_crypto_cipher = true;
-  int expected_cipher_suite = rtc::SRTP_AES128_CM_SHA1_80;
+  int expected_cipher_suite = rtc::kSrtpAes128CmSha1_80;
   TestNegotiatedCipherSuite(caller_options, callee_options,
                             expected_cipher_suite);
 }
@@ -1784,7 +1784,7 @@ TEST_P(PeerConnectionIntegrationTest, Aes128Sha1_32_CipherUsedWhenSupported) {
   caller_options.crypto_options.srtp.enable_aes128_sha1_32_crypto_cipher = true;
   PeerConnectionFactory::Options callee_options;
   callee_options.crypto_options.srtp.enable_aes128_sha1_32_crypto_cipher = true;
-  int expected_cipher_suite = rtc::SRTP_AES128_CM_SHA1_32;
+  int expected_cipher_suite = rtc::kSrtpAes128CmSha1_32;
   TestNegotiatedCipherSuite(caller_options, callee_options,
                             expected_cipher_suite);
 }
@@ -2956,7 +2956,7 @@ TEST_F(PeerConnectionIntegrationTestPlanB, RemoveAndAddTrackWithNewStreamId) {
     ASSERT_TRUE(ExpectNewFrames(media_expectations));
   }
   // Remove the sender, and create a new one with the new stream.
-  caller()->pc()->RemoveTrack(sender);
+  caller()->pc()->RemoveTrackOrError(sender);
   sender = caller()->AddTrack(track, {"stream_2"});
   caller()->CreateAndSetAndSignalOffer();
   ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
@@ -3194,7 +3194,7 @@ TEST_P(PeerConnectionIntegrationTest, RegatherAfterChangingIceTransportType) {
   EXPECT_EQ_WAIT(webrtc::PeerConnectionInterface::kIceConnectionConnected,
                  callee()->ice_connection_state(), kDefaultTimeout);
   // Note that we cannot use the metric
-  // |WebRTC.PeerConnection.CandidatePairType_UDP| in this test since this
+  // `WebRTC.PeerConnection.CandidatePairType_UDP` in this test since this
   // metric is only populated when we reach kIceConnectionComplete in the
   // current implementation.
   EXPECT_EQ(cricket::RELAY_PORT_TYPE,

@@ -36,9 +36,8 @@ FakeDecoder::FakeDecoder(TaskQueueFactory* task_queue_factory)
       task_queue_factory_(task_queue_factory),
       decode_delay_ms_(0) {}
 
-int32_t FakeDecoder::InitDecode(const VideoCodec* config,
-                                int32_t number_of_cores) {
-  return WEBRTC_VIDEO_CODEC_OK;
+bool FakeDecoder::Configure(const Settings& settings) {
+  return true;
 }
 
 int32_t FakeDecoder::Decode(const EncodedImage& input,
@@ -62,7 +61,7 @@ int32_t FakeDecoder::Decode(const EncodedImage& input,
   if (decode_delay_ms_ == 0 || !task_queue_) {
     callback_->Decoded(frame);
   } else {
-    task_queue_->PostDelayedTask(
+    task_queue_->PostDelayedHighPrecisionTask(
         [frame, this]() {
           VideoFrame copy = frame;
           callback_->Decoded(copy);

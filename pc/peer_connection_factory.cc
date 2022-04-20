@@ -105,7 +105,8 @@ PeerConnectionFactory::PeerConnectionFactory(
       transport_controller_send_factory_(
           (dependencies->transport_controller_send_factory)
               ? std::move(dependencies->transport_controller_send_factory)
-              : std::make_unique<RtpTransportControllerSendFactory>()) {}
+              : std::make_unique<RtpTransportControllerSendFactory>()),
+      metronome_(std::move(dependencies->metronome)) {}
 
 PeerConnectionFactory::PeerConnectionFactory(
     PeerConnectionFactoryDependencies dependencies)
@@ -218,6 +219,11 @@ PeerConnectionFactory::CreatePeerConnectionOrError(
     dependencies.allocator = std::make_unique<cricket::BasicPortAllocator>(
         context_->default_network_manager(), packet_socket_factory,
         configuration.turn_customizer);
+    dependencies.allocator->SetPortRange(
+        configuration.port_allocator_config.min_port,
+        configuration.port_allocator_config.max_port);
+    dependencies.allocator->set_flags(
+        configuration.port_allocator_config.flags);
   }
 
   if (!dependencies.async_resolver_factory) {
@@ -231,6 +237,7 @@ PeerConnectionFactory::CreatePeerConnectionOrError(
   }
 
   dependencies.allocator->SetNetworkIgnoreMask(options().network_ignore_mask);
+  dependencies.allocator->SetVpnList(configuration.vpn_list);
 
   std::unique_ptr<RtcEventLog> event_log =
       worker_thread()->Invoke<std::unique_ptr<RtcEventLog>>(
@@ -248,7 +255,7 @@ PeerConnectionFactory::CreatePeerConnectionOrError(
   }
   // We configure the proxy with a pointer to the network thread for methods
   // that need to be invoked there rather than on the signaling thread.
-  // Internally, the proxy object has a member variable named |worker_thread_|
+  // Internally, the proxy object has a member variable named `worker_thread_`
   // which will point to the network thread (and not the factory's
   // worker_thread()).  All such methods have thread checks though, so the code
   // should still be clear (outside of macro expansion).
@@ -278,7 +285,8 @@ rtc::scoped_refptr<AudioTrackInterface> PeerConnectionFactory::CreateAudioTrack(
     const std::string& id,
     AudioSourceInterface* source) {
   RTC_DCHECK(signaling_thread()->IsCurrent());
-  rtc::scoped_refptr<AudioTrackInterface> track(AudioTrack::Create(id, source));
+  rtc::scoped_refptr<AudioTrackInterface> track(
+      AudioTrack::Create(id, rtc::scoped_refptr<AudioSourceInterface>(source)));
   return AudioTrackProxy::Create(signaling_thread(), track);
 }
 
@@ -341,6 +349,7 @@ std::unique_ptr<Call> PeerConnectionFactory::CreateCall_w(
   call_config.trials = &trials();
   call_config.rtp_transport_controller_send_factory =
       transport_controller_send_factory_.get();
+  call_config.metronome = metronome_.get();
   return std::unique_ptr<Call>(
       context_->call_factory()->CreateCall(call_config));
 }

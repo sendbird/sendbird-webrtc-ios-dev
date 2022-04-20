@@ -17,7 +17,6 @@
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/peer_scenario/peer_scenario.h"
-#include "test/rtp_header_parser.h"
 
 namespace webrtc {
 namespace test {
@@ -211,7 +210,7 @@ TEST_P(UnsignaledStreamTest, ReplacesUnsignaledStreamOnCompletedSignaling) {
               case MidTestConfiguration::kMidNegotiatedAndPresentInPackets:
                 EXPECT_TRUE(parsed_packet.HasExtension<RtpMid>());
                 // The simulated second m= section would have a different MID.
-                // If we don't modify it here then |second_ssrc| would end up
+                // If we don't modify it here then `second_ssrc` would end up
                 // being mapped to the first m= section which would cause SSRC
                 // conflicts if we later add the same SSRC to a second m=
                 // section. Hidden assumption: first m= section does not use
@@ -255,6 +254,8 @@ TEST_P(UnsignaledStreamTest, ReplacesUnsignaledStreamOnCompletedSignaling) {
       });
   EXPECT_TRUE(s.WaitAndProcess(&offer_exchange_done));
   EXPECT_TRUE(s.WaitAndProcess(&second_sink.frame_observed_));
+  caller->pc()->Close();
+  callee->pc()->Close();
 }
 
 INSTANTIATE_TEST_SUITE_P(

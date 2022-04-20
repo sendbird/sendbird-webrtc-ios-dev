@@ -17,6 +17,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/array_view.h"
+#include "api/task_queue/task_queue_base.h"
 #include "media/sctp/sctp_transport_internal.h"
 #include "net/dcsctp/public/dcsctp_options.h"
 #include "net/dcsctp/public/dcsctp_socket.h"
@@ -59,8 +60,10 @@ class DcSctpTransport : public cricket::SctpTransportInternal,
 
  private:
   // dcsctp::DcSctpSocketCallbacks
-  void SendPacket(rtc::ArrayView<const uint8_t> data) override;
-  std::unique_ptr<dcsctp::Timeout> CreateTimeout() override;
+  dcsctp::SendPacketStatus SendPacketWithStatus(
+      rtc::ArrayView<const uint8_t> data) override;
+  std::unique_ptr<dcsctp::Timeout> CreateTimeout(
+      webrtc::TaskQueueBase::DelayPrecision precision) override;
   dcsctp::TimeMs TimeMillis() override;
   uint32_t GetRandomInt(uint32_t low, uint32_t high) override;
   void OnTotalBufferedAmountLow() override;

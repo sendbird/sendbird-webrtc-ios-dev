@@ -26,6 +26,7 @@ will generate a shared library.
 ## **Allowed**
 
 * `absl::bind_front`
+* `absl::Cleanup`
 * `absl::InlinedVector`
 * `absl::WrapUnique`
 * `absl::optional` and related stuff from `absl/types/optional.h`.
@@ -41,6 +42,7 @@ will generate a shared library.
 * `absl/base/const_init.h` for mutex initialization.
 * The macros in `absl/base/attributes.h`, `absl/base/config.h` and
   `absl/base/macros.h`.
+* `absl/numeric/bits.h`
 
 
 ## **Disallowed**

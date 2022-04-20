@@ -15,7 +15,6 @@
 #include <vector>
 
 #include "api/test/time_controller.h"
-#include "rtc_base/constructor_magic.h"
 #include "rtc_base/fake_clock.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/task_utils/repeating_task.h"
@@ -47,8 +46,12 @@ class Scenario {
   Scenario(std::string file_name, bool real_time);
   Scenario(std::unique_ptr<LogWriterFactoryInterface> log_writer_manager,
            bool real_time);
-  RTC_DISALLOW_COPY_AND_ASSIGN(Scenario);
+
   ~Scenario();
+
+  Scenario(const Scenario&) = delete;
+  Scenario& operator=(const Scenario&) = delete;
+
   NetworkEmulationManagerImpl* net() { return &network_manager_; }
 
   EmulatedNetworkNode* CreateSimulationNode(NetworkSimulationConfig config);
@@ -98,7 +101,7 @@ class Scenario {
       AudioStreamConfig config);
 
   // Runs the provided function with a fixed interval. For real time tests,
-  // |function| starts being called after |interval| from the call to Every().
+  // `function` starts being called after `interval` from the call to Every().
   void Every(TimeDelta interval, std::function<void(TimeDelta)> function);
   void Every(TimeDelta interval, std::function<void()> function);
 
@@ -107,21 +110,21 @@ class Scenario {
   void Post(std::function<void()> function);
 
   // Runs the provided function after given duration has passed. For real time
-  // tests, |function| is called after |target_time_since_start| from the call
+  // tests, `function` is called after `target_time_since_start` from the call
   // to Every().
   void At(TimeDelta offset, std::function<void()> function);
 
-  // Sends a packet over the nodes and runs |action| when it has been delivered.
+  // Sends a packet over the nodes and runs `action` when it has been delivered.
   void NetworkDelayedAction(std::vector<EmulatedNetworkNode*> over_nodes,
                             size_t packet_size,
                             std::function<void()> action);
 
   // Runs the scenario for the given time.
   void RunFor(TimeDelta duration);
-  // Runs the scenario until |target_time_since_start|.
+  // Runs the scenario until `target_time_since_start`.
   void RunUntil(TimeDelta target_time_since_start);
-  // Runs the scenario until |target_time_since_start| or |exit_function|
-  // returns true. |exit_function| is polled after each |check_interval| has
+  // Runs the scenario until `target_time_since_start` or `exit_function`
+  // returns true. `exit_function` is polled after each `check_interval` has
   // passed.
   void RunUntil(TimeDelta target_time_since_start,
                 TimeDelta check_interval,

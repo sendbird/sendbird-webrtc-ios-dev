@@ -40,9 +40,18 @@ class VideoTrackTest : public ::testing::Test {
 
  protected:
   rtc::scoped_refptr<FakeVideoTrackSource> video_track_source_;
-  rtc::scoped_refptr<VideoTrackInterface> video_track_;
+  rtc::scoped_refptr<VideoTrack> video_track_;
   cricket::FakeFrameSource frame_source_;
 };
+
+// VideoTrack::Create will create an API proxy around the source object.
+// The `GetSource` method provides access to the proxy object intented for API
+// use while the GetSourceInternal() provides direct access to the source object
+// as provided to the `VideoTrack::Create` factory function.
+TEST_F(VideoTrackTest, CheckApiProxyAndInternalSource) {
+  EXPECT_NE(video_track_->GetSource(), video_track_source_.get());
+  EXPECT_EQ(video_track_->GetSourceInternal(), video_track_source_.get());
+}
 
 // Test changing the source state also changes the track state.
 TEST_F(VideoTrackTest, SourceStateChangeTrackState) {
@@ -54,14 +63,14 @@ TEST_F(VideoTrackTest, SourceStateChangeTrackState) {
 // Test adding renderers to a video track and render to them by providing
 // frames to the source.
 TEST_F(VideoTrackTest, RenderVideo) {
-  // FakeVideoTrackRenderer register itself to |video_track_|
+  // FakeVideoTrackRenderer register itself to `video_track_`
   std::unique_ptr<FakeVideoTrackRenderer> renderer_1(
       new FakeVideoTrackRenderer(video_track_.get()));
 
   video_track_source_->InjectFrame(frame_source_.GetFrame());
   EXPECT_EQ(1, renderer_1->num_rendered_frames());
 
-  // FakeVideoTrackRenderer register itself to |video_track_|
+  // FakeVideoTrackRenderer register itself to `video_track_`
   std::unique_ptr<FakeVideoTrackRenderer> renderer_2(
       new FakeVideoTrackRenderer(video_track_.get()));
   video_track_source_->InjectFrame(frame_source_.GetFrame());

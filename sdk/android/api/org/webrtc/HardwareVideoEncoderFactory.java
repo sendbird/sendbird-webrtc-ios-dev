@@ -17,7 +17,7 @@ import static org.webrtc.MediaCodecUtils.QCOM_PREFIX;
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
 import android.os.Build;
-import android.support.annotation.Nullable;
+import androidx.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -26,6 +26,11 @@ import java.util.List;
 @SuppressWarnings("deprecation") // API 16 requires the use of deprecated methods.
 public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
   private static final String TAG = "HardwareVideoEncoderFactory";
+
+  // We don't need periodic keyframes. But some HW encoders, Exynos in particular, fails to
+  // initialize with value -1 which should disable periodic keyframes according to the spec. Set it
+  // to 1 hour.
+  private static final int PERIODIC_KEY_FRAME_INTERVAL_S = 3600;
 
   // Forced key frame interval - used to reduce color distortions on Qualcomm platforms.
   private static final int QCOM_VP8_KEY_FRAME_INTERVAL_ANDROID_L_MS = 15000;
@@ -94,7 +99,7 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
       return null;
     }
 
-    VideoCodecMimeType type = VideoCodecMimeType.fromSdpCodecName(input.getName());
+    VideoCodecMimeType type = VideoCodecMimeType.valueOf(input.getName());
     MediaCodecInfo info = findCodecForType(type);
 
     if (info == null) {
@@ -123,7 +128,7 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
     }
 
     return new HardwareVideoEncoder(new MediaCodecWrapperFactoryImpl(), codecName, type,
-        surfaceColorFormat, yuvColorFormat, input.params, getKeyFrameIntervalSec(type),
+        surfaceColorFormat, yuvColorFormat, input.params, PERIODIC_KEY_FRAME_INTERVAL_S,
         getForcedKeyFrameIntervalMs(type, codecName), createBitrateAdjuster(type, codecName),
         sharedContext);
   }
@@ -142,7 +147,7 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
              VideoCodecMimeType.VP9, VideoCodecMimeType.H264, VideoCodecMimeType.AV1}) {
       MediaCodecInfo codec = findCodecForType(type);
       if (codec != null) {
-        String name = type.toSdpCodecName();
+        String name = type.name();
         // TODO(sakal): Always add H264 HP once WebRTC correctly removes codecs that are not
         // supported by the decoder.
         if (type == VideoCodecMimeType.H264 && isH264HighProfileSupported(codec)) {
@@ -195,6 +200,10 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
   // Returns true if the given MediaCodecInfo indicates a hardware module that is supported on the
   // current SDK.
   private boolean isHardwareSupportedInCurrentSdk(MediaCodecInfo info, VideoCodecMimeType type) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      return info.isHardwareAccelerated();
+    }
+
     switch (type) {
       case VP8:
         return isHardwareSupportedInCurrentSdkVp8(info);
@@ -244,18 +253,6 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
       return true;
     }
     return codecAllowedPredicate.test(info);
-  }
-
-  private int getKeyFrameIntervalSec(VideoCodecMimeType type) {
-    switch (type) {
-      case VP8: // Fallthrough intended.
-      case VP9:
-      case AV1:
-        return 100;
-      case H264:
-        return 20;
-    }
-    throw new IllegalArgumentException("Unsupported VideoCodecMimeType " + type);
   }
 
   private int getForcedKeyFrameIntervalMs(VideoCodecMimeType type, String codecName) {

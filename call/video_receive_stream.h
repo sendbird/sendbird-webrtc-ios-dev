@@ -191,6 +191,10 @@ class VideoReceiveStream : public MediaReceiveStream {
         bool receiver_reference_time_report = false;
       } rtcp_xr;
 
+      // How to request keyframes from a remote sender. Applies only if lntf is
+      // disabled.
+      KeyFrameReqMethod keyframe_method = KeyFrameReqMethod::kPliRtcp;
+
       // See LntfConfig for description.
       LntfConfig lntf;
 
@@ -266,10 +270,10 @@ class VideoReceiveStream : public MediaReceiveStream {
   virtual int GetBaseMinimumPlayoutDelayMs() const = 0;
 
   // Sets and returns recording state. The old state is moved out
-  // of the video receive stream and returned to the caller, and |state|
+  // of the video receive stream and returned to the caller, and `state`
   // is moved in. If the state's callback is set, it will be called with
   // recordable encoded frames as they arrive.
-  // If |generate_key_frame| is true, the method will generate a key frame.
+  // If `generate_key_frame` is true, the method will generate a key frame.
   // When the function returns, it's guaranteed that all old callouts
   // to the returned callback has ceased.
   // Note: the client should not interpret the returned state's attributes, but
@@ -282,16 +286,6 @@ class VideoReceiveStream : public MediaReceiveStream {
 
  protected:
   virtual ~VideoReceiveStream() {}
-};
-
-class DEPRECATED_VideoReceiveStream : public VideoReceiveStream {
- public:
-  // RtpDemuxer only forwards a given RTP packet to one sink. However, some
-  // sinks, such as FlexFEC, might wish to be informed of all of the packets
-  // a given sink receives (or any set of sinks). They may do so by registering
-  // themselves as secondary sinks.
-  virtual void AddSecondarySink(RtpPacketSinkInterface* sink) = 0;
-  virtual void RemoveSecondarySink(const RtpPacketSinkInterface* sink) = 0;
 };
 
 }  // namespace webrtc

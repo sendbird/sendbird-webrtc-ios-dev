@@ -173,6 +173,8 @@ WEBRTC_RTCSTATS_IMPL(RTCIceCandidatePairStats, RTCStats, "candidate-pair",
     &nominated,
     &writable,
     &readable,
+    &packets_sent,
+    &packets_received,
     &bytes_sent,
     &bytes_received,
     &total_round_trip_time,
@@ -188,7 +190,9 @@ WEBRTC_RTCSTATS_IMPL(RTCIceCandidatePairStats, RTCStats, "candidate-pair",
     &consent_requests_received,
     &consent_requests_sent,
     &consent_responses_received,
-    &consent_responses_sent)
+    &consent_responses_sent,
+    &packets_discarded_on_send,
+    &bytes_discarded_on_send)
 // clang-format on
 
 RTCIceCandidatePairStats::RTCIceCandidatePairStats(const std::string& id,
@@ -206,6 +210,8 @@ RTCIceCandidatePairStats::RTCIceCandidatePairStats(std::string&& id,
       nominated("nominated"),
       writable("writable"),
       readable("readable"),
+      packets_sent("packetsSent"),
+      packets_received("packetsReceived"),
       bytes_sent("bytesSent"),
       bytes_received("bytesReceived"),
       total_round_trip_time("totalRoundTripTime"),
@@ -221,7 +227,9 @@ RTCIceCandidatePairStats::RTCIceCandidatePairStats(std::string&& id,
       consent_requests_received("consentRequestsReceived"),
       consent_requests_sent("consentRequestsSent"),
       consent_responses_received("consentResponsesReceived"),
-      consent_responses_sent("consentResponsesSent") {}
+      consent_responses_sent("consentResponsesSent"),
+      packets_discarded_on_send("packetsDiscardedOnSend"),
+      bytes_discarded_on_send("bytesDiscardedOnSend") {}
 
 RTCIceCandidatePairStats::RTCIceCandidatePairStats(
     const RTCIceCandidatePairStats& other)
@@ -234,6 +242,8 @@ RTCIceCandidatePairStats::RTCIceCandidatePairStats(
       nominated(other.nominated),
       writable(other.writable),
       readable(other.readable),
+      packets_sent(other.packets_sent),
+      packets_received(other.packets_received),
       bytes_sent(other.bytes_sent),
       bytes_received(other.bytes_received),
       total_round_trip_time(other.total_round_trip_time),
@@ -249,7 +259,9 @@ RTCIceCandidatePairStats::RTCIceCandidatePairStats(
       consent_requests_received(other.consent_requests_received),
       consent_requests_sent(other.consent_requests_sent),
       consent_responses_received(other.consent_responses_received),
-      consent_responses_sent(other.consent_responses_sent) {}
+      consent_responses_sent(other.consent_responses_sent),
+      packets_discarded_on_send(other.packets_discarded_on_send),
+      bytes_discarded_on_send(other.bytes_discarded_on_send) {}
 
 RTCIceCandidatePairStats::~RTCIceCandidatePairStats() {}
 
@@ -582,7 +594,8 @@ RTCRTPStreamStats::~RTCRTPStreamStats() {}
 WEBRTC_RTCSTATS_IMPL(
     RTCReceivedRtpStreamStats, RTCRTPStreamStats, "received-rtp",
     &jitter,
-    &packets_lost)
+    &packets_lost,
+    &packets_discarded)
 // clang-format on
 
 RTCReceivedRtpStreamStats::RTCReceivedRtpStreamStats(const std::string&& id,
@@ -593,13 +606,15 @@ RTCReceivedRtpStreamStats::RTCReceivedRtpStreamStats(std::string&& id,
                                                      int64_t timestamp_us)
     : RTCRTPStreamStats(std::move(id), timestamp_us),
       jitter("jitter"),
-      packets_lost("packetsLost") {}
+      packets_lost("packetsLost"),
+      packets_discarded("packetsDiscarded") {}
 
 RTCReceivedRtpStreamStats::RTCReceivedRtpStreamStats(
     const RTCReceivedRtpStreamStats& other)
     : RTCRTPStreamStats(other),
       jitter(other.jitter),
-      packets_lost(other.packets_lost) {}
+      packets_lost(other.packets_lost),
+      packets_discarded(other.packets_discarded) {}
 
 RTCReceivedRtpStreamStats::~RTCReceivedRtpStreamStats() {}
 
@@ -650,7 +665,6 @@ WEBRTC_RTCSTATS_IMPL(
     &total_samples_duration,
     &frames_received,
     &round_trip_time,
-    &packets_discarded,
     &packets_repaired,
     &burst_packets_lost,
     &burst_packets_discarded,
@@ -706,7 +720,6 @@ RTCInboundRTPStreamStats::RTCInboundRTPStreamStats(std::string&& id,
       total_samples_duration("totalSamplesDuration"),
       frames_received("framesReceived"),
       round_trip_time("roundTripTime"),
-      packets_discarded("packetsDiscarded"),
       packets_repaired("packetsRepaired"),
       burst_packets_lost("burstPacketsLost"),
       burst_packets_discarded("burstPacketsDiscarded"),
@@ -758,7 +771,6 @@ RTCInboundRTPStreamStats::RTCInboundRTPStreamStats(
       total_samples_duration(other.total_samples_duration),
       frames_received(other.frames_received),
       round_trip_time(other.round_trip_time),
-      packets_discarded(other.packets_discarded),
       packets_repaired(other.packets_repaired),
       burst_packets_lost(other.burst_packets_lost),
       burst_packets_discarded(other.burst_packets_discarded),
@@ -936,7 +948,10 @@ WEBRTC_RTCSTATS_IMPL(
     "remote-outbound-rtp",
     &local_id,
     &remote_timestamp,
-    &reports_sent)
+    &reports_sent,
+    &round_trip_time,
+    &round_trip_time_measurements,
+    &total_round_trip_time)
 // clang-format on
 
 RTCRemoteOutboundRtpStreamStats::RTCRemoteOutboundRtpStreamStats(
@@ -950,14 +965,20 @@ RTCRemoteOutboundRtpStreamStats::RTCRemoteOutboundRtpStreamStats(
     : RTCSentRtpStreamStats(std::move(id), timestamp_us),
       local_id("localId"),
       remote_timestamp("remoteTimestamp"),
-      reports_sent("reportsSent") {}
+      reports_sent("reportsSent"),
+      round_trip_time("roundTripTime"),
+      round_trip_time_measurements("roundTripTimeMeasurements"),
+      total_round_trip_time("totalRoundTripTime") {}
 
 RTCRemoteOutboundRtpStreamStats::RTCRemoteOutboundRtpStreamStats(
     const RTCRemoteOutboundRtpStreamStats& other)
     : RTCSentRtpStreamStats(other),
       local_id(other.local_id),
       remote_timestamp(other.remote_timestamp),
-      reports_sent(other.reports_sent) {}
+      reports_sent(other.reports_sent),
+      round_trip_time(other.round_trip_time),
+      round_trip_time_measurements(other.round_trip_time_measurements),
+      total_round_trip_time(other.total_round_trip_time) {}
 
 RTCRemoteOutboundRtpStreamStats::~RTCRemoteOutboundRtpStreamStats() {}
 
