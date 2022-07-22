@@ -25,7 +25,7 @@ rtc_library("rr_send_queue") {
     ":send_queue",
     "../../../api:array_view",
     "../../../rtc_base:checks",
-    "../../../rtc_base:rtc_base_approved",
+    "../../../rtc_base:logging",
     "../packet:data",
     "../public:socket",
     "../public:types",
@@ -45,7 +45,7 @@ rtc_library("rr_send_queue") {
 rtc_library("retransmission_error_counter") {
   deps = [
     "../../../rtc_base:checks",
-    "../../../rtc_base:rtc_base_approved",
+    "../../../rtc_base:logging",
     "../public:types",
   ]
   sources = [
@@ -58,7 +58,6 @@ rtc_library("retransmission_error_counter") {
 rtc_library("retransmission_timeout") {
   deps = [
     "../../../rtc_base:checks",
-    "../../../rtc_base:rtc_base_approved",
     "../public:types",
   ]
   sources = [
@@ -73,7 +72,7 @@ rtc_library("outstanding_data") {
     ":send_queue",
     "../../../api:array_view",
     "../../../rtc_base:checks",
-    "../../../rtc_base:rtc_base_approved",
+    "../../../rtc_base:logging",
     "../common:math",
     "../common:sequence_numbers",
     "../common:str_join",
@@ -101,7 +100,8 @@ rtc_library("retransmission_queue") {
     ":send_queue",
     "../../../api:array_view",
     "../../../rtc_base:checks",
-    "../../../rtc_base:rtc_base_approved",
+    "../../../rtc_base:logging",
+    "../../../rtc_base:stringutils",
     "../common:math",
     "../common:sequence_numbers",
     "../common:str_join",
@@ -149,7 +149,6 @@ if (rtc_include_tests) {
       "../../../api/task_queue:task_queue",
       "../../../rtc_base:checks",
       "../../../rtc_base:gunit_helpers",
-      "../../../rtc_base:rtc_base_approved",
       "../../../test:test_support",
       "../common:handover_testing",
       "../common:math",

@@ -11,6 +11,7 @@
 #include <stddef.h>
 
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <utility>
@@ -28,15 +29,20 @@
 #include "api/rtc_error.h"
 #include "api/rtc_event_log/rtc_event_log.h"
 #include "api/rtp_parameters.h"
+#include "api/rtp_receiver_interface.h"
 #include "api/scoped_refptr.h"
 #include "api/test/fake_frame_decryptor.h"
 #include "api/test/fake_frame_encryptor.h"
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
+#include "api/video/video_bitrate_allocator_factory.h"
+#include "api/video/video_codec_constants.h"
 #include "media/base/codec.h"
+#include "media/base/delayable.h"
 #include "media/base/fake_media_engine.h"
 #include "media/base/media_channel.h"
 #include "media/base/media_config.h"
 #include "media/base/media_engine.h"
+#include "media/base/rid_description.h"
 #include "media/base/stream_params.h"
 #include "media/base/test_utils.h"
 #include "media/engine/fake_webrtc_call.h"
@@ -50,8 +56,6 @@
 #include "pc/dtls_srtp_transport.h"
 #include "pc/local_audio_source.h"
 #include "pc/media_stream.h"
-#include "pc/remote_audio_source.h"
-#include "pc/rtp_receiver.h"
 #include "pc/rtp_sender.h"
 #include "pc/rtp_transport_internal.h"
 #include "pc/test/fake_video_track_source.h"
@@ -59,11 +63,14 @@
 #include "pc/video_track.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/gunit.h"
+#include "rtc_base/location.h"
+#include "rtc_base/ref_counted_object.h"
 #include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/run_loop.h"
+#include "test/scoped_key_value_config.h"
 
 using ::testing::_;
 using ::testing::ContainerEq;
@@ -174,14 +181,11 @@ class RtpSenderReceiverTest
 
     voice_channel_->SetRtpTransport(nullptr);
     video_channel_->SetRtpTransport(nullptr);
-
-    channel_manager_->DestroyChannel(voice_channel_);
-    channel_manager_->DestroyChannel(video_channel_);
   }
 
   std::unique_ptr<webrtc::RtpTransportInternal> CreateDtlsSrtpTransport() {
     auto dtls_srtp_transport = std::make_unique<webrtc::DtlsSrtpTransport>(
-        /*rtcp_mux_required=*/true);
+        /*rtcp_mux_required=*/true, field_trials_);
     dtls_srtp_transport->SetDtlsTransports(rtp_dtls_transport_.get(),
                                            /*rtcp_dtls_transport=*/nullptr);
     return dtls_srtp_transport;
@@ -217,7 +221,7 @@ class RtpSenderReceiverTest
     audio_rtp_sender_ =
         AudioRtpSender::Create(worker_thread_, audio_track_->id(), nullptr,
                                set_streams_observer.get());
-    ASSERT_TRUE(audio_rtp_sender_->SetTrack(audio_track_));
+    ASSERT_TRUE(audio_rtp_sender_->SetTrack(audio_track_.get()));
     EXPECT_CALL(*set_streams_observer, OnSetStreams());
     audio_rtp_sender_->SetStreams({local_stream_->id()});
     audio_rtp_sender_->SetMediaChannel(voice_media_channel_);
@@ -281,7 +285,7 @@ class RtpSenderReceiverTest
         std::make_unique<MockSetStreamsObserver>();
     video_rtp_sender_ = VideoRtpSender::Create(
         worker_thread_, video_track_->id(), set_streams_observer.get());
-    ASSERT_TRUE(video_rtp_sender_->SetTrack(video_track_));
+    ASSERT_TRUE(video_rtp_sender_->SetTrack(video_track_.get()));
     EXPECT_CALL(*set_streams_observer, OnSetStreams());
     video_rtp_sender_->SetStreams({local_stream_->id()});
     video_rtp_sender_->SetMediaChannel(video_media_channel_);
@@ -347,7 +351,7 @@ class RtpSenderReceiverTest
   void DestroyAudioRtpReceiver() {
     if (!audio_rtp_receiver_)
       return;
-    audio_rtp_receiver_->Stop();
+    audio_rtp_receiver_->SetMediaChannel(nullptr);
     audio_rtp_receiver_ = nullptr;
     VerifyVoiceChannelNoOutput();
   }
@@ -356,6 +360,7 @@ class RtpSenderReceiverTest
     if (!video_rtp_receiver_)
       return;
     video_rtp_receiver_->Stop();
+    video_rtp_receiver_->SetMediaChannel(nullptr);
     video_rtp_receiver_ = nullptr;
     VerifyVideoChannelNoOutput();
   }
@@ -525,8 +530,8 @@ class RtpSenderReceiverTest
   cricket::FakeMediaEngine* media_engine_;
   std::unique_ptr<cricket::ChannelManager> channel_manager_;
   cricket::FakeCall fake_call_;
-  cricket::VoiceChannel* voice_channel_;
-  cricket::VideoChannel* video_channel_;
+  std::unique_ptr<cricket::VoiceChannel> voice_channel_;
+  std::unique_ptr<cricket::VideoChannel> video_channel_;
   cricket::FakeVoiceMediaChannel* voice_media_channel_;
   cricket::FakeVideoMediaChannel* video_media_channel_;
   rtc::scoped_refptr<AudioRtpSender> audio_rtp_sender_;
@@ -537,6 +542,7 @@ class RtpSenderReceiverTest
   rtc::scoped_refptr<VideoTrackInterface> video_track_;
   rtc::scoped_refptr<AudioTrackInterface> audio_track_;
   bool audio_sender_destroyed_signal_fired_ = false;
+  webrtc::test::ScopedKeyValueConfig field_trials_;
 };
 
 // Test that `voice_channel_` is updated when an audio track is associated
@@ -724,7 +730,7 @@ TEST_F(RtpSenderReceiverTest, AudioSenderWithoutTrackAndSsrc) {
       AudioTrack::Create(kAudioTrackId, nullptr);
 
   // Track but no SSRC.
-  EXPECT_TRUE(audio_rtp_sender_->SetTrack(track));
+  EXPECT_TRUE(audio_rtp_sender_->SetTrack(track.get()));
   VerifyVoiceChannelNoInput();
 
   // SSRC but no track.
@@ -739,7 +745,7 @@ TEST_F(RtpSenderReceiverTest, VideoSenderWithoutTrackAndSsrc) {
   CreateVideoRtpSenderWithNoTrack();
 
   // Track but no SSRC.
-  EXPECT_TRUE(video_rtp_sender_->SetTrack(video_track_));
+  EXPECT_TRUE(video_rtp_sender_->SetTrack(video_track_.get()));
   VerifyVideoChannelNoInput();
 
   // SSRC but no track.
@@ -755,7 +761,7 @@ TEST_F(RtpSenderReceiverTest, AudioSenderEarlyWarmupSsrcThenTrack) {
   rtc::scoped_refptr<AudioTrackInterface> track =
       AudioTrack::Create(kAudioTrackId, nullptr);
   audio_rtp_sender_->SetSsrc(kAudioSsrc);
-  audio_rtp_sender_->SetTrack(track);
+  audio_rtp_sender_->SetTrack(track.get());
   VerifyVoiceChannelInput();
 
   DestroyAudioRtpSender();
@@ -767,7 +773,7 @@ TEST_F(RtpSenderReceiverTest, AudioSenderEarlyWarmupTrackThenSsrc) {
   CreateAudioRtpSenderWithNoTrack();
   rtc::scoped_refptr<AudioTrackInterface> track =
       AudioTrack::Create(kAudioTrackId, nullptr);
-  audio_rtp_sender_->SetTrack(track);
+  audio_rtp_sender_->SetTrack(track.get());
   audio_rtp_sender_->SetSsrc(kAudioSsrc);
   VerifyVoiceChannelInput();
 
@@ -780,7 +786,7 @@ TEST_F(RtpSenderReceiverTest, VideoSenderEarlyWarmupSsrcThenTrack) {
   AddVideoTrack();
   CreateVideoRtpSenderWithNoTrack();
   video_rtp_sender_->SetSsrc(kVideoSsrc);
-  video_rtp_sender_->SetTrack(video_track_);
+  video_rtp_sender_->SetTrack(video_track_.get());
   VerifyVideoChannelInput();
 
   DestroyVideoRtpSender();
@@ -791,7 +797,7 @@ TEST_F(RtpSenderReceiverTest, VideoSenderEarlyWarmupSsrcThenTrack) {
 TEST_F(RtpSenderReceiverTest, VideoSenderEarlyWarmupTrackThenSsrc) {
   AddVideoTrack();
   CreateVideoRtpSenderWithNoTrack();
-  video_rtp_sender_->SetTrack(video_track_);
+  video_rtp_sender_->SetTrack(video_track_.get());
   video_rtp_sender_->SetSsrc(kVideoSsrc);
   VerifyVideoChannelInput();
 
@@ -894,7 +900,7 @@ TEST_F(RtpSenderReceiverTest, AudioSenderInitParametersMovedAfterNegotiation) {
       std::make_unique<MockSetStreamsObserver>();
   audio_rtp_sender_ = AudioRtpSender::Create(
       worker_thread_, audio_track_->id(), nullptr, set_streams_observer.get());
-  ASSERT_TRUE(audio_rtp_sender_->SetTrack(audio_track_));
+  ASSERT_TRUE(audio_rtp_sender_->SetTrack(audio_track_.get()));
   EXPECT_CALL(*set_streams_observer, OnSetStreams());
   audio_rtp_sender_->SetStreams({local_stream_->id()});
 
@@ -1085,7 +1091,7 @@ TEST_F(RtpSenderReceiverTest, VideoSenderInitParametersMovedAfterNegotiation) {
       std::make_unique<MockSetStreamsObserver>();
   video_rtp_sender_ = VideoRtpSender::Create(worker_thread_, video_track_->id(),
                                              set_streams_observer.get());
-  ASSERT_TRUE(video_rtp_sender_->SetTrack(video_track_));
+  ASSERT_TRUE(video_rtp_sender_->SetTrack(video_track_.get()));
   EXPECT_CALL(*set_streams_observer, OnSetStreams());
   video_rtp_sender_->SetStreams({local_stream_->id()});
 
@@ -1126,7 +1132,7 @@ TEST_F(RtpSenderReceiverTest,
       std::make_unique<MockSetStreamsObserver>();
   video_rtp_sender_ = VideoRtpSender::Create(worker_thread_, video_track_->id(),
                                              set_streams_observer.get());
-  ASSERT_TRUE(video_rtp_sender_->SetTrack(video_track_));
+  ASSERT_TRUE(video_rtp_sender_->SetTrack(video_track_.get()));
   EXPECT_CALL(*set_streams_observer, OnSetStreams());
   video_rtp_sender_->SetStreams({local_stream_->id()});
 
@@ -1156,6 +1162,44 @@ TEST_F(RtpSenderReceiverTest,
 
   DestroyVideoRtpSender();
 }
+
+#if GTEST_HAS_DEATH_TEST && !defined(WEBRTC_ANDROID)
+using RtpSenderReceiverDeathTest = RtpSenderReceiverTest;
+
+TEST_F(RtpSenderReceiverDeathTest,
+       VideoSenderManualRemoveSimulcastFailsDeathTest) {
+  AddVideoTrack(false);
+
+  std::unique_ptr<MockSetStreamsObserver> set_streams_observer =
+      std::make_unique<MockSetStreamsObserver>();
+  video_rtp_sender_ = VideoRtpSender::Create(worker_thread_, video_track_->id(),
+                                             set_streams_observer.get());
+  ASSERT_TRUE(video_rtp_sender_->SetTrack(video_track_.get()));
+  EXPECT_CALL(*set_streams_observer, OnSetStreams());
+  video_rtp_sender_->SetStreams({local_stream_->id()});
+
+  std::vector<RtpEncodingParameters> init_encodings(2);
+  init_encodings[0].max_bitrate_bps = 60000;
+  init_encodings[1].max_bitrate_bps = 120000;
+  video_rtp_sender_->set_init_send_encodings(init_encodings);
+
+  RtpParameters params = video_rtp_sender_->GetParameters();
+  ASSERT_EQ(2u, params.encodings.size());
+  EXPECT_EQ(params.encodings[0].max_bitrate_bps, 60000);
+
+  // Simulate the setLocalDescription call as if the user used SDP munging
+  // to disable simulcast.
+  std::vector<uint32_t> ssrcs;
+  ssrcs.reserve(2);
+  for (int i = 0; i < 2; ++i)
+    ssrcs.push_back(kVideoSsrcSimulcast + i);
+  cricket::StreamParams stream_params =
+      cricket::StreamParams::CreateLegacy(kVideoSsrc);
+  video_media_channel_->AddSendStream(stream_params);
+  video_rtp_sender_->SetMediaChannel(video_media_channel_);
+  EXPECT_DEATH(video_rtp_sender_->SetSsrc(kVideoSsrcSimulcast), "");
+}
+#endif
 
 TEST_F(RtpSenderReceiverTest,
        VideoSenderMustCallGetParametersBeforeSetParametersBeforeNegotiation) {
@@ -1515,7 +1559,7 @@ TEST_F(RtpSenderReceiverTest,
   video_track_->set_content_hint(VideoTrackInterface::ContentHint::kDetailed);
   video_rtp_sender_ = VideoRtpSender::Create(worker_thread_, video_track_->id(),
                                              set_streams_observer.get());
-  ASSERT_TRUE(video_rtp_sender_->SetTrack(video_track_));
+  ASSERT_TRUE(video_rtp_sender_->SetTrack(video_track_.get()));
   EXPECT_CALL(*set_streams_observer, OnSetStreams());
   video_rtp_sender_->SetStreams({local_stream_->id()});
   video_rtp_sender_->SetMediaChannel(video_media_channel_);
@@ -1626,7 +1670,7 @@ TEST_F(RtpSenderReceiverTest, AudioSenderCannotSetFrameEncryptorAfterStop) {
 TEST_F(RtpSenderReceiverTest, AudioReceiverCanSetFrameDecryptor) {
   CreateAudioRtpReceiver();
   rtc::scoped_refptr<FrameDecryptorInterface> fake_frame_decryptor(
-      new FakeFrameDecryptor());
+      rtc::make_ref_counted<FakeFrameDecryptor>());
   EXPECT_EQ(nullptr, audio_rtp_receiver_->GetFrameDecryptor());
   audio_rtp_receiver_->SetFrameDecryptor(fake_frame_decryptor);
   EXPECT_EQ(fake_frame_decryptor.get(),
@@ -1638,9 +1682,9 @@ TEST_F(RtpSenderReceiverTest, AudioReceiverCanSetFrameDecryptor) {
 TEST_F(RtpSenderReceiverTest, AudioReceiverCannotSetFrameDecryptorAfterStop) {
   CreateAudioRtpReceiver();
   rtc::scoped_refptr<FrameDecryptorInterface> fake_frame_decryptor(
-      new FakeFrameDecryptor());
+      rtc::make_ref_counted<FakeFrameDecryptor>());
   EXPECT_EQ(nullptr, audio_rtp_receiver_->GetFrameDecryptor());
-  audio_rtp_receiver_->Stop();
+  audio_rtp_receiver_->SetMediaChannel(nullptr);
   audio_rtp_receiver_->SetFrameDecryptor(fake_frame_decryptor);
   // TODO(webrtc:9926) - Validate media channel not set once fakes updated.
   DestroyAudioRtpReceiver();
@@ -1673,7 +1717,7 @@ TEST_F(RtpSenderReceiverTest, VideoSenderCannotSetFrameEncryptorAfterStop) {
 TEST_F(RtpSenderReceiverTest, VideoReceiverCanSetFrameDecryptor) {
   CreateVideoRtpReceiver();
   rtc::scoped_refptr<FrameDecryptorInterface> fake_frame_decryptor(
-      new FakeFrameDecryptor());
+      rtc::make_ref_counted<FakeFrameDecryptor>());
   EXPECT_EQ(nullptr, video_rtp_receiver_->GetFrameDecryptor());
   video_rtp_receiver_->SetFrameDecryptor(fake_frame_decryptor);
   EXPECT_EQ(fake_frame_decryptor.get(),
@@ -1685,9 +1729,9 @@ TEST_F(RtpSenderReceiverTest, VideoReceiverCanSetFrameDecryptor) {
 TEST_F(RtpSenderReceiverTest, VideoReceiverCannotSetFrameDecryptorAfterStop) {
   CreateVideoRtpReceiver();
   rtc::scoped_refptr<FrameDecryptorInterface> fake_frame_decryptor(
-      new FakeFrameDecryptor());
+      rtc::make_ref_counted<FakeFrameDecryptor>());
   EXPECT_EQ(nullptr, video_rtp_receiver_->GetFrameDecryptor());
-  video_rtp_receiver_->Stop();
+  video_rtp_receiver_->SetMediaChannel(nullptr);
   video_rtp_receiver_->SetFrameDecryptor(fake_frame_decryptor);
   // TODO(webrtc:9926) - Validate media channel not set once fakes updated.
   DestroyVideoRtpReceiver();

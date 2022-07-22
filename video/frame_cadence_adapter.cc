@@ -21,6 +21,7 @@
 #include "api/sequence_checker.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "api/video/video_frame.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -33,7 +34,6 @@
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/time_utils.h"
 #include "system_wrappers/include/clock.h"
-#include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
 #include "system_wrappers/include/ntp_time.h"
 
@@ -185,6 +185,7 @@ class ZeroHertzAdapterMode : public AdapterMode {
   TaskQueueBase* const queue_;
   Clock* const clock_;
   FrameCadenceAdapterInterface::Callback* const callback_;
+
   // The configured max_fps.
   // TODO(crbug.com/1255737): support max_fps updates.
   const double max_fps_;
@@ -209,7 +210,9 @@ class ZeroHertzAdapterMode : public AdapterMode {
 
 class FrameCadenceAdapterImpl : public FrameCadenceAdapterInterface {
  public:
-  FrameCadenceAdapterImpl(Clock* clock, TaskQueueBase* queue);
+  FrameCadenceAdapterImpl(Clock* clock,
+                          TaskQueueBase* queue,
+                          const FieldTrialsView& field_trials);
   ~FrameCadenceAdapterImpl();
 
   // FrameCadenceAdapterInterface overrides.
@@ -262,6 +265,10 @@ class FrameCadenceAdapterImpl : public FrameCadenceAdapterInterface {
   absl::optional<ZeroHertzModeParams> zero_hertz_params_;
   // Cache for the current adapter mode.
   AdapterMode* current_adapter_mode_ = nullptr;
+
+  // Timestamp for statistics reporting.
+  absl::optional<Timestamp> zero_hertz_adapter_created_timestamp_
+      RTC_GUARDED_BY(queue_);
 
   // Set up during Initialize.
   Callback* callback_ = nullptr;
@@ -542,12 +549,14 @@ TimeDelta ZeroHertzAdapterMode::RepeatDuration(bool idle_repeat) const {
              : frame_delay_;
 }
 
-FrameCadenceAdapterImpl::FrameCadenceAdapterImpl(Clock* clock,
-                                                 TaskQueueBase* queue)
+FrameCadenceAdapterImpl::FrameCadenceAdapterImpl(
+    Clock* clock,
+    TaskQueueBase* queue,
+    const FieldTrialsView& field_trials)
     : clock_(clock),
       queue_(queue),
       zero_hertz_screenshare_enabled_(
-          !field_trial::IsDisabled("WebRTC-ZeroHertzScreenshare")) {}
+          !field_trials.IsDisabled("WebRTC-ZeroHertzScreenshare")) {}
 
 FrameCadenceAdapterImpl::~FrameCadenceAdapterImpl() {
   RTC_DLOG(LS_VERBOSE) << __func__ << " this " << this;
@@ -616,6 +625,15 @@ void FrameCadenceAdapterImpl::OnFrame(const VideoFrame& frame) {
   frames_scheduled_for_processing_.fetch_add(1, std::memory_order_relaxed);
   queue_->PostTask(ToQueuedTask(safety_.flag(), [this, post_time, frame] {
     RTC_DCHECK_RUN_ON(queue_);
+    if (zero_hertz_adapter_created_timestamp_.has_value()) {
+      TimeDelta time_until_first_frame =
+          clock_->CurrentTime() - *zero_hertz_adapter_created_timestamp_;
+      zero_hertz_adapter_created_timestamp_ = absl::nullopt;
+      RTC_HISTOGRAM_COUNTS_10000(
+          "WebRTC.Screenshare.ZeroHz.TimeUntilFirstFrameMs",
+          time_until_first_frame.ms());
+    }
+
     const int frames_scheduled_for_processing =
         frames_scheduled_for_processing_.fetch_sub(1,
                                                    std::memory_order_relaxed);
@@ -670,6 +688,7 @@ void FrameCadenceAdapterImpl::MaybeReconfigureAdapters(
         should_request_refresh_frame_ = false;
         callback_->RequestRefreshFrame();
       }
+      zero_hertz_adapter_created_timestamp_ = clock_->CurrentTime();
     }
     zero_hertz_adapter_->ReconfigureParameters(zero_hertz_params_.value());
     current_adapter_mode_ = &zero_hertz_adapter_.value();
@@ -737,8 +756,10 @@ void FrameCadenceAdapterImpl::MaybeReportFrameRateConstraintUmas() {
 }  // namespace
 
 std::unique_ptr<FrameCadenceAdapterInterface>
-FrameCadenceAdapterInterface::Create(Clock* clock, TaskQueueBase* queue) {
-  return std::make_unique<FrameCadenceAdapterImpl>(clock, queue);
+FrameCadenceAdapterInterface::Create(Clock* clock,
+                                     TaskQueueBase* queue,
+                                     const FieldTrialsView& field_trials) {
+  return std::make_unique<FrameCadenceAdapterImpl>(clock, queue, field_trials);
 }
 
 }  // namespace webrtc

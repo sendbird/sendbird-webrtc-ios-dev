@@ -32,6 +32,7 @@
 #include "media/engine/webrtc_media_engine.h"
 #include "media/engine/webrtc_voice_engine.h"
 #include "modules/rtp_rtcp/source/rtp_util.h"
+#include "modules/video_coding/svc/scalability_mode_util.h"
 #include "rtc_base/copy_on_write_buffer.h"
 #include "rtc_base/experiments/field_trial_parser.h"
 #include "rtc_base/experiments/field_trial_units.h"
@@ -82,13 +83,11 @@ const char* StreamTypeToString(
   return nullptr;
 }
 
-bool IsEnabled(const webrtc::WebRtcKeyValueConfig& trials,
-               absl::string_view name) {
+bool IsEnabled(const webrtc::FieldTrialsView& trials, absl::string_view name) {
   return absl::StartsWith(trials.Lookup(name), "Enabled");
 }
 
-bool IsDisabled(const webrtc::WebRtcKeyValueConfig& trials,
-                absl::string_view name) {
+bool IsDisabled(const webrtc::FieldTrialsView& trials, absl::string_view name) {
   return absl::StartsWith(trials.Lookup(name), "Disabled");
 }
 
@@ -107,7 +106,7 @@ bool IsScaleFactorsPowerOfTwo(const webrtc::VideoEncoderConfig& config) {
 }
 
 void AddDefaultFeedbackParams(VideoCodec* codec,
-                              const webrtc::WebRtcKeyValueConfig& trials) {
+                              const webrtc::FieldTrialsView& trials) {
   // Don't add any feedback params for RED and ULPFEC.
   if (codec->name == kRedCodecName || codec->name == kUlpfecCodecName)
     return;
@@ -164,7 +163,7 @@ template <class T>
 std::vector<VideoCodec> GetPayloadTypesAndDefaultCodecs(
     const T* factory,
     bool is_decoder_factory,
-    const webrtc::WebRtcKeyValueConfig& trials) {
+    const webrtc::FieldTrialsView& trials) {
   if (!factory) {
     return {};
   }
@@ -331,7 +330,7 @@ static bool ValidateStreamParams(const StreamParams& sp) {
 
 // Returns true if the given codec is disallowed from doing simulcast.
 bool IsCodecDisabledForSimulcast(const std::string& codec_name,
-                                 const webrtc::WebRtcKeyValueConfig& trials) {
+                                 const webrtc::FieldTrialsView& trials) {
   if (absl::EqualsIgnoreCase(codec_name, kVp9CodecName) ||
       absl::EqualsIgnoreCase(codec_name, kAv1CodecName)) {
     return true;
@@ -612,7 +611,7 @@ void DefaultUnsignalledSsrcHandler::SetDefaultSink(
 WebRtcVideoEngine::WebRtcVideoEngine(
     std::unique_ptr<webrtc::VideoEncoderFactory> video_encoder_factory,
     std::unique_ptr<webrtc::VideoDecoderFactory> video_decoder_factory,
-    const webrtc::WebRtcKeyValueConfig& trials)
+    const webrtc::FieldTrialsView& trials)
     : decoder_factory_(std::move(video_decoder_factory)),
       encoder_factory_(std::move(video_encoder_factory)),
       trials_(trials) {
@@ -2478,7 +2477,8 @@ WebRtcVideoChannel::WebRtcVideoSendStream::CreateVideoEncoderConfig(
     encoder_config.simulcast_layers[i].active =
         rtp_parameters_.encodings[i].active;
     encoder_config.simulcast_layers[i].scalability_mode =
-        rtp_parameters_.encodings[i].scalability_mode;
+        webrtc::ScalabilityModeFromString(
+            rtp_parameters_.encodings[i].scalability_mode.value_or(""));
     if (rtp_parameters_.encodings[i].min_bitrate_bps) {
       encoder_config.simulcast_layers[i].min_bitrate_bps =
           *rtp_parameters_.encodings[i].min_bitrate_bps;
@@ -3166,6 +3166,7 @@ WebRtcVideoChannel::WebRtcVideoReceiveStream::GetVideoReceiverInfo(
   info.frames_rendered = stats.frames_rendered;
   info.qp_sum = stats.qp_sum;
   info.total_decode_time_ms = stats.total_decode_time_ms;
+  info.total_processing_delay = stats.total_processing_delay;
   info.last_packet_received_timestamp_ms =
       stats.rtp_stats.last_packet_received_timestamp_ms;
   info.estimated_playout_ntp_timestamp_ms =
@@ -3498,7 +3499,7 @@ EncoderStreamFactory::EncoderStreamFactory(
     int max_qp,
     bool is_screenshare,
     bool conference_mode,
-    const webrtc::WebRtcKeyValueConfig* trials)
+    const webrtc::FieldTrialsView* trials)
 
     : codec_name_(codec_name),
       max_qp_(max_qp),
