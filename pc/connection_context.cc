@@ -10,14 +10,16 @@
 
 #include "pc/connection_context.h"
 
-#include <string>
 #include <type_traits>
 #include <utility>
 
 #include "api/transport/field_trial_based_config.h"
+#include "media/base/media_engine.h"
 #include "media/sctp/sctp_transport_factory.h"
+#include "pc/channel_manager.h"
 #include "rtc_base/helpers.h"
 #include "rtc_base/internal/default_socket_server.h"
+#include "rtc_base/socket_server.h"
 #include "rtc_base/task_utils/to_queued_task.h"
 #include "rtc_base/time_utils.h"
 
@@ -42,18 +44,6 @@ rtc::Thread* MaybeStartNetworkThread(
   return thread_holder.get();
 }
 
-rtc::Thread* MaybeStartWorkerThread(
-    rtc::Thread* old_thread,
-    std::unique_ptr<rtc::Thread>& thread_holder) {
-  if (old_thread) {
-    return old_thread;
-  }
-  thread_holder = rtc::Thread::Create();
-  thread_holder->SetName("pc_worker_thread", nullptr);
-  thread_holder->Start();
-  return thread_holder.get();
-}
-
 rtc::Thread* MaybeWrapThread(rtc::Thread* signaling_thread,
                              bool& wraps_current_thread) {
   wraps_current_thread = false;
@@ -72,7 +62,8 @@ rtc::Thread* MaybeWrapThread(rtc::Thread* signaling_thread,
 
 std::unique_ptr<SctpTransportFactoryInterface> MaybeCreateSctpFactory(
     std::unique_ptr<SctpTransportFactoryInterface> factory,
-    rtc::Thread* network_thread) {
+    rtc::Thread* network_thread,
+    const FieldTrialsView& field_trials) {
   if (factory) {
     return factory;
   }
@@ -97,20 +88,25 @@ ConnectionContext::ConnectionContext(
     : network_thread_(MaybeStartNetworkThread(dependencies->network_thread,
                                               owned_socket_factory_,
                                               owned_network_thread_)),
-      worker_thread_(MaybeStartWorkerThread(dependencies->worker_thread,
-                                            owned_worker_thread_)),
+      worker_thread_(dependencies->worker_thread,
+                     []() {
+                       auto thread_holder = rtc::Thread::Create();
+                       thread_holder->SetName("pc_worker_thread", nullptr);
+                       thread_holder->Start();
+                       return thread_holder;
+                     }),
       signaling_thread_(MaybeWrapThread(dependencies->signaling_thread,
                                         wraps_current_thread_)),
+      trials_(dependencies->trials ? std::move(dependencies->trials)
+                                   : std::make_unique<FieldTrialBasedConfig>()),
       network_monitor_factory_(
           std::move(dependencies->network_monitor_factory)),
       call_factory_(std::move(dependencies->call_factory)),
       sctp_factory_(
           MaybeCreateSctpFactory(std::move(dependencies->sctp_factory),
-                                 network_thread())),
-      trials_(dependencies->trials
-                  ? std::move(dependencies->trials)
-                  : std::make_unique<FieldTrialBasedConfig>()) {
-  signaling_thread_->AllowInvokesToThread(worker_thread_);
+                                 network_thread(),
+                                 *trials_.get())) {
+  signaling_thread_->AllowInvokesToThread(worker_thread());
   signaling_thread_->AllowInvokesToThread(network_thread_);
   worker_thread_->AllowInvokesToThread(network_thread_);
   if (network_thread_->IsCurrent()) {
@@ -143,7 +139,7 @@ ConnectionContext::ConnectionContext(
   // If network_monitor_factory_ is non-null, it will be used to create a
   // network monitor while on the network thread.
   default_network_manager_ = std::make_unique<rtc::BasicNetworkManager>(
-      network_monitor_factory_.get(), socket_factory);
+      network_monitor_factory_.get(), socket_factory, &field_trials());
 
   default_socket_factory_ =
       std::make_unique<rtc::BasicPacketSocketFactory>(socket_factory);

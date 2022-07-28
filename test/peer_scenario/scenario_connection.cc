@@ -13,6 +13,7 @@
 #include "media/base/rtp_utils.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "p2p/client/basic_port_allocator.h"
+#include "pc/channel.h"
 #include "pc/jsep_transport_controller.h"
 #include "pc/rtp_transport_internal.h"
 #include "pc/session_description.h"
@@ -132,6 +133,7 @@ JsepTransportController::Config ScenarioIceConnectionImpl::CreateJsepConfig() {
     RTC_DCHECK_RUN_ON(network_thread_);
     observer_->OnPacketReceived(packet);
   };
+  config.field_trials = &field_trials;
   return config;
 }
 

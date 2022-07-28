@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "absl/types/optional.h"
+#include "api/field_trials_view.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/timestamp.h"
@@ -50,7 +51,8 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
  public:
   ReceiveStatisticsProxy(uint32_t remote_ssrc,
                          Clock* clock,
-                         TaskQueueBase* worker_thread);
+                         TaskQueueBase* worker_thread,
+                         const FieldTrialsView& field_trials);
   ~ReceiveStatisticsProxy() override;
 
   VideoReceiveStream::Stats GetStats() const;
@@ -66,6 +68,7 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
   void OnDecodedFrame(const VideoFrameMetaData& frame_meta,
                       absl::optional<uint8_t> qp,
                       int32_t decode_time_ms,
+                      webrtc::TimeDelta processing_delay_ms,
                       VideoContentType content_type);
 
   void OnSyncOffsetUpdated(int64_t video_playout_ntp_ms,

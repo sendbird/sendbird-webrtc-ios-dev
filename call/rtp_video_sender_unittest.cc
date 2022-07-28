@@ -24,23 +24,24 @@
 #include "modules/video_coding/fec_controller_default.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "rtc_base/rate_limiter.h"
-#include "test/field_trial.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/mock_frame_transformer.h"
 #include "test/mock_transport.h"
 #include "test/scenario/scenario.h"
+#include "test/scoped_key_value_config.h"
 #include "test/time_controller/simulated_time_controller.h"
 #include "video/send_delay_stats.h"
 #include "video/send_statistics_proxy.h"
+
+namespace webrtc {
+namespace {
 
 using ::testing::_;
 using ::testing::NiceMock;
 using ::testing::SaveArg;
 using ::testing::SizeIs;
 
-namespace webrtc {
-namespace {
 const int8_t kPayloadType = 96;
 const uint32_t kSsrc1 = 12345;
 const uint32_t kSsrc2 = 23456;
@@ -118,7 +119,8 @@ class RtpVideoSenderTestFixture {
       int payload_type,
       const std::map<uint32_t, RtpPayloadState>& suspended_payload_states,
       FrameCountObserver* frame_count_observer,
-      rtc::scoped_refptr<FrameTransformerInterface> frame_transformer)
+      rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
+      const FieldTrialsView* field_trials = nullptr)
       : time_controller_(Timestamp::Millis(1000000)),
         config_(CreateVideoSendStreamConfig(&transport_,
                                             ssrcs,
@@ -134,10 +136,11 @@ class RtpVideoSenderTestFixture {
             bitrate_config_,
             time_controller_.CreateProcessThread("PacerThread"),
             time_controller_.GetTaskQueueFactory(),
-            &field_trials_),
+            field_trials ? *field_trials : field_trials_),
         stats_proxy_(time_controller_.GetClock(),
                      config_,
-                     VideoEncoderConfig::ContentType::kRealtimeVideo),
+                     VideoEncoderConfig::ContentType::kRealtimeVideo,
+                     field_trials ? *field_trials : field_trials_),
         retransmission_rate_limiter_(time_controller_.GetClock(),
                                      kRetransmitWindowSizeMs) {
     transport_controller_.EnsureStarted();
@@ -150,7 +153,8 @@ class RtpVideoSenderTestFixture {
                         &stats_proxy_, &stats_proxy_, &send_delay_stats_),
         &transport_controller_, &event_log_, &retransmission_rate_limiter_,
         std::make_unique<FecControllerDefault>(time_controller_.GetClock()),
-        nullptr, CryptoOptions{}, frame_transformer);
+        nullptr, CryptoOptions{}, frame_transformer,
+        field_trials ? *field_trials : field_trials_);
   }
 
   RtpVideoSenderTestFixture(
@@ -158,25 +162,29 @@ class RtpVideoSenderTestFixture {
       const std::vector<uint32_t>& rtx_ssrcs,
       int payload_type,
       const std::map<uint32_t, RtpPayloadState>& suspended_payload_states,
-      FrameCountObserver* frame_count_observer)
+      FrameCountObserver* frame_count_observer,
+      const FieldTrialsView* field_trials = nullptr)
       : RtpVideoSenderTestFixture(ssrcs,
                                   rtx_ssrcs,
                                   payload_type,
                                   suspended_payload_states,
                                   frame_count_observer,
-                                  /*frame_transformer=*/nullptr) {}
+                                  /*frame_transformer=*/nullptr,
+                                  field_trials) {}
 
   RtpVideoSenderTestFixture(
       const std::vector<uint32_t>& ssrcs,
       const std::vector<uint32_t>& rtx_ssrcs,
       int payload_type,
-      const std::map<uint32_t, RtpPayloadState>& suspended_payload_states)
+      const std::map<uint32_t, RtpPayloadState>& suspended_payload_states,
+      const FieldTrialsView* field_trials = nullptr)
       : RtpVideoSenderTestFixture(ssrcs,
                                   rtx_ssrcs,
                                   payload_type,
                                   suspended_payload_states,
                                   /*frame_count_observer=*/nullptr,
-                                  /*frame_transformer=*/nullptr) {}
+                                  /*frame_transformer=*/nullptr,
+                                  field_trials) {}
 
   ~RtpVideoSenderTestFixture() { SetActive(false); }
 
@@ -206,6 +214,7 @@ class RtpVideoSenderTestFixture {
   }
 
  private:
+  test::ScopedKeyValueConfig field_trials_;
   NiceMock<MockTransport> transport_;
   NiceMock<MockRtcpIntraFrameObserver> encoder_feedback_;
   GlobalSimulatedTimeController time_controller_;
@@ -213,7 +222,6 @@ class RtpVideoSenderTestFixture {
   VideoSendStream::Config config_;
   SendDelayStats send_delay_stats_;
   BitrateConstraints bitrate_config_;
-  const FieldTrialBasedConfig field_trials_;
   RtpTransportControllerSend transport_controller_;
   SendStatisticsProxy stats_proxy_;
   RateLimiter retransmission_rate_limiter_;
@@ -739,6 +747,53 @@ TEST(RtpVideoSenderTest, SupportsDependencyDescriptor) {
       sent_packets.back().HasExtension<RtpDependencyDescriptorExtension>());
 }
 
+TEST(RtpVideoSenderTest,
+     SupportsDependencyDescriptorForVp8NotProvidedByEncoder) {
+  constexpr uint8_t kPayload[1] = {'a'};
+  RtpVideoSenderTestFixture test({kSsrc1}, {}, kPayloadType, {});
+  RtpHeaderExtensionMap extensions;
+  extensions.Register<RtpDependencyDescriptorExtension>(
+      kDependencyDescriptorExtensionId);
+  std::vector<RtpPacket> sent_packets;
+  ON_CALL(test.transport(), SendRtp)
+      .WillByDefault(
+          [&](const uint8_t* packet, size_t length, const PacketOptions&) {
+            EXPECT_TRUE(
+                sent_packets.emplace_back(&extensions).Parse(packet, length));
+            return true;
+          });
+  test.SetActive(true);
+
+  EncodedImage key_frame_image;
+  key_frame_image._frameType = VideoFrameType::kVideoFrameKey;
+  key_frame_image.SetEncodedData(
+      EncodedImageBuffer::Create(kPayload, sizeof(kPayload)));
+  CodecSpecificInfo key_frame_info;
+  key_frame_info.codecType = VideoCodecType::kVideoCodecVP8;
+  ASSERT_EQ(
+      test.router()->OnEncodedImage(key_frame_image, &key_frame_info).error,
+      EncodedImageCallback::Result::OK);
+
+  EncodedImage delta_image;
+  delta_image._frameType = VideoFrameType::kVideoFrameDelta;
+  delta_image.SetEncodedData(
+      EncodedImageBuffer::Create(kPayload, sizeof(kPayload)));
+  CodecSpecificInfo delta_info;
+  delta_info.codecType = VideoCodecType::kVideoCodecVP8;
+  ASSERT_EQ(test.router()->OnEncodedImage(delta_image, &delta_info).error,
+            EncodedImageCallback::Result::OK);
+
+  test.AdvanceTime(TimeDelta::Millis(123));
+
+  DependencyDescriptor key_frame_dd;
+  DependencyDescriptor delta_dd;
+  ASSERT_THAT(sent_packets, SizeIs(2));
+  EXPECT_TRUE(sent_packets[0].GetExtension<RtpDependencyDescriptorExtension>(
+      /*structure=*/nullptr, &key_frame_dd));
+  EXPECT_TRUE(sent_packets[1].GetExtension<RtpDependencyDescriptorExtension>(
+      key_frame_dd.attached_structure.get(), &delta_dd));
+}
+
 TEST(RtpVideoSenderTest, SupportsDependencyDescriptorForVp9) {
   RtpVideoSenderTestFixture test({kSsrc1}, {}, kPayloadType, {});
   test.SetActive(true);
@@ -849,9 +904,9 @@ TEST(RtpVideoSenderTest,
 }
 
 TEST(RtpVideoSenderTest, GenerateDependecyDescriptorForGenericCodecs) {
-  test::ScopedFieldTrials field_trials(
+  test::ScopedKeyValueConfig field_trials(
       "WebRTC-GenericCodecDependencyDescriptor/Enabled/");
-  RtpVideoSenderTestFixture test({kSsrc1}, {}, kPayloadType, {});
+  RtpVideoSenderTestFixture test({kSsrc1}, {}, kPayloadType, {}, &field_trials);
   test.SetActive(true);
 
   RtpHeaderExtensionMap extensions;
@@ -953,64 +1008,6 @@ TEST(RtpVideoSenderTest, SupportsStoppingUsingDependencyDescriptor) {
       sent_packets.back().HasExtension<RtpDependencyDescriptorExtension>());
 }
 
-TEST(RtpVideoSenderTest,
-     SupportsStoppingUsingDependencyDescriptorForVp8Simulcast) {
-  RtpVideoSenderTestFixture test({kSsrc1, kSsrc2}, {}, kPayloadType, {});
-  test.SetActive(true);
-
-  RtpHeaderExtensionMap extensions;
-  extensions.Register<RtpDependencyDescriptorExtension>(
-      kDependencyDescriptorExtensionId);
-  std::vector<RtpPacket> sent_packets;
-  ON_CALL(test.transport(), SendRtp)
-      .WillByDefault([&](const uint8_t* packet, size_t length,
-                         const PacketOptions& options) {
-        sent_packets.emplace_back(&extensions);
-        EXPECT_TRUE(sent_packets.back().Parse(packet, length));
-        return true;
-      });
-
-  const uint8_t kPayload[1] = {'a'};
-  EncodedImage encoded_image;
-  encoded_image.SetTimestamp(1);
-  encoded_image.capture_time_ms_ = 2;
-  encoded_image.SetEncodedData(
-      EncodedImageBuffer::Create(kPayload, sizeof(kPayload)));
-  // VP8 simulcast uses spatial index to communicate simulcast stream.
-  encoded_image.SetSpatialIndex(1);
-
-  CodecSpecificInfo codec_specific;
-  codec_specific.codecType = VideoCodecType::kVideoCodecVP8;
-  codec_specific.template_structure.emplace();
-  codec_specific.template_structure->num_decode_targets = 1;
-  codec_specific.template_structure->templates = {
-      FrameDependencyTemplate().T(0).Dtis("S")};
-
-  // Send two tiny images, mapping to single RTP packets.
-  // Send in a key frame.
-  encoded_image._frameType = VideoFrameType::kVideoFrameKey;
-  codec_specific.generic_frame_info =
-      GenericFrameInfo::Builder().T(0).Dtis("S").Build();
-  codec_specific.generic_frame_info->encoder_buffers = {{0, false, true}};
-  EXPECT_EQ(test.router()->OnEncodedImage(encoded_image, &codec_specific).error,
-            EncodedImageCallback::Result::OK);
-  test.AdvanceTime(TimeDelta::Millis(33));
-  ASSERT_THAT(sent_packets, SizeIs(1));
-  EXPECT_TRUE(
-      sent_packets.back().HasExtension<RtpDependencyDescriptorExtension>());
-
-  // Send in a new key frame without the support for the dependency descriptor.
-  encoded_image._frameType = VideoFrameType::kVideoFrameKey;
-  codec_specific.template_structure = absl::nullopt;
-  codec_specific.generic_frame_info = absl::nullopt;
-  EXPECT_EQ(test.router()->OnEncodedImage(encoded_image, &codec_specific).error,
-            EncodedImageCallback::Result::OK);
-  test.AdvanceTime(TimeDelta::Millis(33));
-  ASSERT_THAT(sent_packets, SizeIs(2));
-  EXPECT_FALSE(
-      sent_packets.back().HasExtension<RtpDependencyDescriptorExtension>());
-}
-
 TEST(RtpVideoSenderTest, CanSetZeroBitrate) {
   RtpVideoSenderTestFixture test({kSsrc1}, {kRtxSsrc1}, kPayloadType, {});
   test.router()->OnBitrateUpdated(CreateBitrateAllocationUpdate(0),
@@ -1031,7 +1028,7 @@ TEST(RtpVideoSenderTest, SimulcastSenderRegistersFrameTransformers) {
 }
 
 TEST(RtpVideoSenderTest, OverheadIsSubtractedFromTargetBitrate) {
-  test::ScopedFieldTrials field_trials(
+  test::ScopedKeyValueConfig field_trials(
       "WebRTC-Video-UseFrameRateForOverhead/Enabled/");
 
   // TODO(jakobi): RTP header size should not be hard coded.
@@ -1039,7 +1036,7 @@ TEST(RtpVideoSenderTest, OverheadIsSubtractedFromTargetBitrate) {
   constexpr uint32_t kTransportPacketOverheadBytes = 40;
   constexpr uint32_t kOverheadPerPacketBytes =
       kRtpHeaderSizeBytes + kTransportPacketOverheadBytes;
-  RtpVideoSenderTestFixture test({kSsrc1}, {}, kPayloadType, {});
+  RtpVideoSenderTestFixture test({kSsrc1}, {}, kPayloadType, {}, &field_trials);
   test.router()->OnTransportOverheadChanged(kTransportPacketOverheadBytes);
   test.SetActive(true);
 

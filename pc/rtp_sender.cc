@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -299,8 +300,8 @@ void RtpSenderBase::SetSsrc(uint32_t ssrc) {
       // we need to copy.
       RtpParameters current_parameters =
           media_channel_->GetRtpSendParameters(ssrc_);
-      RTC_DCHECK_GE(current_parameters.encodings.size(),
-                    init_parameters_.encodings.size());
+      RTC_CHECK_GE(current_parameters.encodings.size(),
+                   init_parameters_.encodings.size());
       for (size_t i = 0; i < init_parameters_.encodings.size(); ++i) {
         init_parameters_.encodings[i].ssrc =
             current_parameters.encodings[i].ssrc;
@@ -650,7 +651,8 @@ void VideoRtpSender::SetSend() {
       break;
   }
   bool success = worker_thread_->Invoke<bool>(RTC_FROM_HERE, [&] {
-    return video_media_channel()->SetVideoSend(ssrc_, &options, video_track());
+    return video_media_channel()->SetVideoSend(ssrc_, &options,
+                                               video_track().get());
   });
   RTC_DCHECK(success);
 }

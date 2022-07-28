@@ -36,6 +36,7 @@
 #include "call/video_send_stream.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/buffer.h"
+#include "test/scoped_key_value_config.h"
 
 namespace cricket {
 class FakeAudioSendStream final : public webrtc::AudioSendStream {
@@ -109,9 +110,8 @@ class FakeAudioReceiveStream final : public webrtc::AudioReceiveStream {
   }
 
  private:
-  const webrtc::ReceiveStream::RtpConfig& rtp_config() const override {
-    return config_.rtp;
-  }
+  bool transport_cc() const override { return config_.rtp.transport_cc; }
+  uint32_t remote_ssrc() const override { return config_.rtp.remote_ssrc; }
   void Start() override { started_ = true; }
   void Stop() override { started_ = false; }
   bool IsRunning() const override { return started_; }
@@ -126,6 +126,8 @@ class FakeAudioReceiveStream final : public webrtc::AudioReceiveStream {
   void SetFrameDecryptor(rtc::scoped_refptr<webrtc::FrameDecryptorInterface>
                              frame_decryptor) override;
   void SetRtpExtensions(std::vector<webrtc::RtpExtension> extensions) override;
+  const std::vector<webrtc::RtpExtension>& GetRtpExtensions() const override;
+  webrtc::RtpHeaderExtensionMap GetRtpExtensionMap() const override;
 
   webrtc::AudioReceiveStream::Stats GetStats(
       bool get_and_clear_legacy_stats) const override;
@@ -264,10 +266,8 @@ class FakeVideoReceiveStream final : public webrtc::VideoReceiveStream {
  private:
   // webrtc::VideoReceiveStream implementation.
   void SetRtpExtensions(std::vector<webrtc::RtpExtension> extensions) override;
-
-  const webrtc::ReceiveStream::RtpConfig& rtp_config() const override {
-    return config_.rtp;
-  }
+  webrtc::RtpHeaderExtensionMap GetRtpExtensionMap() const override;
+  bool transport_cc() const override { return config_.rtp.transport_cc; }
 
   void Start() override;
   void Stop() override;
@@ -293,15 +293,15 @@ class FakeVideoReceiveStream final : public webrtc::VideoReceiveStream {
 class FakeFlexfecReceiveStream final : public webrtc::FlexfecReceiveStream {
  public:
   explicit FakeFlexfecReceiveStream(
-      const webrtc::FlexfecReceiveStream::Config& config);
+      const webrtc::FlexfecReceiveStream::Config config);
 
   void SetRtpExtensions(std::vector<webrtc::RtpExtension> extensions) override;
-
-  const webrtc::ReceiveStream::RtpConfig& rtp_config() const override {
-    return config_.rtp;
-  }
+  webrtc::RtpHeaderExtensionMap GetRtpExtensionMap() const override;
+  bool transport_cc() const override { return config_.rtp.transport_cc; }
 
   const webrtc::FlexfecReceiveStream::Config& GetConfig() const;
+
+  uint32_t remote_ssrc() const { return config_.rtp.remote_ssrc; }
 
  private:
   webrtc::FlexfecReceiveStream::Stats GetStats() const override;
@@ -313,9 +313,10 @@ class FakeFlexfecReceiveStream final : public webrtc::FlexfecReceiveStream {
 
 class FakeCall final : public webrtc::Call, public webrtc::PacketReceiver {
  public:
-  FakeCall();
+  explicit FakeCall(webrtc::test::ScopedKeyValueConfig* field_trials = nullptr);
   FakeCall(webrtc::TaskQueueBase* worker_thread,
-           webrtc::TaskQueueBase* network_thread);
+           webrtc::TaskQueueBase* network_thread,
+           webrtc::test::ScopedKeyValueConfig* field_trials = nullptr);
   ~FakeCall() override;
 
   webrtc::MockRtpTransportControllerSend* GetMockTransportControllerSend() {
@@ -353,6 +354,13 @@ class FakeCall final : public webrtc::Call, public webrtc::PacketReceiver {
   void SetClientBitratePreferences(
       const webrtc::BitrateSettings& preferences) override {}
 
+  void SetFieldTrial(const std::string& field_trial_string) {
+    trials_overrides_ = std::make_unique<webrtc::test::ScopedKeyValueConfig>(
+        *trials_, field_trial_string);
+  }
+
+  const webrtc::FieldTrialsView& trials() const override { return *trials_; }
+
  private:
   webrtc::AudioSendStream* CreateAudioSendStream(
       const webrtc::AudioSendStream::Config& config) override;
@@ -374,7 +382,7 @@ class FakeCall final : public webrtc::Call, public webrtc::PacketReceiver {
       webrtc::VideoReceiveStream* receive_stream) override;
 
   webrtc::FlexfecReceiveStream* CreateFlexfecReceiveStream(
-      const webrtc::FlexfecReceiveStream::Config& config) override;
+      const webrtc::FlexfecReceiveStream::Config config) override;
   void DestroyFlexfecReceiveStream(
       webrtc::FlexfecReceiveStream* receive_stream) override;
 
@@ -393,10 +401,6 @@ class FakeCall final : public webrtc::Call, public webrtc::PacketReceiver {
   }
 
   webrtc::Call::Stats GetStats() const override;
-
-  const webrtc::WebRtcKeyValueConfig& trials() const override {
-    return trials_;
-  }
 
   webrtc::TaskQueueBase* network_thread() const override;
   webrtc::TaskQueueBase* worker_thread() const override;
@@ -432,7 +436,16 @@ class FakeCall final : public webrtc::Call, public webrtc::PacketReceiver {
 
   int num_created_send_streams_;
   int num_created_receive_streams_;
-  webrtc::FieldTrialBasedConfig trials_;
+
+  // The field trials that are in use, either supplied by caller
+  // or pointer to &fallback_trials_.
+  webrtc::test::ScopedKeyValueConfig* trials_;
+
+  // fallback_trials_ is used if caller does not provide any field trials.
+  webrtc::test::ScopedKeyValueConfig fallback_trials_;
+
+  // An extra field trial that can be set using SetFieldTrial.
+  std::unique_ptr<webrtc::test::ScopedKeyValueConfig> trials_overrides_;
 };
 
 }  // namespace cricket
