@@ -57,7 +57,7 @@ ABSL_FLAG(
     "described by histogram.proto in "
     "https://chromium.googlesource.com/catapult/.");
 
-#else
+#endif
 
 ABSL_FLAG(std::string,
           isolated_script_test_output,
@@ -71,8 +71,6 @@ ABSL_FLAG(
     "Path where the perf results should be stored in proto format described "
     "described by histogram.proto in "
     "https://chromium.googlesource.com/catapult/.");
-
-#endif
 
 constexpr char kPlotAllMetrics[] = "all";
 ABSL_FLAG(std::vector<std::string>,
@@ -203,7 +201,7 @@ class TestMainImpl : public TestMain {
     const bool capture_events = !trace_event_path.empty();
     if (capture_events) {
       rtc::tracing::SetupInternalTracer();
-      rtc::tracing::StartInternalCapture(trace_event_path.c_str());
+      rtc::tracing::StartInternalCapture(trace_event_path);
     }
 
     absl::optional<std::vector<std::string>> metrics_to_plot =

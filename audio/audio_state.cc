@@ -28,7 +28,7 @@ namespace internal {
 
 AudioState::AudioState(const AudioState::Config& config)
     : config_(config),
-      audio_transport_(config_.audio_mixer,
+      audio_transport_(config_.audio_mixer.get(),
                        config_.audio_processing.get(),
                        config_.async_audio_processing_factory.get()) {
   process_thread_checker_.Detach();
@@ -48,11 +48,6 @@ AudioProcessing* AudioState::audio_processing() {
 
 AudioTransport* AudioState::audio_transport() {
   return &audio_transport_;
-}
-
-bool AudioState::typing_noise_detected() const {
-  RTC_DCHECK(thread_checker_.IsCurrent());
-  return audio_transport_.typing_noise_detected();
 }
 
 void AudioState::AddReceivingStream(webrtc::AudioReceiveStream* stream) {

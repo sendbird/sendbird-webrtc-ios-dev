@@ -127,7 +127,7 @@ class TestRtpSenderVideo : public RTPSenderVideo {
  public:
   TestRtpSenderVideo(Clock* clock,
                      RTPSender* rtp_sender,
-                     const WebRtcKeyValueConfig& field_trials)
+                     const FieldTrialsView& field_trials)
       : RTPSenderVideo([&] {
           Config config;
           config.clock = clock;
@@ -146,7 +146,7 @@ class TestRtpSenderVideo : public RTPSenderVideo {
   }
 };
 
-class FieldTrials : public WebRtcKeyValueConfig {
+class FieldTrials : public FieldTrialsView {
  public:
   explicit FieldTrials(bool use_send_side_bwe_with_overhead)
       : use_send_side_bwe_with_overhead_(use_send_side_bwe_with_overhead),
@@ -787,7 +787,7 @@ TEST_P(RtpSenderVideoTest,
   config.clock = &fake_clock_;
   config.rtp_sender = rtp_module_->RtpSender();
   config.field_trials = &field_trials_;
-  config.frame_encryptor = encryptor;
+  config.frame_encryptor = encryptor.get();
   RTPSenderVideo rtp_sender_video(config);
 
   FrameDependencyStructure video_structure;

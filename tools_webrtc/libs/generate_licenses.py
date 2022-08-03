@@ -40,7 +40,6 @@ LIB_TO_LICENSES_DICT = {
         'third_party/android_deps/libs/'
         'com_google_auto_service_auto_service/LICENSE'
     ],
-    'bazel': ['third_party/bazel/LICENSE'],
     'boringssl': ['third_party/boringssl/src/LICENSE'],
     'crc32c': ['third_party/crc32c/src/LICENSE'],
     'errorprone': [
@@ -65,7 +64,6 @@ LIB_TO_LICENSES_DICT = {
     'pffft': ['third_party/pffft/LICENSE'],
     'protobuf': ['third_party/protobuf/LICENSE'],
     'rnnoise': ['third_party/rnnoise/COPYING'],
-    'usrsctp': ['third_party/usrsctp/LICENSE'],
     'webrtc': ['LICENSE'],
     'zlib': ['third_party/zlib/LICENSE'],
     'base64': ['rtc_base/third_party/base64/LICENSE'],
@@ -102,17 +100,9 @@ LIB_REGEX_TO_LICENSES_DICT = {
 }
 
 
-def FindSrcDirPath():
-  """Returns the abs path to the src/ dir of the project."""
-  src_dir = os.path.dirname(os.path.abspath(__file__))
-  while os.path.basename(src_dir) != 'src':
-    src_dir = os.path.normpath(os.path.join(src_dir, os.pardir))
-  return src_dir
-
-
-SCRIPT_DIR = os.path.dirname(os.path.realpath(sys.argv[0]))
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 WEBRTC_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, os.pardir, os.pardir))
-SRC_DIR = FindSrcDirPath()
+SRC_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 sys.path.append(os.path.join(SRC_DIR, 'build'))
 import find_depot_tools
 

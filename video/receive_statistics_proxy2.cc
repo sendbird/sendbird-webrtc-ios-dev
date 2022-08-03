@@ -22,7 +22,6 @@
 #include "rtc_base/thread.h"
 #include "rtc_base/time_utils.h"
 #include "system_wrappers/include/clock.h"
-#include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
 #include "video/video_receive_stream2.h"
 
@@ -98,13 +97,15 @@ bool IsCurrentTaskQueueOrThread(TaskQueueBase* task_queue) {
 
 }  // namespace
 
-ReceiveStatisticsProxy::ReceiveStatisticsProxy(uint32_t remote_ssrc,
-                                               Clock* clock,
-                                               TaskQueueBase* worker_thread)
+ReceiveStatisticsProxy::ReceiveStatisticsProxy(
+    uint32_t remote_ssrc,
+    Clock* clock,
+    TaskQueueBase* worker_thread,
+    const FieldTrialsView& field_trials)
     : clock_(clock),
       start_ms_(clock->TimeInMilliseconds()),
       enable_decode_time_histograms_(
-          !field_trial::IsEnabled("WebRTC-DecodeTimeHistogramsKillSwitch")),
+          !field_trials.IsEnabled("WebRTC-DecodeTimeHistogramsKillSwitch")),
       last_sample_time_(clock->TimeInMilliseconds()),
       fps_threshold_(kLowFpsThreshold,
                      kHighFpsThreshold,
@@ -829,20 +830,33 @@ void ReceiveStatisticsProxy::OnDecodedFrame(const VideoFrame& frame,
                                             absl::optional<uint8_t> qp,
                                             int32_t decode_time_ms,
                                             VideoContentType content_type) {
+  webrtc::TimeDelta processing_delay = webrtc::TimeDelta::Millis(0);
+  webrtc::Timestamp current_time = clock_->CurrentTime();
+  // TODO(bugs.webrtc.org/13984): some tests do not fill packet_infos().
+  if (frame.packet_infos().size() > 0) {
+    auto first_packet = std::min_element(
+        frame.packet_infos().cbegin(), frame.packet_infos().cend(),
+        [](const webrtc::RtpPacketInfo& a, const webrtc::RtpPacketInfo& b) {
+          return a.receive_time() < b.receive_time();
+        });
+    processing_delay = current_time - first_packet->receive_time();
+  }
   // See VCMDecodedFrameCallback::Decoded for more info on what thread/queue we
   // may be on. E.g. on iOS this gets called on
   // "com.apple.coremedia.decompressionsession.clientcallback"
-  VideoFrameMetaData meta(frame, clock_->CurrentTime());
-  worker_thread_->PostTask(ToQueuedTask(
-      task_safety_, [meta, qp, decode_time_ms, content_type, this]() {
-        OnDecodedFrame(meta, qp, decode_time_ms, content_type);
-      }));
+  VideoFrameMetaData meta(frame, current_time);
+  worker_thread_->PostTask(ToQueuedTask(task_safety_, [meta, qp, decode_time_ms,
+                                                       processing_delay,
+                                                       content_type, this]() {
+    OnDecodedFrame(meta, qp, decode_time_ms, processing_delay, content_type);
+  }));
 }
 
 void ReceiveStatisticsProxy::OnDecodedFrame(
     const VideoFrameMetaData& frame_meta,
     absl::optional<uint8_t> qp,
     int32_t decode_time_ms,
+    webrtc::TimeDelta processing_delay,
     VideoContentType content_type) {
   RTC_DCHECK_RUN_ON(&main_thread_);
 
@@ -883,6 +897,7 @@ void ReceiveStatisticsProxy::OnDecodedFrame(
   decode_time_counter_.Add(decode_time_ms);
   stats_.decode_ms = decode_time_ms;
   stats_.total_decode_time_ms += decode_time_ms;
+  stats_.total_processing_delay += processing_delay;
   if (enable_decode_time_histograms_) {
     UpdateDecodeTimeHistograms(frame_meta.width, frame_meta.height,
                                decode_time_ms);

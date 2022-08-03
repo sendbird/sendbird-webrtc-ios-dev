@@ -27,18 +27,24 @@
 #include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "test/explicit_key_value_config.h"
-#include "test/field_trial.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-
-using ::testing::Each;
-using ::testing::ElementsAre;
-using ::testing::Eq;
-using ::testing::IsEmpty;
-using ::testing::SizeIs;
+#include "test/scoped_key_value_config.h"
 
 namespace webrtc {
 namespace {
+
+using ::testing::AllOf;
+using ::testing::Each;
+using ::testing::ElementsAre;
+using ::testing::Eq;
+using ::testing::Field;
+using ::testing::IsEmpty;
+using ::testing::Optional;
+using ::testing::SizeIs;
+
+using GenericDescriptorInfo = RTPVideoHeader::GenericDescriptorInfo;
+
 const uint32_t kSsrc1 = 12345;
 const uint32_t kSsrc2 = 23456;
 const int16_t kPictureId = 123;
@@ -47,7 +53,6 @@ const uint8_t kTemporalIdx = 1;
 const int16_t kInitialPictureId1 = 222;
 const int16_t kInitialTl0PicIdx1 = 99;
 const int64_t kDontCare = 0;
-}  // namespace
 
 TEST(RtpPayloadParamsTest, InfoMappedToRtpVideoHeader_Vp8) {
   RtpPayloadState state2;
@@ -193,6 +198,87 @@ TEST(RtpPayloadParamsTest, PictureIdWraps) {
   EXPECT_EQ(kInitialTl0PicIdx1, params.state().tl0_pic_idx);
 }
 
+TEST(RtpPayloadParamsTest, CreatesGenericDescriptorForVp8) {
+  constexpr auto kSwitch = DecodeTargetIndication::kSwitch;
+  constexpr auto kNotPresent = DecodeTargetIndication::kNotPresent;
+
+  RtpPayloadState state;
+  RtpPayloadParams params(kSsrc1, &state, FieldTrialBasedConfig());
+
+  EncodedImage key_frame_image;
+  key_frame_image._frameType = VideoFrameType::kVideoFrameKey;
+  CodecSpecificInfo key_frame_info;
+  key_frame_info.codecType = kVideoCodecVP8;
+  key_frame_info.codecSpecific.VP8.temporalIdx = 0;
+  RTPVideoHeader key_frame_header = params.GetRtpVideoHeader(
+      key_frame_image, &key_frame_info, /*shared_frame_id=*/123);
+
+  EncodedImage delta_t1_image;
+  delta_t1_image._frameType = VideoFrameType::kVideoFrameDelta;
+  CodecSpecificInfo delta_t1_info;
+  delta_t1_info.codecType = kVideoCodecVP8;
+  delta_t1_info.codecSpecific.VP8.temporalIdx = 1;
+  RTPVideoHeader delta_t1_header = params.GetRtpVideoHeader(
+      delta_t1_image, &delta_t1_info, /*shared_frame_id=*/124);
+
+  EncodedImage delta_t0_image;
+  delta_t0_image._frameType = VideoFrameType::kVideoFrameDelta;
+  CodecSpecificInfo delta_t0_info;
+  delta_t0_info.codecType = kVideoCodecVP8;
+  delta_t0_info.codecSpecific.VP8.temporalIdx = 0;
+  RTPVideoHeader delta_t0_header = params.GetRtpVideoHeader(
+      delta_t0_image, &delta_t0_info, /*shared_frame_id=*/125);
+
+  EXPECT_THAT(
+      key_frame_header,
+      AllOf(Field(&RTPVideoHeader::codec, kVideoCodecVP8),
+            Field(&RTPVideoHeader::frame_type, VideoFrameType::kVideoFrameKey),
+            Field(&RTPVideoHeader::generic,
+                  Optional(AllOf(
+                      Field(&GenericDescriptorInfo::frame_id, 123),
+                      Field(&GenericDescriptorInfo::spatial_index, 0),
+                      Field(&GenericDescriptorInfo::temporal_index, 0),
+                      Field(&GenericDescriptorInfo::decode_target_indications,
+                            ElementsAre(kSwitch, kSwitch, kSwitch, kSwitch)),
+                      Field(&GenericDescriptorInfo::dependencies, IsEmpty()),
+                      Field(&GenericDescriptorInfo::chain_diffs,
+                            ElementsAre(0)))))));
+
+  EXPECT_THAT(
+      delta_t1_header,
+      AllOf(
+          Field(&RTPVideoHeader::codec, kVideoCodecVP8),
+          Field(&RTPVideoHeader::frame_type, VideoFrameType::kVideoFrameDelta),
+          Field(
+              &RTPVideoHeader::generic,
+              Optional(AllOf(
+                  Field(&GenericDescriptorInfo::frame_id, 124),
+                  Field(&GenericDescriptorInfo::spatial_index, 0),
+                  Field(&GenericDescriptorInfo::temporal_index, 1),
+                  Field(&GenericDescriptorInfo::decode_target_indications,
+                        ElementsAre(kNotPresent, kSwitch, kSwitch, kSwitch)),
+                  Field(&GenericDescriptorInfo::dependencies, ElementsAre(123)),
+                  Field(&GenericDescriptorInfo::chain_diffs,
+                        ElementsAre(1)))))));
+
+  EXPECT_THAT(
+      delta_t0_header,
+      AllOf(
+          Field(&RTPVideoHeader::codec, kVideoCodecVP8),
+          Field(&RTPVideoHeader::frame_type, VideoFrameType::kVideoFrameDelta),
+          Field(
+              &RTPVideoHeader::generic,
+              Optional(AllOf(
+                  Field(&GenericDescriptorInfo::frame_id, 125),
+                  Field(&GenericDescriptorInfo::spatial_index, 0),
+                  Field(&GenericDescriptorInfo::temporal_index, 0),
+                  Field(&GenericDescriptorInfo::decode_target_indications,
+                        ElementsAre(kSwitch, kSwitch, kSwitch, kSwitch)),
+                  Field(&GenericDescriptorInfo::dependencies, ElementsAre(123)),
+                  Field(&GenericDescriptorInfo::chain_diffs,
+                        ElementsAre(2)))))));
+}
+
 TEST(RtpPayloadParamsTest, Tl0PicIdxUpdatedForVp8) {
   RtpPayloadState state;
   state.picture_id = kInitialPictureId1;
@@ -275,8 +361,7 @@ TEST(RtpPayloadParamsTest, Tl0PicIdxUpdatedForVp9) {
 }
 
 TEST(RtpPayloadParamsTest, PictureIdForOldGenericFormat) {
-  test::ScopedFieldTrials generic_picture_id(
-      "WebRTC-GenericPictureId/Enabled/");
+  test::ScopedKeyValueConfig field_trials("WebRTC-GenericPictureId/Enabled/");
   RtpPayloadState state{};
 
   EncodedImage encoded_image;
@@ -284,7 +369,7 @@ TEST(RtpPayloadParamsTest, PictureIdForOldGenericFormat) {
   codec_info.codecType = kVideoCodecGeneric;
   encoded_image._frameType = VideoFrameType::kVideoFrameKey;
 
-  RtpPayloadParams params(kSsrc1, &state, FieldTrialBasedConfig());
+  RtpPayloadParams params(kSsrc1, &state, field_trials);
   RTPVideoHeader header =
       params.GetRtpVideoHeader(encoded_image, &codec_info, 10);
 
@@ -968,4 +1053,5 @@ TEST_F(RtpPayloadParamsH264ToGenericTest, FrameIdGaps) {
   ConvertAndCheck(1, 20, VideoFrameType::kVideoFrameDelta, kNoSync, {10, 15});
 }
 
+}  // namespace
 }  // namespace webrtc

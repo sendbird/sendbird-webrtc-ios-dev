@@ -56,7 +56,7 @@ static const size_t kPathMTU = 1500;
 using webrtc_internal_rtp_video_sender::RtpStreamSender;
 
 bool PayloadTypeSupportsSkippingFecPackets(const std::string& payload_name,
-                                           const WebRtcKeyValueConfig& trials) {
+                                           const FieldTrialsView& trials) {
   const VideoCodecType codecType = PayloadStringToCodecType(payload_name);
   if (codecType == kVideoCodecVP8 || codecType == kVideoCodecVP9) {
     return true;
@@ -70,7 +70,7 @@ bool PayloadTypeSupportsSkippingFecPackets(const std::string& payload_name,
 
 bool ShouldDisableRedAndUlpfec(bool flexfec_enabled,
                                const RtpConfig& rtp_config,
-                               const WebRtcKeyValueConfig& trials) {
+                               const FieldTrialsView& trials) {
   // Consistency of NACK and RED+ULPFEC parameters is checked in this function.
   const bool nack_enabled = rtp_config.nack.rtp_history_ms > 0;
 
@@ -126,7 +126,7 @@ std::unique_ptr<VideoFecGenerator> MaybeCreateFecGenerator(
     const RtpConfig& rtp,
     const std::map<uint32_t, RtpState>& suspended_ssrcs,
     int simulcast_index,
-    const WebRtcKeyValueConfig& trials) {
+    const FieldTrialsView& trials) {
   // If flexfec is configured that takes priority.
   if (rtp.flexfec.payload_type >= 0) {
     RTC_DCHECK_GE(rtp.flexfec.payload_type, 0);
@@ -197,7 +197,7 @@ std::vector<RtpStreamSender> CreateRtpStreamSenders(
     FrameEncryptorInterface* frame_encryptor,
     const CryptoOptions& crypto_options,
     rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
-    const WebRtcKeyValueConfig& trials) {
+    const FieldTrialsView& trials) {
   RTC_DCHECK_GT(rtp_config.ssrcs.size(), 0);
 
   RtpRtcpInterface::Configuration configuration;
@@ -358,8 +358,10 @@ RtpVideoSender::RtpVideoSender(
     std::unique_ptr<FecController> fec_controller,
     FrameEncryptorInterface* frame_encryptor,
     const CryptoOptions& crypto_options,
-    rtc::scoped_refptr<FrameTransformerInterface> frame_transformer)
-    : send_side_bwe_with_overhead_(!absl::StartsWith(
+    rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
+    const FieldTrialsView& field_trials)
+    : field_trials_(field_trials),
+      send_side_bwe_with_overhead_(!absl::StartsWith(
           field_trials_.Lookup("WebRTC-SendSideBwe-WithOverhead"),
           "Disabled")),
       use_frame_rate_for_overhead_(absl::StartsWith(
@@ -581,12 +583,23 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
   }
 
   if (IsFirstFrameOfACodedVideoSequence(encoded_image, codec_specific_info)) {
-    // If encoder adapter produce FrameDependencyStructure, pass it so that
-    // dependency descriptor rtp header extension can be used.
-    // If not supported, disable using dependency descriptor by passing nullptr.
+    // In order to use the dependency descriptor RTP header extension:
+    //  - Pass along any `FrameDependencyStructure` templates produced by the
+    //    encoder adapter.
+    //  - If none were produced the `RtpPayloadParams::*ToGeneric` for the
+    //    particular codec have simulated a dependency structure, so provide a
+    //    minimal set of templates.
+    //  - Otherwise, don't pass along any templates at all which will disable
+    //    the generation of a dependency descriptor.
     RTPSenderVideo& sender_video = *rtp_streams_[stream_index].sender_video;
     if (codec_specific_info && codec_specific_info->template_structure) {
       sender_video.SetVideoStructure(&*codec_specific_info->template_structure);
+    } else if (codec_specific_info &&
+               codec_specific_info->codecType == kVideoCodecVP8) {
+      FrameDependencyStructure structure =
+          RtpPayloadParams::MinimalisticStructure(/*num_spatial_layers=*/1,
+                                                  kMaxTemporalStreams);
+      sender_video.SetVideoStructure(&structure);
     } else if (codec_specific_info &&
                codec_specific_info->codecType == kVideoCodecVP9) {
       const CodecSpecificInfoVP9& vp9 = codec_specific_info->codecSpecific.VP9;
