@@ -160,8 +160,6 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
                             UInt32 bus_number,
                             UInt32 num_frames,
                             AudioBufferList* io_data) override;
-  // Handles messages from posts.
-  void OnMessage(rtc::Message* msg) override;
 
   void AddAudioSourceSink(AudioSourceSink* audioSink);
 
