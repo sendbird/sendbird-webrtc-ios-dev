@@ -19,7 +19,9 @@
 #include <vector>
 
 #include "api/scoped_refptr.h"
+#include "api/units/timestamp.h"
 #include "modules/include/module_fec_types.h"
+#include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/forward_error_correction_internal.h"
 #include "rtc_base/copy_on_write_buffer.h"
@@ -75,9 +77,6 @@ class ForwardErrorCorrection {
   };
 
   // Used for the input to DecodeFec().
-  //
-  // TODO(nisse): Delete class, instead passing `is_fec` and `pkt` as separate
-  // arguments.
   class ReceivedPacket : public SortablePacket {
    public:
     ReceivedPacket();
@@ -86,6 +85,7 @@ class ForwardErrorCorrection {
     bool is_fec;  // Set to true if this is an FEC packet and false
                   // otherwise.
     bool is_recovered;
+    RtpHeaderExtensionMap extensions;
     rtc::scoped_refptr<Packet> pkt;  // Pointer to the packet storage.
   };
 

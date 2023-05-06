@@ -31,6 +31,7 @@
 #include "logging/rtc_event_log/events/rtc_event_generic_packet_sent.h"
 #include "logging/rtc_event_log/events/rtc_event_ice_candidate_pair.h"
 #include "logging/rtc_event_log/events/rtc_event_ice_candidate_pair_config.h"
+#include "logging/rtc_event_log/events/rtc_event_neteq_set_minimum_delay.h"
 #include "logging/rtc_event_log/events/rtc_event_probe_cluster_created.h"
 #include "logging/rtc_event_log/events/rtc_event_probe_result_failure.h"
 #include "logging/rtc_event_log/events/rtc_event_probe_result_success.h"
@@ -49,7 +50,6 @@
 #include "modules/rtp_rtcp/source/rtcp_packet/app.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/bye.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
-#include "modules/rtp_rtcp/source/rtcp_packet/extended_jitter_report.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/extended_reports.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/psfb.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/receiver_report.h"
@@ -61,6 +61,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/ignore_wundef.h"
 #include "rtc_base/logging.h"
+#include "system_wrappers/include/field_trial.h"
 
 // *.pb.h files are generated at build-time by the protobuf compiler.
 RTC_PUSH_IGNORING_WUNDEF()
@@ -306,15 +307,13 @@ size_t RemoveNonAllowlistedRtcpBlocks(const rtc::Buffer& packet,
     size_t block_size = next_block - block_begin;
     switch (header.type()) {
       case rtcp::Bye::kPacketType:
-      case rtcp::ExtendedJitterReport::kPacketType:
       case rtcp::ExtendedReports::kPacketType:
       case rtcp::Psfb::kPacketType:
       case rtcp::ReceiverReport::kPacketType:
       case rtcp::Rtpfb::kPacketType:
       case rtcp::SenderReport::kPacketType:
-        // We log sender reports, receiver reports, bye messages
-        // inter-arrival jitter, third-party loss reports, payload-specific
-        // feedback and extended reports.
+        // We log sender reports, receiver reports, bye messages, third-party
+        // loss reports, payload-specific feedback and extended reports.
         // TODO(terelius): As an optimization, don't copy anything if all blocks
         // in the packet are allowlisted types.
         memcpy(buffer + buffer_length, block_begin, block_size);
@@ -655,6 +654,14 @@ void EncodeRtpPacket(const std::vector<const EventType*>& batch,
 }
 }  // namespace
 
+RtcEventLogEncoderNewFormat::RtcEventLogEncoderNewFormat() {
+  encode_neteq_set_minimum_delay_kill_switch_ = false;
+  if (webrtc::field_trial::IsEnabled(
+          "WebRTC-RtcEventLogEncodeNetEqSetMinimumDelayKillSwitch")) {
+    encode_neteq_set_minimum_delay_kill_switch_ = true;
+  }
+}
+
 std::string RtcEventLogEncoderNewFormat::EncodeLogStart(int64_t timestamp_us,
                                                         int64_t utc_time_us) {
   rtclog2::EventStream event_stream;
@@ -683,6 +690,8 @@ std::string RtcEventLogEncoderNewFormat::EncodeBatch(
     std::vector<const RtcEventAudioNetworkAdaptation*>
         audio_network_adaptation_events;
     std::vector<const RtcEventAudioPlayout*> audio_playout_events;
+    std::vector<const RtcEventNetEqSetMinimumDelay*>
+        neteq_set_minimum_delay_events;
     std::vector<const RtcEventAudioReceiveStreamConfig*>
         audio_recv_stream_configs;
     std::vector<const RtcEventAudioSendStreamConfig*> audio_send_stream_configs;
@@ -880,10 +889,20 @@ std::string RtcEventLogEncoderNewFormat::EncodeBatch(
           frames_decoded[rtc_event->ssrc()].emplace_back(rtc_event);
           break;
         }
+        case RtcEvent::Type::NetEqSetMinimumDelay: {
+          auto* rtc_event =
+              static_cast<const RtcEventNetEqSetMinimumDelay* const>(it->get());
+          neteq_set_minimum_delay_events.push_back(rtc_event);
+          break;
+        }
         case RtcEvent::Type::BeginV3Log:
         case RtcEvent::Type::EndV3Log:
           // These special events are written as part of starting
           // and stopping the log, and only as part of version 3 of the format.
+          RTC_DCHECK_NOTREACHED();
+          break;
+        case RtcEvent::Type::FakeEvent:
+          // Fake event used for unit test.
           RTC_DCHECK_NOTREACHED();
           break;
       }
@@ -895,6 +914,7 @@ std::string RtcEventLogEncoderNewFormat::EncodeBatch(
     EncodeAudioPlayout(audio_playout_events, &event_stream);
     EncodeAudioRecvStreamConfig(audio_recv_stream_configs, &event_stream);
     EncodeAudioSendStreamConfig(audio_send_stream_configs, &event_stream);
+    EncodeNetEqSetMinimumDelay(neteq_set_minimum_delay_events, &event_stream);
     EncodeBweUpdateDelayBased(bwe_delay_based_updates, &event_stream);
     EncodeBweUpdateLossBased(bwe_loss_based_updates, &event_stream);
     EncodeDtlsTransportState(dtls_transport_states, &event_stream);
@@ -1125,6 +1145,64 @@ void RtcEventLogEncoderNewFormat::EncodeAudioPlayout(
   encoded_deltas = EncodeDeltas(base_event->ssrc(), values);
   if (!encoded_deltas.empty()) {
     proto_batch->set_local_ssrc_deltas(encoded_deltas);
+  }
+}
+
+void RtcEventLogEncoderNewFormat::EncodeNetEqSetMinimumDelay(
+    rtc::ArrayView<const RtcEventNetEqSetMinimumDelay*> batch,
+    rtclog2::EventStream* event_stream) {
+  if (encode_neteq_set_minimum_delay_kill_switch_) {
+    return;
+  }
+  if (batch.empty()) {
+    return;
+  }
+
+  const RtcEventNetEqSetMinimumDelay* base_event = batch[0];
+
+  rtclog2::NetEqSetMinimumDelay* proto_batch =
+      event_stream->add_neteq_set_minimum_delay();
+  proto_batch->set_timestamp_ms(base_event->timestamp_ms());
+  proto_batch->set_remote_ssrc(base_event->remote_ssrc());
+  proto_batch->set_minimum_delay_ms(base_event->minimum_delay_ms());
+
+  if (batch.size() == 1)
+    return;
+
+  // Delta encoding
+  proto_batch->set_number_of_deltas(batch.size() - 1);
+  std::vector<absl::optional<uint64_t>> values(batch.size() - 1);
+  std::string encoded_deltas;
+
+  // timestamp_ms
+  for (size_t i = 0; i < values.size(); ++i) {
+    const RtcEventNetEqSetMinimumDelay* event = batch[i + 1];
+    values[i] = ToUnsigned(event->timestamp_ms());
+  }
+  encoded_deltas = EncodeDeltas(ToUnsigned(base_event->timestamp_ms()), values);
+  if (!encoded_deltas.empty()) {
+    proto_batch->set_timestamp_ms_deltas(encoded_deltas);
+  }
+
+  // remote_ssrc
+  for (size_t i = 0; i < values.size(); ++i) {
+    const RtcEventNetEqSetMinimumDelay* event = batch[i + 1];
+    values[i] = event->remote_ssrc();
+  }
+  encoded_deltas = EncodeDeltas(base_event->remote_ssrc(), values);
+  if (!encoded_deltas.empty()) {
+    proto_batch->set_remote_ssrc_deltas(encoded_deltas);
+  }
+
+  // minimum_delay_ms
+  for (size_t i = 0; i < values.size(); ++i) {
+    const RtcEventNetEqSetMinimumDelay* event = batch[i + 1];
+    values[i] = ToUnsigned(event->minimum_delay_ms());
+  }
+  encoded_deltas =
+      EncodeDeltas(ToUnsigned(base_event->minimum_delay_ms()), values);
+  if (!encoded_deltas.empty()) {
+    proto_batch->set_minimum_delay_ms_deltas(encoded_deltas);
   }
 }
 

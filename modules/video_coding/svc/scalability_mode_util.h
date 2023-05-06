@@ -14,13 +14,32 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/video_codecs/scalability_mode.h"
+#include "api/video_codecs/video_codec.h"
 
 namespace webrtc {
+
+enum class ScalabilityModeResolutionRatio {
+  kTwoToOne,    // The resolution ratio between spatial layers is 2:1.
+  kThreeToTwo,  // The resolution ratio between spatial layers is 1.5:1.
+};
+
+static constexpr char kDefaultScalabilityModeStr[] = "L1T2";
 
 absl::optional<ScalabilityMode> ScalabilityModeFromString(
     absl::string_view scalability_mode_string);
 
-absl::string_view ScalabilityModeToString(ScalabilityMode scalability_mode);
+InterLayerPredMode ScalabilityModeToInterLayerPredMode(
+    ScalabilityMode scalability_mode);
+
+int ScalabilityModeToNumSpatialLayers(ScalabilityMode scalability_mode);
+
+int ScalabilityModeToNumTemporalLayers(ScalabilityMode scalability_mode);
+
+absl::optional<ScalabilityModeResolutionRatio> ScalabilityModeToResolutionRatio(
+    ScalabilityMode scalability_mode);
+
+ScalabilityMode LimitNumSpatialLayers(ScalabilityMode scalability_mode,
+                                      int max_spatial_layers);
 
 }  // namespace webrtc
 

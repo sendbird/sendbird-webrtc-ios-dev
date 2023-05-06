@@ -15,8 +15,10 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "logging/rtc_event_log/rtc_event_log_parser.h"
+#include "modules/audio_coding/neteq/tools/neteq_input.h"
 #include "modules/audio_coding/neteq/tools/packet_source.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 
@@ -33,11 +35,11 @@ class RtcEventLogSource : public PacketSource {
   // Creates an RtcEventLogSource reading from `file_name`. If the file cannot
   // be opened, or has the wrong format, NULL will be returned.
   static std::unique_ptr<RtcEventLogSource> CreateFromFile(
-      const std::string& file_name,
+      absl::string_view file_name,
       absl::optional<uint32_t> ssrc_filter);
   // Same as above, but uses a string with the file contents.
   static std::unique_ptr<RtcEventLogSource> CreateFromString(
-      const std::string& file_contents,
+      absl::string_view file_contents,
       absl::optional<uint32_t> ssrc_filter);
 
   virtual ~RtcEventLogSource();
@@ -52,6 +54,9 @@ class RtcEventLogSource : public PacketSource {
   // events available.
   int64_t NextAudioOutputEventMs();
 
+  // Returns the next NetEq set minimum delay event if available.
+  absl::optional<NetEqInput::SetMinimumDelayInfo> NextSetMinimumDelayEvent();
+
  private:
   RtcEventLogSource();
 
@@ -62,6 +67,8 @@ class RtcEventLogSource : public PacketSource {
   size_t rtp_packet_index_ = 0;
   std::vector<int64_t> audio_outputs_;
   size_t audio_output_index_ = 0;
+  std::vector<NetEqInput::SetMinimumDelayInfo> minimum_delay_;
+  size_t minimum_delay_index_ = 0;
 };
 
 }  // namespace test

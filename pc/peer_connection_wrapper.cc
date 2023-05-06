@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/types/optional.h"
 #include "api/function_view.h"
 #include "api/set_remote_description_observer_interface.h"
 #include "pc/sdp_utils.h"
@@ -22,7 +23,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/gunit.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ref_counted_object.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -290,6 +290,16 @@ rtc::scoped_refptr<RtpSenderInterface> PeerConnectionWrapper::AddTrack(
   return result.MoveValue();
 }
 
+rtc::scoped_refptr<RtpSenderInterface> PeerConnectionWrapper::AddTrack(
+    rtc::scoped_refptr<MediaStreamTrackInterface> track,
+    const std::vector<std::string>& stream_ids,
+    const std::vector<RtpEncodingParameters>& init_send_encodings) {
+  RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> result =
+      pc()->AddTrack(track, stream_ids, init_send_encodings);
+  EXPECT_EQ(RTCErrorType::NONE, result.error().type());
+  return result.MoveValue();
+}
+
 rtc::scoped_refptr<RtpSenderInterface> PeerConnectionWrapper::AddAudioTrack(
     const std::string& track_label,
     const std::vector<std::string>& stream_ids) {
@@ -303,8 +313,11 @@ rtc::scoped_refptr<RtpSenderInterface> PeerConnectionWrapper::AddVideoTrack(
 }
 
 rtc::scoped_refptr<DataChannelInterface>
-PeerConnectionWrapper::CreateDataChannel(const std::string& label) {
-  auto result = pc()->CreateDataChannelOrError(label, nullptr);
+PeerConnectionWrapper::CreateDataChannel(
+    const std::string& label,
+    const absl::optional<DataChannelInit>& config) {
+  const DataChannelInit* config_ptr = config.has_value() ? &(*config) : nullptr;
+  auto result = pc()->CreateDataChannelOrError(label, config_ptr);
   if (!result.ok()) {
     RTC_LOG(LS_ERROR) << "CreateDataChannel failed: "
                       << ToString(result.error().type()) << " "

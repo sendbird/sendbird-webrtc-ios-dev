@@ -52,7 +52,6 @@
 #include "pc/session_description.h"
 #include "pc/test/mock_peer_connection_observers.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/ref_counted_object.h"
 #include "rtc_base/rtc_certificate.h"
 #include "rtc_base/rtc_certificate_generator.h"
 #include "rtc_base/string_encode.h"
@@ -581,7 +580,7 @@ TEST_P(PeerConnectionSignalingTest, CreateOffersAndShutdown) {
     // We expect to have received a notification now even if the PeerConnection
     // was terminated. The offer creation may or may not have succeeded, but we
     // must have received a notification.
-    EXPECT_TRUE(observer->called());
+    EXPECT_TRUE_WAIT(observer->called(), kWaitTimeout);
   }
 }
 
@@ -595,7 +594,7 @@ TEST_P(PeerConnectionSignalingTest, CloseCreateOfferAndShutdown) {
   caller->pc()->Close();
   caller->pc()->CreateOffer(observer.get(), RTCOfferAnswerOptions());
   caller.reset(nullptr);
-  EXPECT_TRUE(observer->called());
+  EXPECT_TRUE_WAIT(observer->called(), kWaitTimeout);
 }
 
 TEST_P(PeerConnectionSignalingTest,

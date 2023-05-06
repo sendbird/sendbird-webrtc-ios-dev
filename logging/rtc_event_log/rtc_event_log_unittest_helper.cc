@@ -21,11 +21,14 @@
 #include <utility>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/array_view.h"
 #include "api/network_state_predictor.h"
 #include "api/rtp_headers.h"
 #include "api/rtp_parameters.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "modules/audio_coding/audio_network_adaptor/include/audio_network_adaptor_config.h"
 #include "modules/rtp_rtcp/include/rtp_cvo.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
@@ -79,7 +82,7 @@ void ShuffleInPlace(Random* prng, rtc::ArrayView<T> array) {
 }
 
 absl::optional<int> GetExtensionId(const std::vector<RtpExtension>& extensions,
-                                   const std::string& uri) {
+                                   absl::string_view uri) {
   for (const auto& extension : extensions) {
     if (extension.uri == uri)
       return extension.id;
@@ -111,6 +114,12 @@ EventGenerator::NewAudioNetworkAdaptation() {
   config->uplink_packet_loss_fraction = prng_.Rand<float>();
 
   return std::make_unique<RtcEventAudioNetworkAdaptation>(std::move(config));
+}
+
+std::unique_ptr<RtcEventNetEqSetMinimumDelay>
+EventGenerator::NewNetEqSetMinimumDelay(uint32_t ssrc) {
+  return std::make_unique<RtcEventNetEqSetMinimumDelay>(
+      ssrc, prng_.Rand(std::numeric_limits<int>::max()));
 }
 
 std::unique_ptr<RtcEventBweUpdateDelayBased>
@@ -354,14 +363,14 @@ rtcp::Bye EventGenerator::NewBye() {
 rtcp::TransportFeedback EventGenerator::NewTransportFeedback() {
   rtcp::TransportFeedback transport_feedback;
   uint16_t base_seq_no = prng_.Rand<uint16_t>();
-  int64_t base_time_us = prng_.Rand<uint32_t>();
-  transport_feedback.SetBase(base_seq_no, base_time_us);
-  transport_feedback.AddReceivedPacket(base_seq_no, base_time_us);
-  int64_t time_us = base_time_us;
+  Timestamp base_time = Timestamp::Micros(prng_.Rand<uint32_t>());
+  transport_feedback.SetBase(base_seq_no, base_time);
+  transport_feedback.AddReceivedPacket(base_seq_no, base_time);
+  Timestamp time = base_time;
   for (uint16_t i = 1u; i < 10u; i++) {
-    time_us += prng_.Rand(0, 100000);
+    time += TimeDelta::Micros(prng_.Rand(0, 100'000));
     if (prng_.Rand<bool>()) {
-      transport_feedback.AddReceivedPacket(base_seq_no + i, time_us);
+      transport_feedback.AddReceivedPacket(base_seq_no + i, time);
     }
   }
   return transport_feedback;
@@ -1252,9 +1261,9 @@ void EventVerifier::VerifyLoggedTransportFeedback(
         logged_transport_feedback.transport_feedback.GetReceivedPackets()[i]
             .sequence_number());
     EXPECT_EQ(
-        original_transport_feedback.GetReceivedPackets()[i].delta_us(),
+        original_transport_feedback.GetReceivedPackets()[i].delta(),
         logged_transport_feedback.transport_feedback.GetReceivedPackets()[i]
-            .delta_us());
+            .delta());
   }
 }
 
@@ -1346,6 +1355,14 @@ void EventVerifier::VerifyLoggedVideoSendConfig(
     const LoggedVideoSendConfig& logged_event) const {
   EXPECT_EQ(original_event.timestamp_ms(), logged_event.log_time_ms());
   VerifyLoggedStreamConfig(original_event.config(), logged_event.config);
+}
+
+void EventVerifier::VerifyLoggedNetEqSetMinimumDelay(
+    const RtcEventNetEqSetMinimumDelay& original_event,
+    const LoggedNetEqSetMinimumDelayEvent& logged_event) const {
+  EXPECT_EQ(original_event.timestamp_ms(), logged_event.timestamp.ms());
+  EXPECT_EQ(original_event.remote_ssrc(), logged_event.remote_ssrc);
+  EXPECT_EQ(original_event.minimum_delay_ms(), logged_event.minimum_delay_ms);
 }
 
 }  // namespace test
