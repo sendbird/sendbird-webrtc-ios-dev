@@ -4,11 +4,10 @@
 ## Created by Stasel
 ## BSD-3 License
 ##
-## Example usage: IOS_32_BIT=true IOS_64_BIT=true BUILD_VP9=true BITCODE=true sh build.sh
+## Example usage: IOS_64_BIT=true BUILD_VP9=true sh build.sh
 
 # Configs
 DEBUG="${DEBUG:-false}"
-BITCODE="${BITCODE:-false}"
 BUILD_VP9="${BUILD_VP9:-false}"
 BRANCH="${BRANCH:-master}"
 IOS_32_BIT="${IOS_32_BIT:-false}"
@@ -24,9 +23,8 @@ PLISTBUDDY_EXEC="/usr/libexec/PlistBuddy"
 build_iOS() {
     local arch=$1
     local environment=$2
-    local bitcode=$3
     local gen_dir="${OUTPUT_DIR}/ios-${arch}-${environment}"
-    local gen_args="${COMMON_GN_ARGS} target_cpu=\"${arch}\" enable_ios_bitcode=${bitcode} target_os=\"ios\" target_environment=\"${environment}\" ios_deployment_target=\"9.0\" ios_enable_code_signing=false"
+    local gen_args="${COMMON_GN_ARGS} target_cpu=\"${arch}\" target_os=\"ios\" target_environment=\"${environment}\" ios_deployment_target=\"11.0\" ios_enable_code_signing=false"
     gn gen "${gen_dir}" --args="${gen_args}"
     ninja -C "${gen_dir}" framework_objc || exit 1
 }
@@ -96,14 +94,14 @@ plist_add_architecture() {
 rm -rf $OUTPUT_DIR
 
 if [ "$IOS_32_BIT" = true ]; then
-#    build_iOS "x86" "simulator"
-    build_iOS "arm" "device" "true"
+#    build_iOS "x86"
+    build_iOS "arm" "device"
 fi
 
 if [ "$IOS_64_BIT" = true ]; then
-    build_iOS "x64" "simulator" "false"
-    build_iOS "arm64" "simulator" "false"
-    build_iOS "arm64" "device" "true"
+    build_iOS "x64" "simulator"
+    build_iOS "arm64" "simulator"
+    build_iOS "arm64" "device"
 fi
 
 if [ "$MACOS" = true ]; then
