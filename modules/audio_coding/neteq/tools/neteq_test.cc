@@ -67,11 +67,11 @@ NetEqTest::NetEqTest(const NetEq::Config& config,
                      std::unique_ptr<NetEqInput> input,
                      std::unique_ptr<AudioSink> output,
                      Callbacks callbacks)
-    : clock_(0),
+    : input_(std::move(input)),
+      clock_(Timestamp::Millis(input_->NextEventTime().value_or(0))),
       neteq_(neteq_factory
                  ? neteq_factory->CreateNetEq(config, decoder_factory, &clock_)
                  : CreateNetEq(config, &clock_, decoder_factory)),
-      input_(std::move(input)),
       output_(std::move(output)),
       callbacks_(callbacks),
       sample_rate_hz_(config.sample_rate_hz),
@@ -99,7 +99,7 @@ int64_t NetEqTest::Run() {
 NetEqTest::SimulationStepResult NetEqTest::RunToNextGetAudio() {
   SimulationStepResult result;
   const int64_t start_time_ms = *input_->NextEventTime();
-  int64_t time_now_ms = start_time_ms;
+  int64_t time_now_ms = clock_.CurrentTime().ms();
   current_state_.packet_iat_ms.clear();
 
   while (!input_->ended()) {
@@ -161,6 +161,13 @@ NetEqTest::SimulationStepResult NetEqTest::RunToNextGetAudio() {
       last_packet_time_ms_ = absl::make_optional<int>(time_now_ms);
       last_packet_timestamp_ =
           absl::make_optional<uint32_t>(packet_data->header.timestamp);
+    }
+
+    if (input_->NextSetMinimumDelayInfo().has_value() &&
+        time_now_ms >= input_->NextSetMinimumDelayInfo().value().timestamp_ms) {
+      neteq_->SetBaseMinimumDelayMs(
+          input_->NextSetMinimumDelayInfo().value().delay_ms);
+      input_->AdvanceSetMinimumDelay();
     }
 
     // Check if it is time to get output audio.
@@ -248,11 +255,11 @@ NetEqTest::SimulationStepResult NetEqTest::RunToNextGetAudio() {
                    << ", voice concealed: " << voice_concealed
                    << ", buffer size: " << std::setw(4)
                    << current_state_.current_delay_ms << std::endl;
-        if (operations_state.discarded_primary_packets >
-            prev_ops_state_.discarded_primary_packets) {
+        if (lifetime_stats.packets_discarded >
+            prev_lifetime_stats_.packets_discarded) {
           *text_log_ << "Discarded "
-                     << (operations_state.discarded_primary_packets -
-                         prev_ops_state_.discarded_primary_packets)
+                     << (lifetime_stats.packets_discarded -
+                         prev_lifetime_stats_.packets_discarded)
                      << " primary packets." << std::endl;
         }
         if (operations_state.packet_buffer_flushes >
@@ -311,10 +318,6 @@ NetEqTest::DecoderMap NetEqTest::StandardDecoderMap() {
     {8, SdpAudioFormat("pcma", 8000, 1)},
 #ifdef WEBRTC_CODEC_ILBC
     {102, SdpAudioFormat("ilbc", 8000, 1)},
-#endif
-    {103, SdpAudioFormat("isac", 16000, 1)},
-#if !defined(WEBRTC_ANDROID)
-    {104, SdpAudioFormat("isac", 32000, 1)},
 #endif
 #ifdef WEBRTC_CODEC_OPUS
     {111, SdpAudioFormat("opus", 48000, 2)},

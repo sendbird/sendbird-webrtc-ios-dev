@@ -10,7 +10,6 @@
 
 #include "modules/congestion_controller/goog_cc/send_side_bandwidth_estimation.h"
 
-#include "api/network_state_predictor.h"
 #include "api/rtc_event_log/rtc_event.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_loss_based.h"
 #include "logging/rtc_event_log/mock/mock_rtc_event_log.h"
@@ -55,8 +54,7 @@ void TestProbing(bool use_delay_based) {
   // Initial REMB applies immediately.
   if (use_delay_based) {
     bwe.UpdateDelayBasedEstimate(Timestamp::Millis(now_ms),
-                                 DataRate::BitsPerSec(kRembBps),
-                                 BandwidthUsage::kBwNormal);
+                                 DataRate::BitsPerSec(kRembBps));
   } else {
     bwe.UpdateReceiverEstimate(Timestamp::Millis(now_ms),
                                DataRate::BitsPerSec(kRembBps));
@@ -68,8 +66,7 @@ void TestProbing(bool use_delay_based) {
   now_ms += 2001;
   if (use_delay_based) {
     bwe.UpdateDelayBasedEstimate(Timestamp::Millis(now_ms),
-                                 DataRate::BitsPerSec(kSecondRembBps),
-                                 BandwidthUsage::kBwNormal);
+                                 DataRate::BitsPerSec(kSecondRembBps));
   } else {
     bwe.UpdateReceiverEstimate(Timestamp::Millis(now_ms),
                                DataRate::BitsPerSec(kSecondRembBps));
@@ -160,8 +157,7 @@ TEST(SendSideBweTest, SettingSendBitrateOverridesDelayBasedEstimate) {
                      Timestamp::Millis(now_ms));
 
   bwe.UpdateDelayBasedEstimate(Timestamp::Millis(now_ms),
-                               DataRate::BitsPerSec(kDelayBasedBitrateBps),
-                               BandwidthUsage::kBwNormal);
+                               DataRate::BitsPerSec(kDelayBasedBitrateBps));
   bwe.UpdateEstimate(Timestamp::Millis(now_ms));
   EXPECT_GE(bwe.target_rate().bps(), kInitialBitrateBps);
   EXPECT_LE(bwe.target_rate().bps(), kDelayBasedBitrateBps);
@@ -182,6 +178,63 @@ TEST(RttBasedBackoff, CanBeDisabled) {
       "WebRTC-Bwe-MaxRttLimit/Disabled/");
   RttBasedBackoff rtt_backoff(&key_value_config);
   EXPECT_TRUE(rtt_backoff.rtt_limit_.IsPlusInfinity());
+}
+
+TEST(SendSideBweTest, FractionLossIsNotOverflowed) {
+  MockRtcEventLog event_log;
+  test::ExplicitKeyValueConfig key_value_config("");
+  SendSideBandwidthEstimation bwe(&key_value_config, &event_log);
+  static const int kMinBitrateBps = 100000;
+  static const int kInitialBitrateBps = 1000000;
+  int64_t now_ms = 1000;
+  bwe.SetMinMaxBitrate(DataRate::BitsPerSec(kMinBitrateBps),
+                       DataRate::BitsPerSec(1500000));
+  bwe.SetSendBitrate(DataRate::BitsPerSec(kInitialBitrateBps),
+                     Timestamp::Millis(now_ms));
+
+  now_ms += 10000;
+
+  EXPECT_EQ(kInitialBitrateBps, bwe.target_rate().bps());
+  EXPECT_EQ(0, bwe.fraction_loss());
+
+  // Signal negative loss.
+  bwe.UpdatePacketsLost(/*packets_lost=*/-1, /*number_of_packets=*/100,
+                        Timestamp::Millis(now_ms));
+  EXPECT_EQ(0, bwe.fraction_loss());
+}
+
+TEST(SendSideBweTest, RttIsAboveLimitIfRttGreaterThanLimit) {
+  ::testing::NiceMock<MockRtcEventLog> event_log;
+  test::ExplicitKeyValueConfig key_value_config("");
+  SendSideBandwidthEstimation bwe(&key_value_config, &event_log);
+  static const int kMinBitrateBps = 10000;
+  static const int kMaxBitrateBps = 10000000;
+  static const int kInitialBitrateBps = 300000;
+  int64_t now_ms = 0;
+  bwe.SetMinMaxBitrate(DataRate::BitsPerSec(kMinBitrateBps),
+                       DataRate::BitsPerSec(kMaxBitrateBps));
+  bwe.SetSendBitrate(DataRate::BitsPerSec(kInitialBitrateBps),
+                     Timestamp::Millis(now_ms));
+  bwe.UpdatePropagationRtt(/*at_time=*/Timestamp::Millis(now_ms),
+                           /*propagation_rtt=*/TimeDelta::Millis(5000));
+  EXPECT_TRUE(bwe.IsRttAboveLimit());
+}
+
+TEST(SendSideBweTest, RttIsBelowLimitIfRttLessThanLimit) {
+  ::testing::NiceMock<MockRtcEventLog> event_log;
+  test::ExplicitKeyValueConfig key_value_config("");
+  SendSideBandwidthEstimation bwe(&key_value_config, &event_log);
+  static const int kMinBitrateBps = 10000;
+  static const int kMaxBitrateBps = 10000000;
+  static const int kInitialBitrateBps = 300000;
+  int64_t now_ms = 0;
+  bwe.SetMinMaxBitrate(DataRate::BitsPerSec(kMinBitrateBps),
+                       DataRate::BitsPerSec(kMaxBitrateBps));
+  bwe.SetSendBitrate(DataRate::BitsPerSec(kInitialBitrateBps),
+                     Timestamp::Millis(now_ms));
+  bwe.UpdatePropagationRtt(/*at_time=*/Timestamp::Millis(now_ms),
+                           /*propagation_rtt=*/TimeDelta::Millis(1000));
+  EXPECT_FALSE(bwe.IsRttAboveLimit());
 }
 
 }  // namespace webrtc

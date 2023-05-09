@@ -175,7 +175,7 @@ EncoderInfoSettings::EncoderInfoSettings(absl::string_view name)
            [](BitrateLimit* b) { return &b->max_bitrate_bps; })},
       {});
 
-  std::string name_str = std::string(name);
+  std::string name_str(name);
   if (field_trial::FindFullName(name_str).empty()) {
     // Encoder name not found, use common string applying to all encoders.
     name_str = "WebRTC-GetEncoderInfoOverride";
@@ -188,7 +188,7 @@ EncoderInfoSettings::EncoderInfoSettings(absl::string_view name)
   resolution_bitrate_limits_ = ToResolutionBitrateLimits(bitrate_limits.Get());
 }
 
-absl::optional<int> EncoderInfoSettings::requested_resolution_alignment()
+absl::optional<uint32_t> EncoderInfoSettings::requested_resolution_alignment()
     const {
   if (requested_resolution_alignment_ &&
       requested_resolution_alignment_.Value() < 1) {

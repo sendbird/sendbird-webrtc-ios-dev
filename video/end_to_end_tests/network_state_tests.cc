@@ -19,10 +19,8 @@
 #include "call/fake_network_pipe.h"
 #include "call/simulated_network.h"
 #include "modules/rtp_rtcp/source/rtp_packet.h"
-#include "rtc_base/location.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/task_queue_for_test.h"
-#include "rtc_base/task_utils/to_queued_task.h"
 #include "system_wrappers/include/sleep.h"
 #include "test/call_test.h"
 #include "test/fake_encoder.h"
@@ -96,7 +94,7 @@ void NetworkStateEndToEndTest::VerifyNewVideoSendStreamsRespectNetworkState(
     Transport* transport) {
   test::VideoEncoderProxyFactory encoder_factory(encoder);
 
-  SendTask(RTC_FROM_HERE, task_queue(),
+  SendTask(task_queue(),
            [this, network_to_bring_up, &encoder_factory, transport]() {
              CreateSenderCall(Call::Config(send_event_log_.get()));
              sender_call_->SignalChannelNetworkState(network_to_bring_up,
@@ -114,7 +112,7 @@ void NetworkStateEndToEndTest::VerifyNewVideoSendStreamsRespectNetworkState(
 
   SleepMs(kSilenceTimeoutMs);
 
-  SendTask(RTC_FROM_HERE, task_queue(), [this]() {
+  SendTask(task_queue(), [this]() {
     Stop();
     DestroyStreams();
     DestroyCalls();
@@ -124,35 +122,25 @@ void NetworkStateEndToEndTest::VerifyNewVideoSendStreamsRespectNetworkState(
 void NetworkStateEndToEndTest::VerifyNewVideoReceiveStreamsRespectNetworkState(
     MediaType network_to_bring_up,
     Transport* transport) {
-  std::unique_ptr<test::DirectTransport> sender_transport;
+  SendTask(task_queue(), [this, network_to_bring_up, transport]() {
+    CreateCalls();
+    receiver_call_->SignalChannelNetworkState(network_to_bring_up, kNetworkUp);
+    CreateSendTransport(BuiltInNetworkBehaviorConfig(),
+                        /*observer=*/nullptr);
 
-  SendTask(
-      RTC_FROM_HERE, task_queue(),
-      [this, &sender_transport, network_to_bring_up, transport]() {
-        CreateCalls();
-        receiver_call_->SignalChannelNetworkState(network_to_bring_up,
-                                                  kNetworkUp);
-        sender_transport = std::make_unique<test::DirectTransport>(
-            task_queue(),
-            std::make_unique<FakeNetworkPipe>(
-                Clock::GetRealTimeClock(), std::make_unique<SimulatedNetwork>(
-                                               BuiltInNetworkBehaviorConfig())),
-            sender_call_.get(), payload_type_map_);
-        sender_transport->SetReceiver(receiver_call_->Receiver());
-        CreateSendConfig(1, 0, 0, sender_transport.get());
-        CreateMatchingReceiveConfigs(transport);
-        CreateVideoStreams();
-        CreateFrameGeneratorCapturer(kDefaultFramerate, kDefaultWidth,
-                                     kDefaultHeight);
-        Start();
-      });
+    CreateSendConfig(1, 0, 0);
+    CreateMatchingReceiveConfigs(transport);
+    CreateVideoStreams();
+    CreateFrameGeneratorCapturer(kDefaultFramerate, kDefaultWidth,
+                                 kDefaultHeight);
+    Start();
+  });
 
   SleepMs(kSilenceTimeoutMs);
 
-  SendTask(RTC_FROM_HERE, task_queue(), [this, &sender_transport]() {
+  SendTask(task_queue(), [this]() {
     Stop();
     DestroyStreams();
-    sender_transport.reset();
     DestroyCalls();
   });
 }
@@ -170,7 +158,7 @@ TEST_F(NetworkStateEndToEndTest, RespectsNetworkState) {
   class NetworkStateTest : public test::EndToEndTest, public test::FakeEncoder {
    public:
     explicit NetworkStateTest(TaskQueueBase* task_queue)
-        : EndToEndTest(kDefaultTimeoutMs),
+        : EndToEndTest(kDefaultTimeout),
           FakeEncoder(Clock::GetRealTimeClock()),
           e2e_test_task_queue_(task_queue),
           task_queue_(CreateDefaultTaskQueueFactory()->CreateTaskQueue(
@@ -223,7 +211,7 @@ TEST_F(NetworkStateEndToEndTest, RespectsNetworkState) {
 
     void ModifyVideoConfigs(
         VideoSendStream::Config* send_config,
-        std::vector<VideoReceiveStream::Config>* receive_configs,
+        std::vector<VideoReceiveStreamInterface::Config>* receive_configs,
         VideoEncoderConfig* encoder_config) override {
       send_config->encoder_settings.encoder_factory = &encoder_factory_;
     }
@@ -231,17 +219,16 @@ TEST_F(NetworkStateEndToEndTest, RespectsNetworkState) {
     void SignalChannelNetworkState(Call* call,
                                    MediaType media_type,
                                    NetworkState network_state) {
-      SendTask(RTC_FROM_HERE, e2e_test_task_queue_,
-               [call, media_type, network_state] {
-                 call->SignalChannelNetworkState(media_type, network_state);
-               });
+      SendTask(e2e_test_task_queue_, [call, media_type, network_state] {
+        call->SignalChannelNetworkState(media_type, network_state);
+      });
     }
 
     void PerformTest() override {
-      EXPECT_TRUE(encoded_frames_.Wait(kDefaultTimeoutMs))
+      EXPECT_TRUE(encoded_frames_.Wait(kDefaultTimeout))
           << "No frames received by the encoder.";
 
-      SendTask(RTC_FROM_HERE, task_queue_.get(), [this]() {
+      SendTask(task_queue_.get(), [this]() {
         // Wait for packets from both sender/receiver.
         WaitForPacketsOrSilence(false, false);
 
@@ -326,7 +313,7 @@ TEST_F(NetworkStateEndToEndTest, RespectsNetworkState) {
       bool sender_done = false;
       bool receiver_done = false;
       while (!sender_done || !receiver_done) {
-        packet_event_.Wait(kSilenceTimeoutMs);
+        packet_event_.Wait(TimeDelta::Millis(kSilenceTimeoutMs));
         int64_t time_now_ms = clock_->TimeInMilliseconds();
         MutexLock lock(&test_mutex_);
         if (sender_down) {

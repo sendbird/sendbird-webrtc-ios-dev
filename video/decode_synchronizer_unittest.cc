@@ -15,19 +15,30 @@
 #include <memory>
 #include <utility>
 
+#include "absl/functional/any_invocable.h"
 #include "api/metronome/test/fake_metronome.h"
 #include "api/units/time_delta.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "test/run_loop.h"
 #include "test/time_controller/simulated_time_controller.h"
 #include "video/frame_decode_scheduler.h"
 #include "video/frame_decode_timing.h"
 
 using ::testing::_;
 using ::testing::Eq;
+using ::testing::Invoke;
+using ::testing::Return;
 
 namespace webrtc {
+
+class MockMetronome : public Metronome {
+ public:
+  MOCK_METHOD(void,
+              RequestCallOnNextTick,
+              (absl::AnyInvocable<void() &&> callback),
+              (override));
+  MOCK_METHOD(TimeDelta, TickPeriod, (), (const override));
+};
 
 class DecodeSynchronizerTest : public ::testing::Test {
  public:
@@ -37,12 +48,13 @@ class DecodeSynchronizerTest : public ::testing::Test {
       : time_controller_(Timestamp::Millis(1337)),
         clock_(time_controller_.GetClock()),
         metronome_(kTickPeriod),
-        decode_synchronizer_(clock_, &metronome_, run_loop_.task_queue()) {}
+        decode_synchronizer_(clock_,
+                             &metronome_,
+                             time_controller_.GetMainThread()) {}
 
  protected:
   GlobalSimulatedTimeController time_controller_;
   Clock* clock_;
-  test::RunLoop run_loop_;
   test::ForcedTickMetronome metronome_;
   DecodeSynchronizer decode_synchronizer_;
 };
@@ -77,7 +89,7 @@ TEST_F(DecodeSynchronizerTest, AllFramesReadyBeforeNextTickDecoded) {
                 Call(Eq(frame_rtp), Eq(frame_sched.render_time)));
   }
   metronome_.Tick();
-  run_loop_.Flush();
+  time_controller_.AdvanceTime(TimeDelta::Zero());
 
   // Cleanup
   scheduler1->Stop();
@@ -98,7 +110,7 @@ TEST_F(DecodeSynchronizerTest, FramesNotDecodedIfDecodeTimeIsInNextInterval) {
                            mock_callback.AsStdFunction());
 
   metronome_.Tick();
-  run_loop_.Flush();
+  time_controller_.AdvanceTime(TimeDelta::Zero());
   // No decodes should have happened in this tick.
   ::testing::Mock::VerifyAndClearExpectations(&mock_callback);
 
@@ -106,7 +118,7 @@ TEST_F(DecodeSynchronizerTest, FramesNotDecodedIfDecodeTimeIsInNextInterval) {
   EXPECT_CALL(mock_callback, Call(Eq(frame_rtp), Eq(frame_sched.render_time)));
   time_controller_.AdvanceTime(kTickPeriod);
   metronome_.Tick();
-  run_loop_.Flush();
+  time_controller_.AdvanceTime(TimeDelta::Zero());
 
   // Cleanup
   scheduler->Stop();
@@ -124,13 +136,13 @@ TEST_F(DecodeSynchronizerTest, FrameDecodedOnce) {
                            mock_callback.AsStdFunction());
   EXPECT_CALL(mock_callback, Call(_, _)).Times(1);
   metronome_.Tick();
-  run_loop_.Flush();
+  time_controller_.AdvanceTime(TimeDelta::Zero());
   ::testing::Mock::VerifyAndClearExpectations(&mock_callback);
 
   // Trigger tick again. No frame should be decoded now.
   time_controller_.AdvanceTime(kTickPeriod);
   metronome_.Tick();
-  run_loop_.Flush();
+  time_controller_.AdvanceTime(TimeDelta::Zero());
 
   // Cleanup
   scheduler->Stop();
@@ -151,7 +163,7 @@ TEST_F(DecodeSynchronizerTest, FrameWithDecodeTimeInPastDecodedImmediately) {
   ::testing::Mock::VerifyAndClearExpectations(&mock_callback);
 
   metronome_.Tick();
-  run_loop_.Flush();
+  time_controller_.AdvanceTime(TimeDelta::Zero());
 
   // Cleanup
   scheduler->Stop();
@@ -176,7 +188,7 @@ TEST_F(DecodeSynchronizerTest,
 
   time_controller_.AdvanceTime(kTickPeriod);
   metronome_.Tick();
-  run_loop_.Flush();
+  time_controller_.AdvanceTime(TimeDelta::Zero());
 
   // A frame that would be behind by exactly kMaxAllowedFrameDelay after next
   // tick should decode at the next tick.
@@ -191,7 +203,7 @@ TEST_F(DecodeSynchronizerTest,
   EXPECT_CALL(mock_callback, Call(Eq(180000u), _)).Times(1);
   time_controller_.AdvanceTime(kTickPeriod);
   metronome_.Tick();
-  run_loop_.Flush();
+  time_controller_.AdvanceTime(TimeDelta::Zero());
 
   // Cleanup
   scheduler->Stop();
@@ -212,21 +224,29 @@ TEST_F(DecodeSynchronizerTest, FramesNotReleasedAfterStop) {
 
   // No callback should occur on this tick since Stop() was called before.
   metronome_.Tick();
-  run_loop_.Flush();
+  time_controller_.AdvanceTime(TimeDelta::Zero());
 }
 
-TEST_F(DecodeSynchronizerTest, MetronomeNotListenedWhenNoStreamsAreActive) {
-  EXPECT_EQ(0u, metronome_.NumListeners());
-
+TEST(DecodeSynchronizerStandaloneTest,
+     MetronomeNotListenedWhenNoStreamsAreActive) {
+  GlobalSimulatedTimeController time_controller(Timestamp::Millis(4711));
+  Clock* clock(time_controller.GetClock());
+  MockMetronome metronome;
+  ON_CALL(metronome, TickPeriod).WillByDefault(Return(TimeDelta::Seconds(1)));
+  DecodeSynchronizer decode_synchronizer_(clock, &metronome,
+                                          time_controller.GetMainThread());
+  absl::AnyInvocable<void() &&> callback;
+  EXPECT_CALL(metronome, RequestCallOnNextTick)
+      .WillOnce(Invoke([&callback](absl::AnyInvocable<void() &&> cb) {
+        callback = std::move(cb);
+      }));
   auto scheduler = decode_synchronizer_.CreateSynchronizedFrameScheduler();
-  EXPECT_EQ(1u, metronome_.NumListeners());
   auto scheduler2 = decode_synchronizer_.CreateSynchronizedFrameScheduler();
-  EXPECT_EQ(1u, metronome_.NumListeners());
-
   scheduler->Stop();
-  EXPECT_EQ(1u, metronome_.NumListeners());
   scheduler2->Stop();
-  EXPECT_EQ(0u, metronome_.NumListeners());
+  time_controller.AdvanceTime(TimeDelta::Seconds(1));
+  ASSERT_TRUE(callback);
+  (std::move)(callback)();
 }
 
 }  // namespace webrtc

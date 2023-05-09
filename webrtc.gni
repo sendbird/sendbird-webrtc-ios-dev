@@ -35,6 +35,10 @@ if (is_mac) {
   import("//build/config/mac/rules.gni")
 }
 
+if (is_fuchsia) {
+  import("//build/config/fuchsia/config.gni")
+}
+
 # This declare_args is separated from the next one because args declared
 # in this one, can be read from the next one (args defined in the same
 # declare_args cannot be referenced in that scope).
@@ -65,7 +69,7 @@ declare_args() {
     # When WebRTC is built as part of Chromium it should exclude the default
     # implementation of field_trial unless it is building for NACL or
     # Chromecast.
-    rtc_exclude_field_trial_default = !is_nacl && !is_chromecast
+    rtc_exclude_field_trial_default = !is_nacl && !is_castos && !is_cast_android
   } else {
     rtc_exclude_field_trial_default = false
   }
@@ -227,6 +231,11 @@ declare_args() {
 
   # Includes the dav1d decoder in the internal decoder factory when set to true.
   rtc_include_dav1d_in_internal_decoder_factory = true
+
+  # When set to true, a run-time check will make sure that all field trial keys
+  # have been registered in accordance with the field trial policy. The check
+  # will only run with builds that have RTC_DCHECKs enabled.
+  rtc_strict_field_trials = false
 }
 
 if (!build_with_mozilla) {

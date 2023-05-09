@@ -17,7 +17,6 @@
 #include <memory>
 #include <string>
 
-#include "api/task_queue/queued_task.h"
 #include "api/video/video_content_type.h"
 #include "modules/video_coding/codecs/h264/include/h264_globals.h"
 #include "modules/video_coding/include/video_codec_interface.h"
@@ -94,7 +93,7 @@ int32_t FakeEncoder::Encode(const VideoFrame& input_image,
                             const std::vector<VideoFrameType>* frame_types) {
   unsigned char max_framerate;
   unsigned char num_simulcast_streams;
-  SpatialLayer simulcast_streams[kMaxSimulcastStreams];
+  SimulcastStream simulcast_streams[kMaxSimulcastStreams];
   EncodedImageCallback* callback;
   RateControlParameters rates;
   bool keyframe;
@@ -144,7 +143,7 @@ int32_t FakeEncoder::Encode(const VideoFrame& input_image,
     encoded._encodedHeight = simulcast_streams[i].height;
     if (qp)
       encoded.qp_ = *qp;
-    encoded.SetSpatialIndex(i);
+    encoded.SetSimulcastIndex(i);
     CodecSpecificInfo codec_specific = EncodeHook(encoded, buffer);
 
     if (callback->OnEncodedImage(encoded, &codec_specific).error !=
@@ -168,7 +167,7 @@ FakeEncoder::FrameInfo FakeEncoder::NextFrame(
     bool keyframe,
     uint8_t num_simulcast_streams,
     const VideoBitrateAllocation& target_bitrate,
-    SpatialLayer simulcast_streams[kMaxSimulcastStreams],
+    SimulcastStream simulcast_streams[kMaxSimulcastStreams],
     int framerate) {
   FrameInfo frame_info;
   frame_info.keyframe = keyframe;
@@ -276,6 +275,7 @@ const char* FakeEncoder::kImplementationName = "fake_encoder";
 VideoEncoder::EncoderInfo FakeEncoder::GetEncoderInfo() const {
   EncoderInfo info;
   info.implementation_name = kImplementationName;
+  info.is_hardware_accelerated = true;
   MutexLock lock(&mutex_);
   for (int sid = 0; sid < config_.numberOfSimulcastStreams; ++sid) {
     int number_of_temporal_layers =
@@ -403,26 +403,6 @@ int32_t MultithreadedFakeH264Encoder::InitEncode(const VideoCodec* config,
   return FakeH264Encoder::InitEncode(config, settings);
 }
 
-class MultithreadedFakeH264Encoder::EncodeTask : public QueuedTask {
- public:
-  EncodeTask(MultithreadedFakeH264Encoder* encoder,
-             const VideoFrame& input_image,
-             const std::vector<VideoFrameType>* frame_types)
-      : encoder_(encoder),
-        input_image_(input_image),
-        frame_types_(*frame_types) {}
-
- private:
-  bool Run() override {
-    encoder_->EncodeCallback(input_image_, &frame_types_);
-    return true;
-  }
-
-  MultithreadedFakeH264Encoder* const encoder_;
-  VideoFrame input_image_;
-  std::vector<VideoFrameType> frame_types_;
-};
-
 int32_t MultithreadedFakeH264Encoder::Encode(
     const VideoFrame& input_image,
     const std::vector<VideoFrameType>* frame_types) {
@@ -435,7 +415,9 @@ int32_t MultithreadedFakeH264Encoder::Encode(
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
 
-  queue->PostTask(std::make_unique<EncodeTask>(this, input_image, frame_types));
+  queue->PostTask([this, input_image, frame_types = *frame_types] {
+    EncodeCallback(input_image, &frame_types);
+  });
 
   return WEBRTC_VIDEO_CODEC_OK;
 }

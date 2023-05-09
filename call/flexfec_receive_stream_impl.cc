@@ -24,20 +24,11 @@
 #include "modules/rtp_rtcp/include/receive_statistics.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/location.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
 #include "system_wrappers/include/clock.h"
 
 namespace webrtc {
-
-std::string FlexfecReceiveStream::Stats::ToString(int64_t time_ms) const {
-  char buf[1024];
-  rtc::SimpleStringBuilder ss(buf);
-  ss << "FlexfecReceiveStream stats: " << time_ms
-     << ", {flexfec_bitrate_bps: " << flexfec_bitrate_bps << "}";
-  return ss.str();
-}
 
 std::string FlexfecReceiveStream::Config::ToString() const {
   char buf[1024];
@@ -51,14 +42,7 @@ std::string FlexfecReceiveStream::Config::ToString() const {
     ss << protected_media_ssrcs[i] << ", ";
   if (!protected_media_ssrcs.empty())
     ss << protected_media_ssrcs[i];
-  ss << "], transport_cc: " << (rtp.transport_cc ? "on" : "off");
-  ss << ", rtp.extensions: [";
-  i = 0;
-  for (; i + 1 < rtp.extensions.size(); ++i)
-    ss << rtp.extensions[i].ToString() << ", ";
-  if (!rtp.extensions.empty())
-    ss << rtp.extensions[i].ToString();
-  ss << "]}";
+  ss << "}";
   return ss.str();
 }
 
@@ -140,26 +124,26 @@ FlexfecReceiveStreamImpl::FlexfecReceiveStreamImpl(
     Config config,
     RecoveredPacketReceiver* recovered_packet_receiver,
     RtcpRttStats* rtt_stats)
-    : extension_map_(std::move(config.rtp.extensions)),
-      config_(std::move(config)),
-      receiver_(MaybeCreateFlexfecReceiver(clock,
-                                           config_,
-                                           recovered_packet_receiver)),
+    : remote_ssrc_(config.rtp.remote_ssrc),
+      payload_type_(config.payload_type),
+      receiver_(
+          MaybeCreateFlexfecReceiver(clock, config, recovered_packet_receiver)),
       rtp_receive_statistics_(ReceiveStatistics::Create(clock)),
       rtp_rtcp_(CreateRtpRtcpModule(clock,
                                     rtp_receive_statistics_.get(),
-                                    config_,
+                                    config,
                                     rtt_stats)) {
-  RTC_LOG(LS_INFO) << "FlexfecReceiveStreamImpl: " << config_.ToString();
+  RTC_LOG(LS_INFO) << "FlexfecReceiveStreamImpl: " << config.ToString();
+  RTC_DCHECK_GE(payload_type_, -1);
 
   packet_sequence_checker_.Detach();
 
   // RTCP reporting.
-  rtp_rtcp_->SetRTCPStatus(config_.rtcp_mode);
+  rtp_rtcp_->SetRTCPStatus(config.rtcp_mode);
 }
 
 FlexfecReceiveStreamImpl::~FlexfecReceiveStreamImpl() {
-  RTC_LOG(LS_INFO) << "~FlexfecReceiveStreamImpl: " << config_.ToString();
+  RTC_DLOG(LS_INFO) << "~FlexfecReceiveStreamImpl: ssrc: " << remote_ssrc_;
 }
 
 void FlexfecReceiveStreamImpl::RegisterWithTransport(
@@ -196,21 +180,23 @@ void FlexfecReceiveStreamImpl::OnRtpPacket(const RtpPacketReceived& packet) {
   }
 }
 
-// TODO(brandtr): Implement this member function when we have designed the
-// stats for FlexFEC.
-FlexfecReceiveStreamImpl::Stats FlexfecReceiveStreamImpl::GetStats() const {
-  return FlexfecReceiveStream::Stats();
+void FlexfecReceiveStreamImpl::SetPayloadType(int payload_type) {
+  RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
+  RTC_DCHECK_GE(payload_type, -1);
+  payload_type_ = payload_type;
 }
 
-void FlexfecReceiveStreamImpl::SetRtpExtensions(
-    std::vector<RtpExtension> extensions) {
+int FlexfecReceiveStreamImpl::payload_type() const {
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
-  extension_map_.Reset(extensions);
+  return payload_type_;
 }
 
-RtpHeaderExtensionMap FlexfecReceiveStreamImpl::GetRtpExtensionMap() const {
+void FlexfecReceiveStreamImpl::SetLocalSsrc(uint32_t local_ssrc) {
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
-  return extension_map_;
+  if (local_ssrc == rtp_rtcp_->local_media_ssrc())
+    return;
+
+  rtp_rtcp_->SetLocalSsrc(local_ssrc);
 }
 
 }  // namespace webrtc

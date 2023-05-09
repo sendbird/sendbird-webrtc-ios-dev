@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "api/units/time_delta.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 #include "rtc_base/checks.h"
 #include "test/gmock.h"
@@ -213,21 +214,150 @@ TEST(PrioritizedPacketQueue, SubtractsPusedTimeFromAverageQueueTime) {
   EXPECT_EQ(queue.AverageQueueTime(), TimeDelta::Millis(750));
 }
 
-TEST(PrioritizedPacketQueue, ReportsLeadingAudioEnqueueTime) {
+TEST(PrioritizedPacketQueue, ReportsLeadingPacketEnqueueTime) {
   PrioritizedPacketQueue queue(/*creation_time=*/Timestamp::Zero());
-  EXPECT_EQ(queue.LeadingAudioPacketEnqueueTime(), Timestamp::MinusInfinity());
+  EXPECT_EQ(queue.LeadingPacketEnqueueTime(RtpPacketMediaType::kAudio),
+            Timestamp::MinusInfinity());
+  EXPECT_EQ(queue.LeadingPacketEnqueueTime(RtpPacketMediaType::kVideo),
+            Timestamp::MinusInfinity());
 
   queue.Push(Timestamp::Millis(10),
              CreatePacket(RtpPacketMediaType::kVideo, /*seq=*/1));
-  EXPECT_EQ(queue.LeadingAudioPacketEnqueueTime(), Timestamp::MinusInfinity());
+  EXPECT_EQ(queue.LeadingPacketEnqueueTime(RtpPacketMediaType::kAudio),
+            Timestamp::MinusInfinity());
+  EXPECT_EQ(queue.LeadingPacketEnqueueTime(RtpPacketMediaType::kVideo),
+            Timestamp::Millis(10));
 
   queue.Push(Timestamp::Millis(20),
              CreatePacket(RtpPacketMediaType::kAudio, /*seq=*/2));
 
-  EXPECT_EQ(queue.LeadingAudioPacketEnqueueTime(), Timestamp::Millis(20));
+  EXPECT_EQ(queue.LeadingPacketEnqueueTime(RtpPacketMediaType::kAudio),
+            Timestamp::Millis(20));
+  EXPECT_EQ(queue.LeadingPacketEnqueueTime(RtpPacketMediaType::kVideo),
+            Timestamp::Millis(10));
 
   queue.Pop();  // Pop audio packet.
-  EXPECT_EQ(queue.LeadingAudioPacketEnqueueTime(), Timestamp::MinusInfinity());
+  EXPECT_EQ(queue.LeadingPacketEnqueueTime(RtpPacketMediaType::kAudio),
+            Timestamp::MinusInfinity());
+  EXPECT_EQ(queue.LeadingPacketEnqueueTime(RtpPacketMediaType::kVideo),
+            Timestamp::Millis(10));
+
+  queue.Pop();  // Pop video packet.
+  EXPECT_EQ(queue.LeadingPacketEnqueueTime(RtpPacketMediaType::kAudio),
+            Timestamp::MinusInfinity());
+  EXPECT_EQ(queue.LeadingPacketEnqueueTime(RtpPacketMediaType::kVideo),
+            Timestamp::MinusInfinity());
+}
+
+TEST(PrioritizedPacketQueue,
+     PushAndPopUpdatesSizeInPacketsPerRtpPacketMediaType) {
+  Timestamp now = Timestamp::Zero();
+  PrioritizedPacketQueue queue(now);
+
+  // Initially all sizes are zero.
+  for (size_t i = 0; i < kNumMediaTypes; ++i) {
+    EXPECT_EQ(queue.SizeInPacketsPerRtpPacketMediaType()[i], 0);
+  }
+
+  // Push packets.
+  queue.Push(now, CreatePacket(RtpPacketMediaType::kAudio, 1));
+  EXPECT_EQ(queue.SizeInPacketsPerRtpPacketMediaType()[static_cast<size_t>(
+                RtpPacketMediaType::kAudio)],
+            1);
+
+  queue.Push(now, CreatePacket(RtpPacketMediaType::kVideo, 2));
+  EXPECT_EQ(queue.SizeInPacketsPerRtpPacketMediaType()[static_cast<size_t>(
+                RtpPacketMediaType::kVideo)],
+            1);
+
+  queue.Push(now, CreatePacket(RtpPacketMediaType::kRetransmission, 3));
+  EXPECT_EQ(queue.SizeInPacketsPerRtpPacketMediaType()[static_cast<size_t>(
+                RtpPacketMediaType::kRetransmission)],
+            1);
+
+  queue.Push(now, CreatePacket(RtpPacketMediaType::kForwardErrorCorrection, 4));
+  EXPECT_EQ(queue.SizeInPacketsPerRtpPacketMediaType()[static_cast<size_t>(
+                RtpPacketMediaType::kForwardErrorCorrection)],
+            1);
+
+  queue.Push(now, CreatePacket(RtpPacketMediaType::kPadding, 5));
+  EXPECT_EQ(queue.SizeInPacketsPerRtpPacketMediaType()[static_cast<size_t>(
+                RtpPacketMediaType::kPadding)],
+            1);
+
+  // Now all sizes are 1.
+  for (size_t i = 0; i < kNumMediaTypes; ++i) {
+    EXPECT_EQ(queue.SizeInPacketsPerRtpPacketMediaType()[i], 1);
+  }
+
+  // Popping happens in a priority order based on media type. This test does not
+  // assert what this order is, only that the counter for the popped packet's
+  // media type is decremented.
+  for (size_t i = 0; i < kNumMediaTypes; ++i) {
+    auto popped_packet = queue.Pop();
+    EXPECT_EQ(queue.SizeInPacketsPerRtpPacketMediaType()[static_cast<size_t>(
+                  popped_packet->packet_type().value())],
+              0);
+  }
+
+  // We've popped all packets, so all sizes are zero.
+  for (size_t i = 0; i < kNumMediaTypes; ++i) {
+    EXPECT_EQ(queue.SizeInPacketsPerRtpPacketMediaType()[i], 0);
+  }
+}
+
+TEST(PrioritizedPacketQueue, ClearsPackets) {
+  Timestamp now = Timestamp::Zero();
+  PrioritizedPacketQueue queue(now);
+  const uint32_t kSsrc = 1;
+
+  // Add two packets of each type, all using the same SSRC.
+  int sequence_number = 0;
+  for (size_t i = 0; i < kNumMediaTypes; ++i) {
+    queue.Push(now, CreatePacket(static_cast<RtpPacketMediaType>(i),
+                                 sequence_number++, kSsrc));
+    queue.Push(now, CreatePacket(static_cast<RtpPacketMediaType>(i),
+                                 sequence_number++, kSsrc));
+  }
+  EXPECT_EQ(queue.SizeInPackets(), 2 * int{kNumMediaTypes});
+
+  // Remove all of them.
+  queue.RemovePacketsForSsrc(kSsrc);
+  EXPECT_TRUE(queue.Empty());
+}
+
+TEST(PrioritizedPacketQueue, ClearPacketsAffectsOnlySpecifiedSsrc) {
+  Timestamp now = Timestamp::Zero();
+  PrioritizedPacketQueue queue(now);
+  const uint32_t kRemovingSsrc = 1;
+  const uint32_t kStayingSsrc = 2;
+
+  // Add an audio packet and a retransmission for the SSRC we will remove,
+  // ensuring they are first in line.
+  queue.Push(
+      now, CreatePacket(RtpPacketMediaType::kAudio, /*seq=*/1, kRemovingSsrc));
+  queue.Push(now, CreatePacket(RtpPacketMediaType::kRetransmission, /*seq=*/2,
+                               kRemovingSsrc));
+
+  // Add a video packet and a retransmission for the SSRC that will remain.
+  // The retransmission packets now both have pointers to their respective qeues
+  // from the same prio level.
+  queue.Push(now,
+             CreatePacket(RtpPacketMediaType::kVideo, /*seq=*/3, kStayingSsrc));
+  queue.Push(now, CreatePacket(RtpPacketMediaType::kRetransmission, /*seq=*/4,
+                               kStayingSsrc));
+
+  EXPECT_EQ(queue.SizeInPackets(), 4);
+
+  // Clear the first two packets.
+  queue.RemovePacketsForSsrc(kRemovingSsrc);
+  EXPECT_EQ(queue.SizeInPackets(), 2);
+
+  // We should get the single remaining retransmission first, then the video
+  // packet.
+  EXPECT_EQ(queue.Pop()->SequenceNumber(), 4);
+  EXPECT_EQ(queue.Pop()->SequenceNumber(), 3);
+  EXPECT_TRUE(queue.Empty());
 }
 
 }  // namespace webrtc

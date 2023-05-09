@@ -81,7 +81,7 @@ class ReceiveVideoStream {
 
   void Start();
   void Stop();
-  VideoReceiveStream::Stats GetStats() const;
+  VideoReceiveStreamInterface::Stats GetStats() const;
 
  private:
   friend class Scenario;
@@ -93,7 +93,7 @@ class ReceiveVideoStream {
                      Transport* feedback_transport,
                      VideoFrameMatcher* matcher);
 
-  std::vector<VideoReceiveStream*> receive_streams_;
+  std::vector<VideoReceiveStreamInterface*> receive_streams_;
   FlexfecReceiveStream* flecfec_stream_ = nullptr;
   FakeVideoRenderer fake_renderer_;
   std::vector<std::unique_ptr<rtc::VideoSinkInterface<VideoFrame>>>
@@ -129,6 +129,9 @@ class VideoStreamPair {
   SendVideoStream send_stream_;
   ReceiveVideoStream receive_stream_;
 };
+
+std::vector<RtpExtension> GetVideoRtpExtensions(const VideoStreamConfig config);
+
 }  // namespace test
 }  // namespace webrtc
 
