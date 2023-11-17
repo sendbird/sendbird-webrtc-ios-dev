@@ -54,6 +54,7 @@ rtc_source_set("audio_device_api") {
     "../../rtc_base:refcount",
     "../../rtc_base:stringutils",
   ]
+  absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
 }
 
 rtc_library("audio_device_buffer") {
@@ -72,6 +73,7 @@ rtc_library("audio_device_buffer") {
     "../../common_audio:common_audio_c",
     "../../rtc_base:buffer",
     "../../rtc_base:checks",
+    "../../rtc_base:event_tracer",
     "../../rtc_base:logging",
     "../../rtc_base:macromagic",
     "../../rtc_base:rtc_task_queue",
@@ -101,6 +103,7 @@ rtc_library("audio_device_name") {
     "audio_device_name.cc",
     "audio_device_name.h",
   ]
+  absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
 }
 
 rtc_source_set("windows_core_audio_utility") {
@@ -121,6 +124,7 @@ rtc_source_set("windows_core_audio_utility") {
       "../../rtc_base:stringutils",
       "../../rtc_base/win:windows_version",
     ]
+    absl_deps = [ "//third_party/abseil-cpp/absl/strings:strings" ]
 
     libs = [ "oleaut32.lib" ]
   }
@@ -152,6 +156,7 @@ rtc_source_set("audio_device_module_from_input_and_output") {
       ":audio_device_api",
       ":audio_device_buffer",
       ":windows_core_audio_utility",
+      "../../api:make_ref_counted",
       "../../api:scoped_refptr",
       "../../api:sequence_checker",
       "../../api/task_queue",
@@ -159,14 +164,16 @@ rtc_source_set("audio_device_module_from_input_and_output") {
       "../../rtc_base:logging",
       "../../rtc_base:macromagic",
       "../../rtc_base:platform_thread",
-      "../../rtc_base:refcount",
       "../../rtc_base:safe_conversions",
       "../../rtc_base:stringutils",
       "../../rtc_base:timeutils",
       "../../rtc_base/win:scoped_com_initializer",
       "../../rtc_base/win:windows_version",
     ]
-    absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
+    absl_deps = [
+      "//third_party/abseil-cpp/absl/strings:strings",
+      "//third_party/abseil-cpp/absl/types:optional",
+    ]
   }
 }
 
@@ -180,20 +187,19 @@ rtc_library("audio_device_impl") {
     ":audio_device_default",
     ":audio_device_generic",
     "../../api:array_view",
+    "../../api:make_ref_counted",
     "../../api:refcountedbase",
     "../../api:scoped_refptr",
     "../../api:sequence_checker",
     "../../api/task_queue",
     "../../common_audio",
     "../../common_audio:common_audio_c",
-    "../../rtc_base",
     "../../rtc_base:buffer",
     "../../rtc_base:checks",
     "../../rtc_base:logging",
     "../../rtc_base:macromagic",
     "../../rtc_base:platform_thread",
     "../../rtc_base:random",
-    "../../rtc_base:refcount",
     "../../rtc_base:rtc_event",
     "../../rtc_base:rtc_task_queue",
     "../../rtc_base:safe_conversions",
@@ -208,7 +214,10 @@ rtc_library("audio_device_impl") {
     "../../system_wrappers:metrics",
     "../utility",
   ]
-  absl_deps = [ "//third_party/abseil-cpp/absl/base:core_headers" ]
+  absl_deps = [
+    "//third_party/abseil-cpp/absl/base:core_headers",
+    "//third_party/abseil-cpp/absl/strings:strings",
+  ]
   if (rtc_include_internal_audio_device && is_ios) {
     deps += [ "../../sdk:audio_device" ]
   }
@@ -393,7 +402,7 @@ rtc_source_set("mock_audio_device") {
     ":audio_device",
     ":audio_device_buffer",
     ":audio_device_impl",
-    "../../rtc_base:refcount",
+    "../../api:make_ref_counted",
     "../../test:test_support",
   ]
 }
@@ -430,9 +439,11 @@ if (rtc_include_tests && !build_with_chromium) {
       "../../system_wrappers",
       "../../test:fileutils",
       "../../test:test_support",
-      "../utility",
     ]
-    absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
+    absl_deps = [
+      "//third_party/abseil-cpp/absl/strings",
+      "//third_party/abseil-cpp/absl/types:optional",
+    ]
     if (is_linux || is_chromeos || is_mac || is_win) {
       sources += [ "audio_device_unittest.cc" ]
     }
@@ -457,6 +468,7 @@ if (rtc_include_tests && !build_with_chromium) {
         "../../sdk/android:libjingle_peerconnection_java",
         "../../sdk/android:native_api_jni",
         "../../sdk/android:native_test_jni_onload",
+        "../utility",
       ]
     }
     if (!rtc_include_internal_audio_device) {

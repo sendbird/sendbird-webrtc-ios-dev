@@ -17,6 +17,7 @@
 #include "pc/jsep_transport_controller.h"
 #include "pc/rtp_transport_internal.h"
 #include "pc/session_description.h"
+#include "rtc_base/task_queue_for_test.h"
 
 namespace webrtc {
 class ScenarioIceConnectionImpl : public ScenarioIceConnection,
@@ -96,13 +97,14 @@ ScenarioIceConnectionImpl::ScenarioIceConnectionImpl(
           rtc::SSLFingerprint::CreateFromCertificate(*certificate_.get())
               .get()),
       port_allocator_(
-          new cricket::BasicPortAllocator(manager_->network_manager())),
+          new cricket::BasicPortAllocator(manager_->network_manager(),
+                                          manager_->packet_socket_factory())),
       jsep_controller_(
           new JsepTransportController(network_thread_,
                                       port_allocator_.get(),
                                       /*async_resolver_factory*/ nullptr,
                                       CreateJsepConfig())) {
-  network_thread_->Invoke<void>(RTC_FROM_HERE, [this] {
+  SendTask(network_thread_, [this] {
     RTC_DCHECK_RUN_ON(network_thread_);
     uint32_t flags = cricket::PORTALLOCATOR_DISABLE_TCP;
     port_allocator_->set_flags(port_allocator_->flags() | flags);
@@ -115,7 +117,7 @@ ScenarioIceConnectionImpl::ScenarioIceConnectionImpl(
 }
 
 ScenarioIceConnectionImpl::~ScenarioIceConnectionImpl() {
-  network_thread_->Invoke<void>(RTC_FROM_HERE, [this] {
+  SendTask(network_thread_, [this] {
     RTC_DCHECK_RUN_ON(network_thread_);
     jsep_controller_.reset();
     port_allocator_.reset();

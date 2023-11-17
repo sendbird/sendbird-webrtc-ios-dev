@@ -16,9 +16,10 @@
 #include <utility>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
-#include "api/task_queue/queued_task.h"
 #include "api/task_queue/task_queue_base.h"
+#include "api/units/time_delta.h"
 #include "logging/rtc_event_log/encoder/rtc_event_log_encoder_legacy.h"
 #include "logging/rtc_event_log/encoder/rtc_event_log_encoder_new_format.h"
 #include "rtc_base/checks.h"
@@ -29,13 +30,8 @@
 #include "rtc_base/time_utils.h"
 
 namespace webrtc {
-namespace {
-constexpr size_t kMaxEventsInHistory = 10000;
-// The config-history is supposed to be unbounded, but needs to have some bound
-// to prevent an attack via unreasonable memory use.
-constexpr size_t kMaxEventsInConfigHistory = 1000;
 
-std::unique_ptr<RtcEventLogEncoder> CreateEncoder(
+std::unique_ptr<RtcEventLogEncoder> RtcEventLogImpl::CreateEncoder(
     RtcEventLog::EncodingType type) {
   switch (type) {
     case RtcEventLog::EncodingType::Legacy:
@@ -51,11 +47,14 @@ std::unique_ptr<RtcEventLogEncoder> CreateEncoder(
       return std::unique_ptr<RtcEventLogEncoder>(nullptr);
   }
 }
-}  // namespace
 
-RtcEventLogImpl::RtcEventLogImpl(RtcEventLog::EncodingType encoding_type,
-                                 TaskQueueFactory* task_queue_factory)
-    : event_encoder_(CreateEncoder(encoding_type)),
+RtcEventLogImpl::RtcEventLogImpl(std::unique_ptr<RtcEventLogEncoder> encoder,
+                                 TaskQueueFactory* task_queue_factory,
+                                 size_t max_events_in_history,
+                                 size_t max_config_events_in_history)
+    : max_events_in_history_(max_events_in_history),
+      max_config_events_in_history_(max_config_events_in_history),
+      event_encoder_(std::move(encoder)),
       num_config_events_written_(0),
       last_output_ms_(rtc::TimeMillis()),
       output_scheduled_(false),
@@ -151,7 +150,7 @@ void RtcEventLogImpl::Log(std::unique_ptr<RtcEvent> event) {
 
 void RtcEventLogImpl::ScheduleOutput() {
   RTC_DCHECK(event_output_ && event_output_->IsActive());
-  if (history_.size() >= kMaxEventsInHistory) {
+  if (history_.size() >= max_events_in_history_) {
     // We have to emergency drain the buffer. We can't wait for the scheduled
     // output task because there might be other event incoming before that.
     LogEventsFromMemoryToOutput();
@@ -181,15 +180,17 @@ void RtcEventLogImpl::ScheduleOutput() {
     const int64_t time_since_output_ms = now_ms - last_output_ms_;
     const uint32_t delay = rtc::SafeClamp(
         *output_period_ms_ - time_since_output_ms, 0, *output_period_ms_);
-    task_queue_->PostDelayedTask(output_task, delay);
+    task_queue_->PostDelayedTask(std::move(output_task),
+                                 TimeDelta::Millis(delay));
   }
 }
 
 void RtcEventLogImpl::LogToMemory(std::unique_ptr<RtcEvent> event) {
   std::deque<std::unique_ptr<RtcEvent>>& container =
       event->IsConfigEvent() ? config_history_ : history_;
-  const size_t container_max_size =
-      event->IsConfigEvent() ? kMaxEventsInConfigHistory : kMaxEventsInHistory;
+  const size_t container_max_size = event->IsConfigEvent()
+                                        ? max_config_events_in_history_
+                                        : max_events_in_history_;
 
   if (container.size() >= container_max_size) {
     RTC_DCHECK(!event_output_);  // Shouldn't lose events if we have an output.
@@ -230,8 +231,8 @@ void RtcEventLogImpl::LogEventsFromMemoryToOutput() {
 }
 
 void RtcEventLogImpl::WriteConfigsAndHistoryToOutput(
-    const std::string& encoded_configs,
-    const std::string& encoded_history) {
+    absl::string_view encoded_configs,
+    absl::string_view encoded_history) {
   // This function is used to merge the strings instead of calling the output
   // object twice with small strings. The function also avoids copying any
   // strings in the typical case where there are no config events.
@@ -240,7 +241,11 @@ void RtcEventLogImpl::WriteConfigsAndHistoryToOutput(
   } else if (encoded_history.empty()) {
     WriteToOutput(encoded_configs);  // Very unusual case.
   } else {
-    WriteToOutput(encoded_configs + encoded_history);
+    std::string s;
+    s.reserve(encoded_configs.size() + encoded_history.size());
+    s.append(encoded_configs.data(), encoded_configs.size());
+    s.append(encoded_history.data(), encoded_history.size());
+    WriteToOutput(s);
   }
 }
 
@@ -257,7 +262,7 @@ void RtcEventLogImpl::StopLoggingInternal() {
   StopOutput();
 }
 
-void RtcEventLogImpl::WriteToOutput(const std::string& output_string) {
+void RtcEventLogImpl::WriteToOutput(absl::string_view output_string) {
   RTC_DCHECK(event_output_ && event_output_->IsActive());
   if (!event_output_->Write(output_string)) {
     RTC_LOG(LS_ERROR) << "Failed to write RTC event to output.";

@@ -11,7 +11,7 @@
 #include "api/test/mock_video_decoder.h"
 #include "api/video_codecs/video_decoder.h"
 #include "modules/video_coding/include/video_coding.h"
-#include "modules/video_coding/timing.h"
+#include "modules/video_coding/timing/timing.h"
 #include "modules/video_coding/video_coding_impl.h"
 #include "system_wrappers/include/clock.h"
 #include "test/gtest.h"
@@ -38,12 +38,16 @@ class MockVCMReceiveCallback : public VCMReceiveCallback {
   MockVCMReceiveCallback() {}
   virtual ~MockVCMReceiveCallback() {}
 
-  MOCK_METHOD(int32_t,
-              FrameToRender,
-              (VideoFrame&, absl::optional<uint8_t>, int32_t, VideoContentType),
-              (override));
+  MOCK_METHOD(
+      int32_t,
+      FrameToRender,
+      (VideoFrame&, absl::optional<uint8_t>, TimeDelta, VideoContentType),
+      (override));
   MOCK_METHOD(void, OnIncomingPayloadType, (int), (override));
-  MOCK_METHOD(void, OnDecoderImplementationName, (const char*), (override));
+  MOCK_METHOD(void,
+              OnDecoderInfoChanged,
+              (const VideoDecoder::DecoderInfo&),
+              (override));
 };
 
 class TestVideoReceiver : public ::testing::Test {
@@ -73,8 +77,7 @@ class TestVideoReceiver : public ::testing::Test {
     // Since we call Decode, we need to provide a valid receive callback.
     // However, for the purposes of these tests, we ignore the callbacks.
     EXPECT_CALL(receive_callback_, OnIncomingPayloadType(_)).Times(AnyNumber());
-    EXPECT_CALL(receive_callback_, OnDecoderImplementationName(_))
-        .Times(AnyNumber());
+    EXPECT_CALL(receive_callback_, OnDecoderInfoChanged).Times(AnyNumber());
     receiver_.RegisterReceiveCallback(&receive_callback_);
   }
 

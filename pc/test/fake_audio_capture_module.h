@@ -29,18 +29,14 @@
 #include "api/sequence_checker.h"
 #include "modules/audio_device/include/audio_device.h"
 #include "modules/audio_device/include/audio_device_defines.h"
-#include "rtc_base/message_handler.h"
 #include "rtc_base/synchronization/mutex.h"
-#include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
-#include "rtc_base/thread_message.h"
 
 namespace rtc {
 class Thread;
 }  // namespace rtc
 
-class FakeAudioCaptureModule : public webrtc::AudioDeviceModule,
-                               public rtc::MessageHandlerAutoCleanup {
+class FakeAudioCaptureModule : public webrtc::AudioDeviceModule {
  public:
   typedef uint16_t Sample;
 
@@ -140,6 +136,10 @@ class FakeAudioCaptureModule : public webrtc::AudioDeviceModule,
   int32_t EnableBuiltInNS(bool enable) override { return -1; }
 
   int32_t GetPlayoutUnderrunCount() const override { return -1; }
+
+  absl::optional<webrtc::AudioDeviceModule::Stats> GetStats() const override {
+    return webrtc::AudioDeviceModule::Stats();
+  }
 #if defined(WEBRTC_IOS)
   int GetPlayoutAudioParameters(
       webrtc::AudioParameters* params) const override {
@@ -151,9 +151,6 @@ class FakeAudioCaptureModule : public webrtc::AudioDeviceModule,
 #endif  // WEBRTC_IOS
 
   // End of functions inherited from webrtc::AudioDeviceModule.
-
-  // The following function is inherited from rtc::MessageHandler.
-  void OnMessage(rtc::Message* msg) override;
 
  protected:
   // The constructor is protected because the class needs to be created as a

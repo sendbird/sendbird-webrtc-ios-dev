@@ -19,6 +19,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/sequence_checker.h"
 #include "api/transport/field_trial_based_config.h"
@@ -28,7 +29,6 @@
 #include "modules/rtp_rtcp/source/rtp_rtcp_config.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/task_utils/to_queued_task.h"
 #include "rtc_base/time_utils.h"
 #include "system_wrappers/include/ntp_time.h"
 
@@ -51,13 +51,6 @@ RTCPSender::Configuration AddRtcpSendEvaluationCallback(
   return config;
 }
 
-int DelayMillisForDuration(TimeDelta duration) {
-  // TimeDelta::ms() rounds downwards sometimes which leads to too little time
-  // slept. Account for this, unless `duration` is exactly representable in
-  // millisecs.
-  return (duration.us() + rtc::kNumMillisecsPerSec - 1) /
-         rtc::kNumMicrosecsPerMillisec;
-}
 }  // namespace
 
 ModuleRtpRtcpImpl2::RtpSenderContext::RtpSenderContext(
@@ -86,7 +79,6 @@ ModuleRtpRtcpImpl2::ModuleRtpRtcpImpl2(const Configuration& configuration)
       packet_overhead_(28),  // IPV4 UDP.
       nack_last_time_sent_full_ms_(0),
       nack_last_seq_number_sent_(0),
-      remote_bitrate_(configuration.remote_bitrate_estimator),
       rtt_stats_(configuration.rtt_stats),
       rtt_ms_(0) {
   RTC_DCHECK(worker_queue_);
@@ -96,6 +88,8 @@ ModuleRtpRtcpImpl2::ModuleRtpRtcpImpl2(const Configuration& configuration)
     rtp_sender_->sequencing_checker.Detach();
     // Make sure rtcp sender use same timestamp offset as rtp sender.
     rtcp_sender_.SetTimestampOffset(
+        rtp_sender_->packet_generator.TimestampOffset());
+    rtp_sender_->packet_sender.SetTimestampOffset(
         rtp_sender_->packet_generator.TimestampOffset());
   }
 
@@ -149,10 +143,10 @@ absl::optional<uint32_t> ModuleRtpRtcpImpl2::FlexfecSsrc() const {
   return absl::nullopt;
 }
 
-void ModuleRtpRtcpImpl2::IncomingRtcpPacket(const uint8_t* rtcp_packet,
-                                            const size_t length) {
+void ModuleRtpRtcpImpl2::IncomingRtcpPacket(
+    rtc::ArrayView<const uint8_t> rtcp_packet) {
   RTC_DCHECK_RUN_ON(&rtcp_thread_checker_);
-  rtcp_receiver_.IncomingPacket(rtcp_packet, length);
+  rtcp_receiver_.IncomingPacket(rtcp_packet);
 }
 
 void ModuleRtpRtcpImpl2::RegisterSendPayloadFrequency(int payload_type,
@@ -194,6 +188,7 @@ void ModuleRtpRtcpImpl2::SetRtpState(const RtpState& rtp_state) {
   rtp_sender_->packet_generator.SetRtpState(rtp_state);
   rtp_sender_->sequencer.SetRtpState(rtp_state);
   rtcp_sender_.SetTimestampOffset(rtp_state.start_timestamp);
+  rtp_sender_->packet_sender.SetTimestampOffset(rtp_state.start_timestamp);
 }
 
 void ModuleRtpRtcpImpl2::SetRtxState(const RtpState& rtp_state) {
@@ -227,23 +222,12 @@ uint32_t ModuleRtpRtcpImpl2::local_media_ssrc() const {
   return rtcp_receiver_.local_media_ssrc();
 }
 
-void ModuleRtpRtcpImpl2::SetRid(const std::string& rid) {
-  if (rtp_sender_) {
-    rtp_sender_->packet_generator.SetRid(rid);
-  }
-}
-
-void ModuleRtpRtcpImpl2::SetMid(const std::string& mid) {
+void ModuleRtpRtcpImpl2::SetMid(absl::string_view mid) {
   if (rtp_sender_) {
     rtp_sender_->packet_generator.SetMid(mid);
   }
   // TODO(bugs.webrtc.org/4050): If we end up supporting the MID SDES item for
   // RTCP, this will need to be passed down to the RTCPSender also.
-}
-
-void ModuleRtpRtcpImpl2::SetCsrcs(const std::vector<uint32_t>& csrcs) {
-  rtcp_sender_.SetCsrcs(csrcs);
-  rtp_sender_->packet_generator.SetCsrcs(csrcs);
 }
 
 // TODO(pbos): Handle media and RTX streams separately (separate RTCP
@@ -288,9 +272,6 @@ RTCPSender::FeedbackState ModuleRtpRtcpImpl2::GetFeedbackState() {
   return state;
 }
 
-// TODO(nisse): This method shouldn't be called for a receive-only
-// stream. Delete rtp_sender_ check as soon as all applications are
-// updated.
 int32_t ModuleRtpRtcpImpl2::SetSendingStatus(const bool sending) {
   if (rtcp_sender_.Sending() != sending) {
     // Sends RTCP BYE when going from true to false
@@ -303,15 +284,8 @@ bool ModuleRtpRtcpImpl2::Sending() const {
   return rtcp_sender_.Sending();
 }
 
-// TODO(nisse): This method shouldn't be called for a receive-only
-// stream. Delete rtp_sender_ check as soon as all applications are
-// updated.
 void ModuleRtpRtcpImpl2::SetSendingMediaStatus(const bool sending) {
-  if (rtp_sender_) {
-    rtp_sender_->packet_generator.SetSendingMediaStatus(sending);
-  } else {
-    RTC_DCHECK(!sending);
-  }
+  rtp_sender_->packet_generator.SetSendingMediaStatus(sending);
 }
 
 bool ModuleRtpRtcpImpl2::SendingMedia() const {
@@ -392,6 +366,13 @@ ModuleRtpRtcpImpl2::FetchFecPackets() {
   return rtp_sender_->packet_sender.FetchFecPackets();
 }
 
+void ModuleRtpRtcpImpl2::OnAbortedRetransmissions(
+    rtc::ArrayView<const uint16_t> sequence_numbers) {
+  RTC_DCHECK(rtp_sender_);
+  RTC_DCHECK_RUN_ON(&rtp_sender_->sequencing_checker);
+  rtp_sender_->packet_sender.OnAbortedRetransmissions(sequence_numbers);
+}
+
 void ModuleRtpRtcpImpl2::OnPacketsAcknowledged(
     rtc::ArrayView<const uint16_t> sequence_numbers) {
   RTC_DCHECK(rtp_sender_);
@@ -463,7 +444,7 @@ void ModuleRtpRtcpImpl2::SetRTCPStatus(const RtcpMode method) {
   rtcp_sender_.SetRTCPStatus(method);
 }
 
-int32_t ModuleRtpRtcpImpl2::SetCNAME(const char* c_name) {
+int32_t ModuleRtpRtcpImpl2::SetCNAME(absl::string_view c_name) {
   return rtcp_sender_.SetCNAME(c_name);
 }
 
@@ -781,27 +762,31 @@ void ModuleRtpRtcpImpl2::PeriodicUpdate() {
   }
 }
 
-// RTC_RUN_ON(worker_queue_);
 void ModuleRtpRtcpImpl2::MaybeSendRtcp() {
+  RTC_DCHECK_RUN_ON(worker_queue_);
   if (rtcp_sender_.TimeToSendRTCPReport())
     rtcp_sender_.SendRTCP(GetFeedbackState(), kRtcpReport);
 }
 
 // TODO(bugs.webrtc.org/12889): Consider removing this function when the issue
 // is resolved.
-// RTC_RUN_ON(worker_queue_);
 void ModuleRtpRtcpImpl2::MaybeSendRtcpAtOrAfterTimestamp(
     Timestamp execution_time) {
+  RTC_DCHECK_RUN_ON(worker_queue_);
   Timestamp now = clock_->CurrentTime();
   if (now >= execution_time) {
     MaybeSendRtcp();
     return;
   }
 
-  RTC_DLOG(LS_WARNING)
-      << "BUGBUG: Task queue scheduled delayed call too early.";
+  TimeDelta delta = execution_time - now;
+  // TaskQueue may run task 1ms earlier, so don't print warning if in this case.
+  if (delta > TimeDelta::Millis(1)) {
+    RTC_DLOG(LS_WARNING) << "BUGBUG: Task queue scheduled delayed call "
+                         << delta << " too early.";
+  }
 
-  ScheduleMaybeSendRtcpAtOrAfterTimestamp(execution_time, execution_time - now);
+  ScheduleMaybeSendRtcpAtOrAfterTimestamp(execution_time, delta);
 }
 
 void ModuleRtpRtcpImpl2::ScheduleRtcpSendEvaluation(TimeDelta duration) {
@@ -811,7 +796,7 @@ void ModuleRtpRtcpImpl2::ScheduleRtcpSendEvaluation(TimeDelta duration) {
   // than the worker queue on which it's created on implies that external
   // synchronization is present and removes this activity before destruction.
   if (duration.IsZero()) {
-    worker_queue_->PostTask(ToQueuedTask(task_safety_, [this] {
+    worker_queue_->PostTask(SafeTask(task_safety_.flag(), [this] {
       RTC_DCHECK_RUN_ON(worker_queue_);
       MaybeSendRtcp();
     }));
@@ -829,12 +814,12 @@ void ModuleRtpRtcpImpl2::ScheduleMaybeSendRtcpAtOrAfterTimestamp(
   // See note in ScheduleRtcpSendEvaluation about why `worker_queue_` can be
   // accessed.
   worker_queue_->PostDelayedTask(
-      ToQueuedTask(task_safety_,
-                   [this, execution_time] {
-                     RTC_DCHECK_RUN_ON(worker_queue_);
-                     MaybeSendRtcpAtOrAfterTimestamp(execution_time);
-                   }),
-      DelayMillisForDuration(duration));
+      SafeTask(task_safety_.flag(),
+               [this, execution_time] {
+                 RTC_DCHECK_RUN_ON(worker_queue_);
+                 MaybeSendRtcpAtOrAfterTimestamp(execution_time);
+               }),
+      duration.RoundUpTo(TimeDelta::Millis(1)));
 }
 
 }  // namespace webrtc

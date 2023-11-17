@@ -67,11 +67,13 @@ struct NetEqLifetimeStatistics {
   uint64_t jitter_buffer_delay_ms = 0;
   uint64_t jitter_buffer_emitted_count = 0;
   uint64_t jitter_buffer_target_delay_ms = 0;
+  uint64_t jitter_buffer_minimum_delay_ms = 0;
   uint64_t inserted_samples_for_deceleration = 0;
   uint64_t removed_samples_for_acceleration = 0;
   uint64_t silent_concealed_samples = 0;
   uint64_t fec_packets_received = 0;
   uint64_t fec_packets_discarded = 0;
+  uint64_t packets_discarded = 0;
   // Below stats are not part of the spec.
   uint64_t delayed_packet_outage_samples = 0;
   // This is sum of relative packet arrival delays of received packets so far.
@@ -102,8 +104,6 @@ struct NetEqOperationsAndState {
   uint64_t accelerate_samples = 0;
   // Count of the number of buffer flushes.
   uint64_t packet_buffer_flushes = 0;
-  // The number of primary packets that were discarded.
-  uint64_t discarded_primary_packets = 0;
   // The statistics below are not cumulative.
   // The waiting time of the last decoded packet.
   uint64_t last_waiting_time_ms = 0;
@@ -128,7 +128,7 @@ class NetEq {
 
     std::string ToString() const;
 
-    int sample_rate_hz = 16000;  // Initial value. Will change with input data.
+    int sample_rate_hz = 48000;  // Initial value. Will change with input data.
     bool enable_post_decode_vad = false;
     size_t max_packets_in_buffer = 200;
     int max_delay_ms = 0;
@@ -312,12 +312,6 @@ class NetEq {
   // retransmitted, given an estimate of the round-trip time in milliseconds.
   virtual std::vector<uint16_t> GetNackList(
       int64_t round_trip_time_ms) const = 0;
-
-  // Returns a vector containing the timestamps of the packets that were decoded
-  // in the last GetAudio call. If no packets were decoded in the last call, the
-  // vector is empty.
-  // Mainly intended for testing.
-  virtual std::vector<uint32_t> LastDecodedTimestamps() const = 0;
 
   // Returns the length of the audio yet to play in the sync buffer.
   // Mainly intended for testing.

@@ -23,15 +23,15 @@ TEST_F(NonSenderRttTest, NonSenderRttStats) {
     const int kTestDurationMs = 10000;
     const int64_t kRttMs = 30;
 
-    BuiltInNetworkBehaviorConfig GetNetworkPipeConfig() const override {
+    BuiltInNetworkBehaviorConfig GetSendTransportConfig() const override {
       BuiltInNetworkBehaviorConfig pipe_config;
       pipe_config.queue_delay_ms = kRttMs / 2;
       return pipe_config;
     }
 
-    void ModifyAudioConfigs(
-        AudioSendStream::Config* send_config,
-        std::vector<AudioReceiveStream::Config>* receive_configs) override {
+    void ModifyAudioConfigs(AudioSendStream::Config* send_config,
+                            std::vector<AudioReceiveStreamInterface::Config>*
+                                receive_configs) override {
       ASSERT_EQ(receive_configs->size(), 1U);
       (*receive_configs)[0].enable_non_sender_rtt = true;
       AudioEndToEndTest::ModifyAudioConfigs(send_config, receive_configs);
@@ -41,7 +41,7 @@ TEST_F(NonSenderRttTest, NonSenderRttStats) {
     void PerformTest() override { SleepMs(kTestDurationMs); }
 
     void OnStreamsStopped() override {
-      AudioReceiveStream::Stats recv_stats =
+      AudioReceiveStreamInterface::Stats recv_stats =
           receive_stream()->GetStats(/*get_and_clear_legacy_stats=*/true);
       EXPECT_GT(recv_stats.round_trip_time_measurements, 0);
       ASSERT_TRUE(recv_stats.round_trip_time.has_value());

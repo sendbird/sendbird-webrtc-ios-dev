@@ -105,6 +105,17 @@ class RTC_EXPORT DesktopCaptureOptions {
     detect_updated_region_ = detect_updated_region;
   }
 
+  // Indicates that the capturer should try to include the cursor in the frame.
+  // If it is able to do so it will set `DesktopFrame::may_contain_cursor()`.
+  // Not all capturers will support including the cursor. If this value is false
+  // or the cursor otherwise cannot be included in the frame, then cursor
+  // metadata will be sent, though the capturer may choose to always send cursor
+  // metadata.
+  bool prefer_cursor_embedded() const { return prefer_cursor_embedded_; }
+  void set_prefer_cursor_embedded(bool prefer_cursor_embedded) {
+    prefer_cursor_embedded_ = prefer_cursor_embedded;
+  }
+
 #if defined(WEBRTC_WIN)
   // Enumerating windows owned by the current process on Windows has some
   // complications due to |GetWindowText*()| APIs potentially causing a
@@ -188,6 +199,19 @@ class RTC_EXPORT DesktopCaptureOptions {
       rtc::scoped_refptr<SharedScreenCastStream> stream) {
     screencast_stream_ = stream;
   }
+
+  void set_width(uint32_t width) { width_ = width; }
+  uint32_t get_width() const { return width_; }
+
+  void set_height(uint32_t height) { height_ = height; }
+  uint32_t get_height() const { return height_; }
+
+  void set_pipewire_use_damage_region(bool use_damage_regions) {
+    pipewire_use_damage_region_ = use_damage_regions;
+  }
+  bool pipewire_use_damage_region() const {
+    return pipewire_use_damage_region_;
+  }
 #endif
 
  private:
@@ -224,8 +248,12 @@ class RTC_EXPORT DesktopCaptureOptions {
 #endif
   bool disable_effects_ = true;
   bool detect_updated_region_ = false;
+  bool prefer_cursor_embedded_ = false;
 #if defined(WEBRTC_USE_PIPEWIRE)
   bool allow_pipewire_ = false;
+  bool pipewire_use_damage_region_ = true;
+  uint32_t width_ = 0;
+  uint32_t height_ = 0;
 #endif
 };
 

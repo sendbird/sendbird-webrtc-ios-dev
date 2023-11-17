@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 
+#include "modules/audio_device/include/audio_device.h"
 #include "pc/peer_connection_internal.h"
 #include "test/gmock.h"
 
@@ -41,6 +42,12 @@ class MockPeerConnectionInternal : public PeerConnectionInternal {
               AddTrack,
               (rtc::scoped_refptr<MediaStreamTrackInterface>,
                const std::vector<std::string>&),
+              (override));
+  MOCK_METHOD(RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>>,
+              AddTrack,
+              (rtc::scoped_refptr<MediaStreamTrackInterface>,
+               const std::vector<std::string>&,
+               const std::vector<RtpEncodingParameters>&),
               (override));
   MOCK_METHOD(RTCError,
               RemoveTrackOrError,
@@ -203,10 +210,6 @@ class MockPeerConnectionInternal : public PeerConnectionInternal {
               (),
               (const, override));
   MOCK_METHOD(void,
-              ReportSdpFormatReceived,
-              (const SessionDescriptionInterface&),
-              (override));
-  MOCK_METHOD(void,
               ReportSdpBundleUsage,
               (const SessionDescriptionInterface&),
               (override));
@@ -226,7 +229,7 @@ class MockPeerConnectionInternal : public PeerConnectionInternal {
   MOCK_METHOD(JsepTransportController*, transport_controller_n, (), (override));
   MOCK_METHOD(DataChannelController*, data_channel_controller, (), (override));
   MOCK_METHOD(cricket::PortAllocator*, port_allocator, (), (override));
-  MOCK_METHOD(StatsCollector*, stats, (), (override));
+  MOCK_METHOD(LegacyStatsCollector*, legacy_stats, (), (override));
   MOCK_METHOD(PeerConnectionObserver*, Observer, (), (const, override));
   MOCK_METHOD(bool, GetSctpSslRole, (rtc::SSLRole*), (override));
   MOCK_METHOD(PeerConnectionInterface::IceConnectionState,
@@ -300,6 +303,10 @@ class MockPeerConnectionInternal : public PeerConnectionInternal {
               (const std::set<std::string>&),
               (override));
   MOCK_METHOD(Call::Stats, GetCallStats, (), (override));
+  MOCK_METHOD(absl::optional<AudioDeviceModule::Stats>,
+              GetAudioDeviceStats,
+              (),
+              (override));
   MOCK_METHOD(bool,
               GetLocalCertificate,
               (const std::string&, rtc::scoped_refptr<rtc::RTCCertificate>*),

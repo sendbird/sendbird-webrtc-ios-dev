@@ -13,7 +13,6 @@ namespace webrtc {
                                           UInt32 bus_number,
                                           UInt32 num_frames,
                                           AudioBufferList* io_data) {
-    RTC_LOG(LS_VERBOSE) << __FUNCTION__;
     [sink_ onLocalAudioFrameWithFlags:flags timeStamp:time_stamp busNumber:bus_number numFrames:num_frames ioData:io_data];
   }
 
@@ -22,7 +21,6 @@ namespace webrtc {
                                           UInt32 bus_number,
                                           UInt32 num_frames,
                                           AudioBufferList* io_data) {
-    RTC_LOG(LS_VERBOSE) << __FUNCTION__;
     [sink_ onRemoteAudioFrameWithFlags:flags timeStamp:time_stamp busNumber:bus_number numFrames:num_frames ioData:io_data];
   }
 }

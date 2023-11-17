@@ -17,21 +17,24 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "api/network_state_predictor.h"
 #include "api/sequence_checker.h"
+#include "api/task_queue/task_queue_base.h"
+#include "api/task_queue/task_queue_factory.h"
 #include "api/transport/network_control.h"
 #include "api/units/data_rate.h"
 #include "call/rtp_bitrate_configurator.h"
+#include "call/rtp_transport_config.h"
 #include "call/rtp_transport_controller_send_interface.h"
 #include "call/rtp_video_sender.h"
 #include "modules/congestion_controller/rtp/control_handler.h"
 #include "modules/congestion_controller/rtp/transport_feedback_adapter.h"
 #include "modules/congestion_controller/rtp/transport_feedback_demuxer.h"
-#include "modules/pacing/paced_sender.h"
 #include "modules/pacing/packet_router.h"
 #include "modules/pacing/rtp_packet_pacer.h"
 #include "modules/pacing/task_queue_paced_sender.h"
-#include "modules/utility/include/process_thread.h"
+#include "modules/utility/maybe_worker_thread.h"
 #include "rtc_base/network_route.h"
 #include "rtc_base/race_checker.h"
 #include "rtc_base/task_queue.h"
@@ -42,24 +45,13 @@ class Clock;
 class FrameEncryptorInterface;
 class RtcEventLog;
 
-// TODO(nisse): When we get the underlying transports here, we should
-// have one object implementing RtpTransportControllerSendInterface
-// per transport, sharing the same congestion controller.
 class RtpTransportControllerSend final
     : public RtpTransportControllerSendInterface,
       public RtcpBandwidthObserver,
       public TransportFeedbackObserver,
       public NetworkStateEstimateObserver {
  public:
-  RtpTransportControllerSend(
-      Clock* clock,
-      RtcEventLog* event_log,
-      NetworkStatePredictorFactoryInterface* predictor_factory,
-      NetworkControllerFactoryInterface* controller_factory,
-      const BitrateConstraints& bitrate_config,
-      std::unique_ptr<ProcessThread> process_thread,
-      TaskQueueFactory* task_queue_factory,
-      const FieldTrialsView& trials);
+  RtpTransportControllerSend(Clock* clock, const RtpTransportConfig& config);
   ~RtpTransportControllerSend() override;
 
   RtpTransportControllerSend(const RtpTransportControllerSend&) = delete;
@@ -83,7 +75,7 @@ class RtpTransportControllerSend final
       RtpVideoSenderInterface* rtp_video_sender) override;
 
   // Implements RtpTransportControllerSendInterface
-  rtc::TaskQueue* GetWorkerQueue() override;
+  MaybeWorkerThread* GetWorkerQueue() override;
   PacketRouter* packet_router() override;
 
   NetworkStateEstimateObserver* network_state_estimate_observer() override;
@@ -97,7 +89,7 @@ class RtpTransportControllerSend final
   StreamFeedbackProvider* GetStreamFeedbackProvider() override;
   void RegisterTargetTransferRateObserver(
       TargetTransferRateObserver* observer) override;
-  void OnNetworkRouteChanged(const std::string& transport_name,
+  void OnNetworkRouteChanged(absl::string_view transport_name,
                              const rtc::NetworkRoute& network_route) override;
   void OnNetworkAvailability(bool network_available) override;
   RtcpBandwidthObserver* GetBandwidthObserver() override;
@@ -131,16 +123,6 @@ class RtpTransportControllerSend final
   void OnRemoteNetworkEstimate(NetworkStateEstimate estimate) override;
 
  private:
-  struct PacerSettings {
-    explicit PacerSettings(const FieldTrialsView& trials);
-
-    bool use_task_queue_pacer() const { return !tq_disabled.Get(); }
-
-    FieldTrialFlag tq_disabled;  // Kill-switch not normally used.
-    FieldTrialParameter<TimeDelta> holdback_window;
-    FieldTrialParameter<int> holdback_packets;
-  };
-
   void MaybeCreateControllers() RTC_RUN_ON(task_queue_);
   void UpdateInitialConstraints(TargetRateConstraints new_contraints)
       RTC_RUN_ON(task_queue_);
@@ -159,11 +141,10 @@ class RtpTransportControllerSend final
   void PostUpdates(NetworkControlUpdate update) RTC_RUN_ON(task_queue_);
   void UpdateControlState() RTC_RUN_ON(task_queue_);
   void UpdateCongestedState() RTC_RUN_ON(task_queue_);
-  RtpPacketPacer* pacer();
-  const RtpPacketPacer* pacer() const;
 
   Clock* const clock_;
   RtcEventLog* const event_log_;
+  TaskQueueFactory* const task_queue_factory_;
   SequenceChecker main_thread_;
   PacketRouter packet_router_;
   std::vector<std::unique_ptr<RtpVideoSenderInterface>> video_rtp_senders_
@@ -171,10 +152,7 @@ class RtpTransportControllerSend final
   RtpBitrateConfigurator bitrate_configurator_;
   std::map<std::string, rtc::NetworkRoute> network_routes_;
   bool pacer_started_;
-  const std::unique_ptr<ProcessThread> process_thread_;
-  const PacerSettings pacer_settings_;
-  std::unique_ptr<PacedSender> process_thread_pacer_;
-  std::unique_ptr<TaskQueuePacedSender> task_queue_pacer_;
+  TaskQueuePacedSender pacer_;
 
   TargetTransferRateObserver* observer_ RTC_GUARDED_BY(task_queue_);
   TransportFeedbackDemuxer feedback_demuxer_;
@@ -203,7 +181,6 @@ class RtpTransportControllerSend final
   StreamsConfig streams_config_ RTC_GUARDED_BY(task_queue_);
 
   const bool reset_feedback_on_route_change_;
-  const bool send_side_bwe_with_overhead_;
   const bool add_pacing_to_cwin_;
   FieldTrialParameter<DataRate> relay_bandwidth_cap_;
 
@@ -218,10 +195,8 @@ class RtpTransportControllerSend final
   // Protected by internal locks.
   RateLimiter retransmission_rate_limiter_;
 
-  // TODO(perkj): `task_queue_` is supposed to replace `process_thread_`.
-  // `task_queue_` is defined last to ensure all pending tasks are cancelled
-  // and deleted before any other members.
-  rtc::TaskQueue task_queue_;
+  ScopedTaskSafety safety_;
+  MaybeWorkerThread task_queue_;
 
   const FieldTrialsView& field_trials_;
 };

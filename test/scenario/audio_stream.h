@@ -59,7 +59,7 @@ class ReceiveAudioStream {
 
   void Start();
   void Stop();
-  AudioReceiveStream::Stats GetStats() const;
+  AudioReceiveStreamInterface::Stats GetStats() const;
 
  private:
   friend class Scenario;
@@ -69,7 +69,7 @@ class ReceiveAudioStream {
                      SendAudioStream* send_stream,
                      rtc::scoped_refptr<AudioDecoderFactory> decoder_factory,
                      Transport* feedback_transport);
-  AudioReceiveStream* receive_stream_ = nullptr;
+  AudioReceiveStreamInterface* receive_stream_ = nullptr;
   CallClient* const receiver_;
   const AudioStreamConfig config_;
 };
@@ -100,6 +100,10 @@ class AudioStreamPair {
   SendAudioStream send_stream_;
   ReceiveAudioStream receive_stream_;
 };
+
+std::vector<RtpExtension> GetAudioRtpExtensions(
+    const AudioStreamConfig& config);
+
 }  // namespace test
 }  // namespace webrtc
 

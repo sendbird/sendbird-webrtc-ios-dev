@@ -45,6 +45,7 @@
 #include "api/set_local_description_observer_interface.h"
 #include "api/set_remote_description_observer_interface.h"
 #include "api/stats/rtc_stats_collector_callback.h"
+#include "api/task_queue/pending_task_safety_flag.h"
 #include "api/transport/bitrate_settings.h"
 #include "api/transport/data_channel_transport_interface.h"
 #include "api/transport/enums.h"
@@ -60,6 +61,7 @@
 #include "pc/data_channel_utils.h"
 #include "pc/dtls_transport.h"
 #include "pc/jsep_transport_controller.h"
+#include "pc/legacy_stats_collector.h"
 #include "pc/peer_connection_internal.h"
 #include "pc/peer_connection_message_handler.h"
 #include "pc/rtc_stats_collector.h"
@@ -69,7 +71,6 @@
 #include "pc/sctp_data_channel.h"
 #include "pc/sdp_offer_answer.h"
 #include "pc/session_description.h"
-#include "pc/stats_collector.h"
 #include "pc/transceiver_list.h"
 #include "pc/transport_stats.h"
 #include "pc/usage_pattern.h"
@@ -78,15 +79,10 @@
 #include "rtc_base/rtc_certificate.h"
 #include "rtc_base/ssl_certificate.h"
 #include "rtc_base/ssl_stream_adapter.h"
-#include "rtc_base/task_utils/pending_task_safety_flag.h"
 #include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/weak_ptr.h"
-
-namespace cricket {
-class ChannelManager;
-}
 
 namespace webrtc {
 
@@ -129,6 +125,14 @@ class PeerConnection : public PeerConnectionInternal,
   RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> AddTrack(
       rtc::scoped_refptr<MediaStreamTrackInterface> track,
       const std::vector<std::string>& stream_ids) override;
+  RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> AddTrack(
+      rtc::scoped_refptr<MediaStreamTrackInterface> track,
+      const std::vector<std::string>& stream_ids,
+      const std::vector<RtpEncodingParameters>& init_send_encodings) override;
+  RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> AddTrack(
+      rtc::scoped_refptr<MediaStreamTrackInterface> track,
+      const std::vector<std::string>& stream_ids,
+      const std::vector<RtpEncodingParameters>* init_send_encodings);
   RTCError RemoveTrackOrError(
       rtc::scoped_refptr<RtpSenderInterface> sender) override;
 
@@ -273,6 +277,9 @@ class PeerConnection : public PeerConnectionInternal,
       rtc::scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>>
   GetTransceiversInternal() const override {
     RTC_DCHECK_RUN_ON(signaling_thread());
+    if (!ConfiguredForMedia()) {
+      return {};
+    }
     return rtp_manager()->transceivers()->List();
   }
 
@@ -290,6 +297,8 @@ class PeerConnection : public PeerConnectionInternal,
   std::map<std::string, cricket::TransportStats> GetTransportStatsByNames(
       const std::set<std::string>& transport_names) override;
   Call::Stats GetCallStats() override;
+
+  absl::optional<AudioDeviceModule::Stats> GetAudioDeviceStats() override;
 
   bool GetLocalCertificate(
       const std::string& transport_name,
@@ -317,9 +326,9 @@ class PeerConnection : public PeerConnectionInternal,
   bool ShouldFireNegotiationNeededEvent(uint32_t event_id) override;
 
   // Functions needed by SdpOfferAnswerHandler
-  StatsCollector* stats() override {
+  LegacyStatsCollector* legacy_stats() override {
     RTC_DCHECK_RUN_ON(signaling_thread());
-    return stats_.get();
+    return legacy_stats_.get();
   }
   DataChannelController* data_channel_controller() override {
     RTC_DCHECK_RUN_ON(signaling_thread());
@@ -368,13 +377,12 @@ class PeerConnection : public PeerConnectionInternal,
   void AddRemoteCandidate(const std::string& mid,
                           const cricket::Candidate& candidate) override;
 
-  // Report the UMA metric SdpFormatReceived for the given remote description.
-  void ReportSdpFormatReceived(
-      const SessionDescriptionInterface& remote_description) override;
-
   // Report the UMA metric BundleUsage for the given remote description.
   void ReportSdpBundleUsage(
       const SessionDescriptionInterface& remote_description) override;
+
+  // Report several UMA metrics on establishing the connection.
+  void ReportFirstConnectUsageMetrics() RTC_RUN_ON(signaling_thread());
 
   // Returns true if the PeerConnection is configured to use Unified Plan
   // semantics for creating offers/answers and setting local/remote
@@ -589,13 +597,11 @@ class PeerConnection : public PeerConnectionInternal,
       rtc::scoped_refptr<DtlsTransport> dtls_transport,
       DataChannelTransportInterface* data_channel_transport) override;
 
+  void SetSctpTransportName(std::string sctp_transport_name);
+
   std::function<void(const rtc::CopyOnWriteBuffer& packet,
                      int64_t packet_time_us)>
   InitializeRtcpCallback();
-
-  cricket::ChannelManager* channel_manager() {
-    return context_->channel_manager();
-  }
 
   const rtc::scoped_refptr<ConnectionContext> context_;
   // Field trials active for this PeerConnection is the first of:
@@ -656,7 +662,7 @@ class PeerConnection : public PeerConnectionInternal,
   // pointer).
   Call* const call_ptr_;
 
-  std::unique_ptr<StatsCollector> stats_
+  std::unique_ptr<LegacyStatsCollector> legacy_stats_
       RTC_GUARDED_BY(signaling_thread());  // A pointer is passed to senders_
   rtc::scoped_refptr<RTCStatsCollector> stats_collector_
       RTC_GUARDED_BY(signaling_thread());

@@ -98,9 +98,6 @@ class RTCPReceiver final {
 
   ~RTCPReceiver();
 
-  void IncomingPacket(const uint8_t* packet, size_t packet_size) {
-    IncomingPacket(rtc::MakeArrayView(packet, packet_size));
-  }
   void IncomingPacket(rtc::ArrayView<const uint8_t> packet);
 
   int64_t LastReceivedReportBlockMs() const;
@@ -376,7 +373,6 @@ class RTCPReceiver final {
   Clock* const clock_;
   const bool receiver_only_;
   ModuleRtpRtcp* const rtp_rtcp_;
-  const uint32_t main_ssrc_;
   // The set of registered local SSRCs.
   RegisteredSsrcs registered_ssrcs_;
 

@@ -48,15 +48,25 @@ std::unique_ptr<NetEq> CreateNetEq(
 
 }  // namespace
 
-AcmReceiver::AcmReceiver(const AudioCodingModule::Config& config)
+AcmReceiver::Config::Config(
+    rtc::scoped_refptr<AudioDecoderFactory> decoder_factory)
+    : clock(*Clock::GetRealTimeClock()), decoder_factory(decoder_factory) {
+  // Post-decode VAD is disabled by default in NetEq, however, Audio
+  // Conference Mixer relies on VAD decisions and fails without them.
+  neteq_config.enable_post_decode_vad = true;
+}
+
+AcmReceiver::Config::Config(const Config&) = default;
+AcmReceiver::Config::~Config() = default;
+
+AcmReceiver::AcmReceiver(const Config& config)
     : last_audio_buffer_(new int16_t[AudioFrame::kMaxDataSizeSamples]),
       neteq_(CreateNetEq(config.neteq_factory,
                          config.neteq_config,
-                         config.clock,
+                         &config.clock,
                          config.decoder_factory)),
       clock_(config.clock),
       resampled_last_output_frame_(true) {
-  RTC_DCHECK(clock_);
   memset(last_audio_buffer_.get(), 0,
          sizeof(int16_t) * AudioFrame::kMaxDataSizeSamples);
 }
@@ -287,6 +297,8 @@ void AcmReceiver::GetNetworkStatistics(
   acm_stat->jitterBufferDelayMs = neteq_lifetime_stat.jitter_buffer_delay_ms;
   acm_stat->jitterBufferTargetDelayMs =
       neteq_lifetime_stat.jitter_buffer_target_delay_ms;
+  acm_stat->jitterBufferMinimumDelayMs =
+      neteq_lifetime_stat.jitter_buffer_minimum_delay_ms;
   acm_stat->jitterBufferEmittedCount =
       neteq_lifetime_stat.jitter_buffer_emitted_count;
   acm_stat->delayedPacketOutageSamples =
@@ -302,13 +314,12 @@ void AcmReceiver::GetNetworkStatistics(
       neteq_lifetime_stat.removed_samples_for_acceleration;
   acm_stat->fecPacketsReceived = neteq_lifetime_stat.fec_packets_received;
   acm_stat->fecPacketsDiscarded = neteq_lifetime_stat.fec_packets_discarded;
+  acm_stat->packetsDiscarded = neteq_lifetime_stat.packets_discarded;
 
   NetEqOperationsAndState neteq_operations_and_state =
       neteq_->GetOperationsAndState();
   acm_stat->packetBufferFlushes =
       neteq_operations_and_state.packet_buffer_flushes;
-  acm_stat->packetsDiscarded =
-      neteq_operations_and_state.discarded_primary_packets;
 }
 
 int AcmReceiver::EnableNack(size_t max_nack_list_size) {
@@ -336,7 +347,7 @@ uint32_t AcmReceiver::NowInTimestamp(int decoder_sampling_rate) const {
   // We masked 6 most significant bits of 32-bit so there is no overflow in
   // the conversion from milliseconds to timestamp.
   const uint32_t now_in_ms =
-      static_cast<uint32_t>(clock_->TimeInMilliseconds() & 0x03ffffff);
+      static_cast<uint32_t>(clock_.TimeInMilliseconds() & 0x03ffffff);
   return static_cast<uint32_t>((decoder_sampling_rate / 1000) * now_in_ms);
 }
 

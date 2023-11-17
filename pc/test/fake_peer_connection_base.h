@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/types/optional.h"
 #include "api/field_trials_view.h"
 #include "api/sctp_transport_interface.h"
 #include "pc/peer_connection_internal.h"
@@ -28,8 +29,6 @@ namespace webrtc {
 // FakePeerConnectionBase then overriding the interesting methods. This class
 // takes care of providing default implementations for all the pure virtual
 // functions specified in the interfaces.
-// TODO(nisse): Try to replace this with DummyPeerConnection, from
-// api/test/ ?
 class FakePeerConnectionBase : public PeerConnectionInternal {
  public:
   // PeerConnectionInterface implementation.
@@ -49,6 +48,13 @@ class FakePeerConnectionBase : public PeerConnectionInternal {
   RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> AddTrack(
       rtc::scoped_refptr<MediaStreamTrackInterface> track,
       const std::vector<std::string>& stream_ids) override {
+    return RTCError(RTCErrorType::UNSUPPORTED_OPERATION, "Not implemented");
+  }
+
+  RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> AddTrack(
+      rtc::scoped_refptr<MediaStreamTrackInterface> track,
+      const std::vector<std::string>& stream_ids,
+      const std::vector<RtpEncodingParameters>& init_send_encodings) override {
     return RTCError(RTCErrorType::UNSUPPORTED_OPERATION, "Not implemented");
   }
 
@@ -268,6 +274,10 @@ class FakePeerConnectionBase : public PeerConnectionInternal {
 
   Call::Stats GetCallStats() override { return Call::Stats(); }
 
+  absl::optional<AudioDeviceModule::Stats> GetAudioDeviceStats() override {
+    return absl::nullopt;
+  }
+
   bool GetLocalCertificate(
       const std::string& transport_name,
       rtc::scoped_refptr<rtc::RTCCertificate>* certificate) override {
@@ -296,9 +306,6 @@ class FakePeerConnectionBase : public PeerConnectionInternal {
     return nullptr;
   }
 
-  void ReportSdpFormatReceived(
-      const SessionDescriptionInterface& remote_description) override {}
-
   void ReportSdpBundleUsage(
       const SessionDescriptionInterface& remote_description) override {}
 
@@ -315,7 +322,7 @@ class FakePeerConnectionBase : public PeerConnectionInternal {
   JsepTransportController* transport_controller_n() override { return nullptr; }
   DataChannelController* data_channel_controller() override { return nullptr; }
   cricket::PortAllocator* port_allocator() override { return nullptr; }
-  StatsCollector* stats() override { return nullptr; }
+  LegacyStatsCollector* legacy_stats() override { return nullptr; }
   PeerConnectionObserver* Observer() const override { return nullptr; }
   bool GetSctpSslRole(rtc::SSLRole* role) override { return false; }
   PeerConnectionInterface::IceConnectionState ice_connection_state_internal()

@@ -25,6 +25,7 @@
 #include "api/audio_codecs/audio_format.h"
 #include "api/rtp_headers.h"
 #include "api/transport/network_types.h"
+#include "api/units/time_delta.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/remote_estimate.h"
 #include "system_wrappers/include/clock.h"
 
@@ -71,9 +72,12 @@ enum RTPExtensionType : int {
   kRtpExtensionRtpStreamId,
   kRtpExtensionRepairedRtpStreamId,
   kRtpExtensionMid,
-  kRtpExtensionGenericFrameDescriptor00,
-  kRtpExtensionGenericFrameDescriptor = kRtpExtensionGenericFrameDescriptor00,
-  kRtpExtensionGenericFrameDescriptor02,
+  kRtpExtensionGenericFrameDescriptor,
+  kRtpExtensionGenericFrameDescriptor00 [[deprecated]] =
+      kRtpExtensionGenericFrameDescriptor,
+  kRtpExtensionDependencyDescriptor,
+  kRtpExtensionGenericFrameDescriptor02 [[deprecated]] =
+      kRtpExtensionDependencyDescriptor,
   kRtpExtensionColorSpace,
   kRtpExtensionVideoFrameTrackingId,
   kRtpExtensionNumberOfExtensions  // Must be the last entity in the enum.
@@ -175,17 +179,6 @@ struct RtpState {
   bool ssrc_has_acked;
 };
 
-// Callback interface for packets recovered by FlexFEC or ULPFEC. In
-// the FlexFEC case, the implementation should be able to demultiplex
-// the recovered RTP packets based on SSRC.
-class RecoveredPacketReceiver {
- public:
-  virtual void OnRecoveredPacket(const uint8_t* packet, size_t length) = 0;
-
- protected:
-  virtual ~RecoveredPacketReceiver() = default;
-};
-
 class RtcpIntraFrameObserver {
  public:
   virtual ~RtcpIntraFrameObserver() {}
@@ -230,9 +223,6 @@ enum class RtpPacketMediaType : size_t {
 };
 
 struct RtpPacketSendInfo {
- public:
-  RtpPacketSendInfo() = default;
-
   uint16_t transport_sequence_number = 0;
   absl::optional<uint32_t> media_ssrc;
   uint16_t rtp_sequence_number = 0;  // Only valid if `media_ssrc` is set.
@@ -311,12 +301,14 @@ struct RtpPacketCounter {
       : header_bytes(0), payload_bytes(0), padding_bytes(0), packets(0) {}
 
   explicit RtpPacketCounter(const RtpPacket& packet);
+  explicit RtpPacketCounter(const RtpPacketToSend& packet_to_send);
 
   void Add(const RtpPacketCounter& other) {
     header_bytes += other.header_bytes;
     payload_bytes += other.payload_bytes;
     padding_bytes += other.padding_bytes;
     packets += other.packets;
+    total_packet_delay += other.total_packet_delay;
   }
 
   void Subtract(const RtpPacketCounter& other) {
@@ -328,16 +320,20 @@ struct RtpPacketCounter {
     padding_bytes -= other.padding_bytes;
     RTC_DCHECK_GE(packets, other.packets);
     packets -= other.packets;
+    RTC_DCHECK_GE(total_packet_delay, other.total_packet_delay);
+    total_packet_delay -= other.total_packet_delay;
   }
 
   bool operator==(const RtpPacketCounter& other) const {
     return header_bytes == other.header_bytes &&
            payload_bytes == other.payload_bytes &&
-           padding_bytes == other.padding_bytes && packets == other.packets;
+           padding_bytes == other.padding_bytes && packets == other.packets &&
+           total_packet_delay == other.total_packet_delay;
   }
 
   // Not inlined, since use of RtpPacket would result in circular includes.
   void AddPacket(const RtpPacket& packet);
+  void AddPacket(const RtpPacketToSend& packet_to_send);
 
   size_t TotalBytes() const {
     return header_bytes + payload_bytes + padding_bytes;
@@ -347,6 +343,9 @@ struct RtpPacketCounter {
   size_t payload_bytes;  // Payload bytes, excluding RTP headers and padding.
   size_t padding_bytes;  // Number of padding bytes.
   uint32_t packets;      // Number of packets.
+  // The total delay of all `packets`. For RtpPacketToSend packets, this is
+  // `time_in_send_queue()`. For receive packets, this is zero.
+  webrtc::TimeDelta total_packet_delay = webrtc::TimeDelta::Zero();
 };
 
 // Data usage statistics for a (rtp) stream.
@@ -442,7 +441,10 @@ struct RtpReceiveStats {
   // RTCReceivedRtpStreamStats dictionary, see
   // https://w3c.github.io/webrtc-stats/#receivedrtpstats-dict*
   int32_t packets_lost = 0;
+  // Interarrival jitter in samples.
   uint32_t jitter = 0;
+  // Interarrival jitter in time.
+  webrtc::TimeDelta interarrival_jitter = webrtc::TimeDelta::Zero();
 
   // Timestamp and counters exposed in RTCInboundRtpStreamStats, see
   // https://w3c.github.io/webrtc-stats/#inboundrtpstats-dict*
@@ -466,7 +468,6 @@ class SendSideDelayObserver {
   virtual ~SendSideDelayObserver() {}
   virtual void SendSideDelayUpdated(int avg_delay_ms,
                                     int max_delay_ms,
-                                    uint64_t total_delay_ms,
                                     uint32_t ssrc) = 0;
 };
 
