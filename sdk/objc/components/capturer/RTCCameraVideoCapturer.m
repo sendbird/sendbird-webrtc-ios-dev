@@ -523,7 +523,33 @@ const int64_t kNanosecondsPerSecond = 1000000000;
   NSAssert([RTC_OBJC_TYPE(RTCDispatcher) isOnQueueForType:RTCDispatcherTypeCaptureSession],
            @"updateOrientation must be called on the capture queue.");
 #if TARGET_OS_IPHONE
-  _orientation = [UIDevice currentDevice].orientation;
+  [RTC_OBJC_TYPE(RTCDispatcher)
+      dispatchAsyncOnType:RTCDispatcherTypeMain
+                    block:^{
+    UIInterfaceOrientation interfaceOrientation = [UIApplication sharedApplication].statusBarOrientation;
+  
+    [RTC_OBJC_TYPE(RTCDispatcher)
+        dispatchAsyncOnType:RTCDispatcherTypeCaptureSession
+                      block:^{
+        switch (interfaceOrientation) {
+          case UIInterfaceOrientationPortrait: 
+            self->_orientation = UIDeviceOrientationPortrait;
+            break;
+          case UIInterfaceOrientationPortraitUpsideDown: 
+            self->_orientation = UIDeviceOrientationPortraitUpsideDown;
+            break;
+          case UIInterfaceOrientationLandscapeLeft: 
+            self->_orientation = UIDeviceOrientationLandscapeLeft;
+            break;
+          case UIInterfaceOrientationLandscapeRight: 
+            self->_orientation = UIDeviceOrientationLandscapeRight;
+            break;
+          case UIInterfaceOrientationUnknown:
+            self->_orientation = UIDeviceOrientationUnknown;
+            break;
+        }
+                      }];
+                    }];
 #endif
 }
 
