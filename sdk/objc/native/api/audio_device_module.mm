@@ -19,7 +19,7 @@
 namespace webrtc {
 
 webrtc::scoped_refptr<AudioDeviceModule> CreateAudioDeviceModule(
-    bool bypass_voice_processing) {
+    bool bypass_voice_processing, webrtc::AudioSourceSink* audioSink) {
   RTC_DLOG(LS_INFO) << __FUNCTION__;
 #if defined(WEBRTC_IOS)
   return webrtc::make_ref_counted<ios_adm::AudioDeviceModuleIOS>(
