@@ -14,6 +14,7 @@
 #include "test/field_trial.h"
 #include "test/gtest.h"
 #include "test/scenario/scenario.h"
+#include "test/video_test_constants.h"
 
 namespace webrtc {
 namespace test {
@@ -176,7 +177,9 @@ TEST(VideoStreamTest, SendsFecWithFlexFec) {
   s.RunFor(TimeDelta::Seconds(5));
   VideoSendStream::Stats video_stats;
   route->first()->SendTask([&]() { video_stats = video->send()->GetStats(); });
-  EXPECT_GT(video_stats.substreams.begin()->second.rtp_stats.fec.packets, 0u);
+  EXPECT_GT(video_stats.substreams[VideoTestConstants::kFlexfecSendSsrc]
+                .rtp_stats.fec.packets,
+            0u);
 }
 
 TEST(VideoStreamTest, ResolutionAdaptsToAvailableBandwidth) {
@@ -248,7 +251,7 @@ TEST(VideoStreamTest, ResolutionAdaptsToAvailableBandwidth) {
   num_qvga_frames_ = 0;
   num_vga_frames_ = 0;
 
-  s.RunFor(TimeDelta::Seconds(40));
+  s.RunFor(TimeDelta::Seconds(70));
   EXPECT_GT(num_qvga_frames_, 0u);
   EXPECT_GT(num_vga_frames_, 0u);
 }

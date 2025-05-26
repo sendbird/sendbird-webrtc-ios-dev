@@ -10,17 +10,29 @@
 #include "modules/video_coding/deprecated/jitter_buffer.h"
 
 #include <algorithm>
-#include <limits>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
 #include <utility>
+#include <vector>
 
+#include "api/field_trials_view.h"
+#include "api/units/data_size.h"
 #include "api/units/timestamp.h"
+#include "api/video/video_frame_type.h"
+#include "modules/include/module_common_types_public.h"
+#include "modules/video_coding/deprecated/decoding_state.h"
+#include "modules/video_coding/deprecated/event_wrapper.h"
 #include "modules/video_coding/deprecated/frame_buffer.h"
 #include "modules/video_coding/deprecated/jitter_buffer_common.h"
 #include "modules/video_coding/deprecated/packet.h"
+#include "modules/video_coding/deprecated/session_info.h"
 #include "modules/video_coding/timing/inter_frame_delay_variation_calculator.h"
 #include "modules/video_coding/timing/jitter_estimator.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "system_wrappers/include/clock.h"
 
 namespace webrtc {
@@ -38,7 +50,7 @@ bool HasNonEmptyState(FrameListPair pair) {
 }
 
 void FrameList::InsertFrame(VCMFrameBuffer* frame) {
-  insert(rbegin().base(), FrameListPair(frame->Timestamp(), frame));
+  insert(rbegin().base(), FrameListPair(frame->RtpTimestamp(), frame));
 }
 
 VCMFrameBuffer* FrameList::PopFrame(uint32_t timestamp) {
@@ -286,7 +298,7 @@ VCMEncodedFrame* VCMJitterBuffer::ExtractAndSetDecode(uint32_t timestamp) {
       // Wait for this one to get complete.
       waiting_for_completion_.frame_size = frame->size();
       waiting_for_completion_.latest_packet_time = frame->LatestPacketTimeMs();
-      waiting_for_completion_.timestamp = frame->Timestamp();
+      waiting_for_completion_.timestamp = frame->RtpTimestamp();
     }
   }
 
@@ -521,7 +533,8 @@ bool VCMJitterBuffer::IsContinuous(const VCMFrameBuffer& frame) const {
   for (FrameList::const_iterator it = decodable_frames_.begin();
        it != decodable_frames_.end(); ++it) {
     VCMFrameBuffer* decodable_frame = it->second;
-    if (IsNewerTimestamp(decodable_frame->Timestamp(), frame.Timestamp())) {
+    if (IsNewerTimestamp(decodable_frame->RtpTimestamp(),
+                         frame.RtpTimestamp())) {
       break;
     }
     decoding_state.SetState(decodable_frame);
@@ -555,7 +568,7 @@ void VCMJitterBuffer::FindAndInsertContinuousFramesWithState(
        it != incomplete_frames_.end();) {
     VCMFrameBuffer* frame = it->second;
     if (IsNewerTimestamp(original_decoded_state.time_stamp(),
-                         frame->Timestamp())) {
+                         frame->RtpTimestamp())) {
       ++it;
       continue;
     }
@@ -574,7 +587,7 @@ void VCMJitterBuffer::FindAndInsertContinuousFramesWithState(
 uint32_t VCMJitterBuffer::EstimatedJitterMs() {
   MutexLock lock(&mutex_);
   const double rtt_mult = 1.0f;
-  return jitter_estimate_.GetJitterEstimate(rtt_mult, absl::nullopt).ms();
+  return jitter_estimate_.GetJitterEstimate(rtt_mult, std::nullopt).ms();
 }
 
 void VCMJitterBuffer::SetNackSettings(size_t max_nack_list_size,
@@ -592,11 +605,11 @@ int VCMJitterBuffer::NonContinuousOrIncompleteDuration() {
   if (incomplete_frames_.empty()) {
     return 0;
   }
-  uint32_t start_timestamp = incomplete_frames_.Front()->Timestamp();
+  uint32_t start_timestamp = incomplete_frames_.Front()->RtpTimestamp();
   if (!decodable_frames_.empty()) {
-    start_timestamp = decodable_frames_.Back()->Timestamp();
+    start_timestamp = decodable_frames_.Back()->RtpTimestamp();
   }
-  return incomplete_frames_.Back()->Timestamp() - start_timestamp;
+  return incomplete_frames_.Back()->RtpTimestamp() - start_timestamp;
 }
 
 uint16_t VCMJitterBuffer::EstimatedLowSequenceNumber(
@@ -861,7 +874,7 @@ void VCMJitterBuffer::UpdateJitterEstimate(const VCMFrameBuffer& frame,
   }
   // No retransmitted frames should be a part of the jitter
   // estimate.
-  UpdateJitterEstimate(frame.LatestPacketTimeMs(), frame.Timestamp(),
+  UpdateJitterEstimate(frame.LatestPacketTimeMs(), frame.RtpTimestamp(),
                        frame.size(), incomplete_frame);
 }
 

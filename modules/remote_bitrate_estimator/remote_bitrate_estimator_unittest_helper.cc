@@ -10,13 +10,19 @@
 #include "modules/remote_bitrate_estimator/remote_bitrate_estimator_unittest_helper.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <utility>
+#include <vector>
 
+#include "api/units/data_rate.h"
+#include "api/units/timestamp.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/checks.h"
+#include "test/gtest.h"
 
 namespace webrtc {
 
@@ -29,7 +35,7 @@ const int kNumInitialPackets = 2;
 namespace testing {
 
 void TestBitrateObserver::OnReceiveBitrateChanged(
-    const std::vector<uint32_t>& ssrcs,
+    const std::vector<uint32_t>& /* ssrcs */,
     uint32_t bitrate) {
   latest_bitrate_ = bitrate;
   updated_ = true;
@@ -251,7 +257,7 @@ void RemoteBitrateEstimatorTest::IncomingPacket(uint32_t ssrc,
 // Returns true if an over-use was seen, false otherwise.
 // The StreamGenerator::updated() should be used to check for any changes in
 // target bitrate after the call to this function.
-bool RemoteBitrateEstimatorTest::GenerateAndProcessFrame(uint32_t ssrc,
+bool RemoteBitrateEstimatorTest::GenerateAndProcessFrame(uint32_t /* ssrc */,
                                                          uint32_t bitrate_bps) {
   RTC_DCHECK_GT(bitrate_bps, 0);
   stream_generator_->SetBitrateBps(bitrate_bps);
@@ -477,7 +483,8 @@ void RemoteBitrateEstimatorTest::CapacityDropTestHelper(
   uint32_t bitrate_bps = SteadyStateRun(
       kDefaultSsrc, steady_state_time * kFramerate, kStartBitrate,
       kMinExpectedBitrate, kMaxExpectedBitrate, kInitialCapacityBps);
-  EXPECT_NEAR(kInitialCapacityBps, bitrate_bps, 130000u);
+  EXPECT_GE(bitrate_bps, 0.85 * kInitialCapacityBps);
+  EXPECT_LE(bitrate_bps, 1.05 * kInitialCapacityBps);
   bitrate_observer_->Reset();
 
   // Add an offset to make sure the BWE can handle it.

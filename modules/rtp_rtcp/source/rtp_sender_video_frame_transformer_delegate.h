@@ -11,18 +11,27 @@
 #ifndef MODULES_RTP_RTCP_SOURCE_RTP_SENDER_VIDEO_FRAME_TRANSFORMER_DELEGATE_H_
 #define MODULES_RTP_RTCP_SOURCE_RTP_SENDER_VIDEO_FRAME_TRANSFORMER_DELEGATE_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
+#include "api/array_view.h"
 #include "api/frame_transformer_interface.h"
 #include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/task_queue/task_queue_factory.h"
+#include "api/transport/rtp/dependency_descriptor.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
+#include "api/video/encoded_image.h"
+#include "api/video/video_codec_type.h"
 #include "api/video/video_layers_allocation.h"
+#include "modules/rtp_rtcp/source/rtp_video_header.h"
 #include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 
@@ -31,10 +40,10 @@ namespace webrtc {
 class RTPVideoFrameSenderInterface {
  public:
   virtual bool SendVideo(int payload_type,
-                         absl::optional<VideoCodecType> codec_type,
+                         std::optional<VideoCodecType> codec_type,
                          uint32_t rtp_timestamp,
                          Timestamp capture_time,
-                         rtc::ArrayView<const uint8_t> payload,
+                         ArrayView<const uint8_t> payload,
                          size_t encoder_output_size,
                          RTPVideoHeader video_header,
                          TimeDelta expected_retransmission_time,
@@ -56,7 +65,7 @@ class RTPSenderVideoFrameTransformerDelegate : public TransformedFrameCallback {
  public:
   RTPSenderVideoFrameTransformerDelegate(
       RTPVideoFrameSenderInterface* sender,
-      rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
+      scoped_refptr<FrameTransformerInterface> frame_transformer,
       uint32_t ssrc,
       TaskQueueFactory* send_transport_queue);
 
@@ -64,7 +73,7 @@ class RTPSenderVideoFrameTransformerDelegate : public TransformedFrameCallback {
 
   // Delegates the call to FrameTransformerInterface::TransformFrame.
   bool TransformFrame(int payload_type,
-                      absl::optional<VideoCodecType> codec_type,
+                      std::optional<VideoCodecType> codec_type,
                       uint32_t rtp_timestamp,
                       const EncodedImage& encoded_image,
                       RTPVideoHeader video_header,
@@ -74,6 +83,8 @@ class RTPSenderVideoFrameTransformerDelegate : public TransformedFrameCallback {
   // the transformed frame to be sent on the `encoder_queue_`.
   void OnTransformedFrame(
       std::unique_ptr<TransformableFrameInterface> frame) override;
+
+  void StartShortCircuiting() override;
 
   // Delegates the call to RTPSendVideo::SendVideo on the `encoder_queue_`.
   void SendVideo(std::unique_ptr<TransformableFrameInterface> frame) const
@@ -102,11 +113,12 @@ class RTPSenderVideoFrameTransformerDelegate : public TransformedFrameCallback {
 
   mutable Mutex sender_lock_;
   RTPVideoFrameSenderInterface* sender_ RTC_GUARDED_BY(sender_lock_);
-  rtc::scoped_refptr<FrameTransformerInterface> frame_transformer_;
+  scoped_refptr<FrameTransformerInterface> frame_transformer_;
   const uint32_t ssrc_;
   // Used when the encoded frames arrives without a current task queue. This can
   // happen if a hardware encoder was used.
   std::unique_ptr<TaskQueueBase, TaskQueueDeleter> transformation_queue_;
+  bool short_circuit_ RTC_GUARDED_BY(sender_lock_) = false;
 };
 
 // Method to support cloning a Sender frame from another frame

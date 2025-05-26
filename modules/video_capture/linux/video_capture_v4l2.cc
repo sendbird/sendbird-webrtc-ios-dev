@@ -112,7 +112,6 @@ VideoCaptureModuleV4L2::~VideoCaptureModuleV4L2() {
 int32_t VideoCaptureModuleV4L2::StartCapture(
     const VideoCaptureCapability& capability) {
   RTC_DCHECK_RUN_ON(&api_checker_);
-  RTC_CHECK_RUNS_SERIALIZED(&capture_checker_);
 
   if (_captureStarted) {
     if (capability == _requestedCapability) {
@@ -121,6 +120,13 @@ int32_t VideoCaptureModuleV4L2::StartCapture(
       StopCapture();
     }
   }
+
+  // We don't want members above to be guarded by capture_checker_ as
+  // it's meant to be for members that are accessed on the API thread
+  // only when we are not capturing. The code above can be called many
+  // times while sharing instance of VideoCaptureV4L2 between websites
+  // and therefore it would not follow the requirements of this checker.
+  RTC_CHECK_RUNS_SERIALIZED(&capture_checker_);
 
   // Set a baseline of configured parameters. It is updated here during
   // configuration, then read from the capture thread.
@@ -166,8 +172,7 @@ int32_t VideoCaptureModuleV4L2::StartCapture(
   fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   RTC_LOG(LS_INFO) << "Video Capture enumerats supported image formats:";
   while (ioctl(_deviceFd, VIDIOC_ENUM_FMT, &fmt) == 0) {
-    RTC_LOG(LS_INFO) << "  { pixelformat = "
-                     << cricket::GetFourccName(fmt.pixelformat)
+    RTC_LOG(LS_INFO) << "  { pixelformat = " << GetFourccName(fmt.pixelformat)
                      << ", description = '" << fmt.description << "' }";
     // Match the preferred order.
     for (int i = 0; i < nFormats; i++) {
@@ -182,8 +187,7 @@ int32_t VideoCaptureModuleV4L2::StartCapture(
     RTC_LOG(LS_INFO) << "no supporting video formats found";
     return -1;
   } else {
-    RTC_LOG(LS_INFO) << "We prefer format "
-                     << cricket::GetFourccName(fmts[fmtsIdx]);
+    RTC_LOG(LS_INFO) << "We prefer format " << GetFourccName(fmts[fmtsIdx]);
   }
 
   struct v4l2_format video_fmt;
@@ -283,17 +287,17 @@ int32_t VideoCaptureModuleV4L2::StartCapture(
 
   _requestedCapability = capability;
   _captureStarted = true;
+  _streaming = true;
 
   // start capture thread;
   if (_captureThread.empty()) {
     quit_ = false;
-    _captureThread = rtc::PlatformThread::SpawnJoinable(
+    _captureThread = PlatformThread::SpawnJoinable(
         [this] {
           while (CaptureProcess()) {
           }
         },
-        "CaptureThread",
-        rtc::ThreadAttributes().SetPriority(rtc::ThreadPriority::kHigh));
+        "CaptureThread", ThreadAttributes().SetPriority(ThreadPriority::kHigh));
   }
   return 0;
 }
@@ -310,10 +314,12 @@ int32_t VideoCaptureModuleV4L2::StopCapture() {
     _captureThread.Finalize();
   }
 
+  _captureStarted = false;
+
   RTC_CHECK_RUNS_SERIALIZED(&capture_checker_);
   MutexLock lock(&capture_lock_);
-  if (_captureStarted) {
-    _captureStarted = false;
+  if (_streaming) {
+    _streaming = false;
 
     DeAllocateVideoBuffers();
     close(_deviceFd);
@@ -397,7 +403,7 @@ bool VideoCaptureModuleV4L2::DeAllocateVideoBuffers() {
 }
 
 bool VideoCaptureModuleV4L2::CaptureStarted() {
-  RTC_CHECK_RUNS_SERIALIZED(&capture_checker_);
+  RTC_DCHECK_RUN_ON(&api_checker_);
   return _captureStarted;
 }
 
@@ -434,7 +440,7 @@ bool VideoCaptureModuleV4L2::CaptureProcess() {
       return true;
     }
 
-    if (_captureStarted) {
+    if (_streaming) {
       struct v4l2_buffer buf;
       memset(&buf, 0, sizeof(struct v4l2_buffer));
       buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;

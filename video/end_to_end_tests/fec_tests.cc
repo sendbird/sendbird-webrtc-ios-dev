@@ -14,7 +14,6 @@
 #include "api/test/simulated_network.h"
 #include "api/test/video/function_video_encoder_factory.h"
 #include "call/fake_network_pipe.h"
-#include "call/simulated_network.h"
 #include "media/engine/internal_decoder_factory.h"
 #include "modules/include/module_common_types_public.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
@@ -25,6 +24,7 @@
 #include "test/field_trial.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/network/simulated_network.h"
 #include "test/rtcp_packet_parser.h"
 #include "test/video_test_constants.h"
 
@@ -51,16 +51,19 @@ class FecEndToEndTest : public test::CallTest {
 
 TEST_F(FecEndToEndTest, ReceivesUlpfec) {
   class UlpfecRenderObserver : public test::EndToEndTest,
-                               public rtc::VideoSinkInterface<VideoFrame> {
+                               public VideoSinkInterface<VideoFrame> {
    public:
     UlpfecRenderObserver()
         : EndToEndTest(test::VideoTestConstants::kDefaultTimeout),
-          encoder_factory_([]() { return VP8Encoder::Create(); }),
+          encoder_factory_(
+              [](const Environment& env, const SdpVideoFormat& format) {
+                return CreateVp8Encoder(env);
+              }),
           random_(0xcafef00d1),
           num_packets_sent_(0) {}
 
    private:
-    Action OnSendRtp(rtc::ArrayView<const uint8_t> packet) override {
+    Action OnSendRtp(ArrayView<const uint8_t> packet) override {
       MutexLock lock(&mutex_);
       RtpPacket rtp_packet;
       EXPECT_TRUE(rtp_packet.Parse(packet));
@@ -110,7 +113,7 @@ TEST_F(FecEndToEndTest, ReceivesUlpfec) {
       MutexLock lock(&mutex_);
       // Rendering frame with timestamp of packet that was dropped -> FEC
       // protection worked.
-      auto it = dropped_timestamps_.find(video_frame.timestamp());
+      auto it = dropped_timestamps_.find(video_frame.rtp_timestamp());
       if (it != dropped_timestamps_.end()) {
         observation_complete_.Set();
       }
@@ -166,7 +169,7 @@ TEST_F(FecEndToEndTest, ReceivesUlpfec) {
 }
 
 class FlexfecRenderObserver : public test::EndToEndTest,
-                              public rtc::VideoSinkInterface<VideoFrame> {
+                              public VideoSinkInterface<VideoFrame> {
  public:
   static constexpr uint32_t kVideoLocalSsrc = 123;
   static constexpr uint32_t kFlexfecLocalSsrc = 456;
@@ -182,7 +185,7 @@ class FlexfecRenderObserver : public test::EndToEndTest,
   size_t GetNumFlexfecStreams() const override { return 1; }
 
  private:
-  Action OnSendRtp(rtc::ArrayView<const uint8_t> packet) override {
+  Action OnSendRtp(ArrayView<const uint8_t> packet) override {
     MutexLock lock(&mutex_);
     RtpPacket rtp_packet;
     EXPECT_TRUE(rtp_packet.Parse(packet));
@@ -255,7 +258,7 @@ class FlexfecRenderObserver : public test::EndToEndTest,
     return SEND_PACKET;
   }
 
-  Action OnReceiveRtcp(rtc::ArrayView<const uint8_t> data) override {
+  Action OnReceiveRtcp(ArrayView<const uint8_t> data) override {
     test::RtcpPacketParser parser;
 
     parser.Parse(data);
@@ -289,7 +292,7 @@ class FlexfecRenderObserver : public test::EndToEndTest,
     MutexLock lock(&mutex_);
     // Rendering frame with timestamp of packet that was dropped -> FEC
     // protection worked.
-    auto it = dropped_timestamps_.find(video_frame.timestamp());
+    auto it = dropped_timestamps_.find(video_frame.rtp_timestamp());
     if (it != dropped_timestamps_.end()) {
       if (!expect_flexfec_rtcp_ || received_flexfec_rtcp_) {
         observation_complete_.Set();
@@ -372,10 +375,13 @@ TEST_F(FecEndToEndTest, ReceivedUlpfecPacketsNotNacked) {
           ulpfec_sequence_number_(0),
           has_last_sequence_number_(false),
           last_sequence_number_(0),
-          encoder_factory_([]() { return VP8Encoder::Create(); }) {}
+          encoder_factory_(
+              [](const Environment& env, const SdpVideoFormat& format) {
+                return CreateVp8Encoder(env);
+              }) {}
 
    private:
-    Action OnSendRtp(rtc::ArrayView<const uint8_t> packet) override {
+    Action OnSendRtp(ArrayView<const uint8_t> packet) override {
       MutexLock lock_(&mutex_);
       RtpPacket rtp_packet;
       EXPECT_TRUE(rtp_packet.Parse(packet));
@@ -443,7 +449,7 @@ TEST_F(FecEndToEndTest, ReceivedUlpfecPacketsNotNacked) {
       return SEND_PACKET;
     }
 
-    Action OnReceiveRtcp(rtc::ArrayView<const uint8_t> packet) override {
+    Action OnReceiveRtcp(ArrayView<const uint8_t> packet) override {
       MutexLock lock_(&mutex_);
       if (state_ == kVerifyUlpfecPacketNotInNackList) {
         test::RtcpPacketParser rtcp_parser;

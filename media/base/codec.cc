@@ -10,59 +10,32 @@
 
 #include "media/base/codec.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <iterator>
+#include <optional>
+#include <string>
+#include <vector>
+
 #include "absl/algorithm/container.h"
 #include "absl/strings/match.h"
+#include "absl/strings/str_cat.h"
 #include "api/audio_codecs/audio_format.h"
-#include "api/video_codecs/av1_profile.h"
+#include "api/media_types.h"
+#include "api/rtp_parameters.h"
 #include "api/video_codecs/h264_profile_level_id.h"
-#include "api/video_codecs/vp9_profile.h"
+#include "api/video_codecs/sdp_video_format.h"
+#ifdef RTC_ENABLE_H265
+#include "api/video_codecs/h265_profile_tier_level.h"  // IWYU pragma: keep
+#endif
+#include "media/base/codec_comparators.h"
 #include "media/base/media_constants.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/string_encode.h"
 #include "rtc_base/strings/string_builder.h"
 
-namespace cricket {
-namespace {
-
-std::string GetH264PacketizationModeOrDefault(const CodecParameterMap& params) {
-  auto it = params.find(kH264FmtpPacketizationMode);
-  if (it != params.end()) {
-    return it->second;
-  }
-  // If packetization-mode is not present, default to "0".
-  // https://tools.ietf.org/html/rfc6184#section-6.2
-  return "0";
-}
-
-bool IsSameH264PacketizationMode(const CodecParameterMap& left,
-                                 const CodecParameterMap& right) {
-  return GetH264PacketizationModeOrDefault(left) ==
-         GetH264PacketizationModeOrDefault(right);
-}
-
-// Some (video) codecs are actually families of codecs and rely on parameters
-// to distinguish different incompatible family members.
-bool IsSameCodecSpecific(const std::string& name1,
-                         const CodecParameterMap& params1,
-                         const std::string& name2,
-                         const CodecParameterMap& params2) {
-  // The names might not necessarily match, so check both.
-  auto either_name_matches = [&](const std::string name) {
-    return absl::EqualsIgnoreCase(name, name1) ||
-           absl::EqualsIgnoreCase(name, name2);
-  };
-  if (either_name_matches(kH264CodecName))
-    return webrtc::H264IsSameProfile(params1, params2) &&
-           IsSameH264PacketizationMode(params1, params2);
-  if (either_name_matches(kVp9CodecName))
-    return webrtc::VP9IsSameProfile(params1, params2);
-  if (either_name_matches(kAv1CodecName))
-    return webrtc::AV1IsSameProfile(params1, params2);
-  return true;
-}
-
-}  // namespace
+namespace webrtc {
 
 FeedbackParams::FeedbackParams() = default;
 FeedbackParams::~FeedbackParams() = default;
@@ -90,6 +63,15 @@ void FeedbackParams::Add(const FeedbackParam& param) {
   }
   params_.push_back(param);
   RTC_CHECK(!HasDuplicateEntries());
+}
+
+bool FeedbackParams::Remove(const FeedbackParam& param) {
+  if (!Has(param)) {
+    return false;
+  }
+  params_.erase(std::remove(params_.begin(), params_.end(), param),
+                params_.end());
+  return true;
 }
 
 void FeedbackParams::Intersect(const FeedbackParams& from) {
@@ -130,15 +112,15 @@ Codec::Codec(Type type,
       bitrate(0),
       channels(channels) {}
 
-Codec::Codec(Type type) : Codec(type, 0, "", 0) {}
+Codec::Codec(Type type) : Codec(type, kIdNotSet, "", 0) {}
 
 Codec::Codec(const webrtc::SdpAudioFormat& c)
-    : Codec(Type::kAudio, 0, c.name, c.clockrate_hz, c.num_channels) {
+    : Codec(Type::kAudio, kIdNotSet, c.name, c.clockrate_hz, c.num_channels) {
   params = c.parameters;
 }
 
 Codec::Codec(const webrtc::SdpVideoFormat& c)
-    : Codec(Type::kVideo, 0, c.name, kVideoCodecClockrate) {
+    : Codec(Type::kVideo, kIdNotSet, c.name, kVideoCodecClockrate) {
   params = c.parameters;
   scalability_modes = c.scalability_modes;
 }
@@ -158,57 +140,8 @@ bool Codec::operator==(const Codec& c) const {
               : (packetization == c.packetization));
 }
 
-bool Codec::Matches(const Codec& codec,
-                    const webrtc::FieldTrialsView* field_trials) const {
-  // Match the codec id/name based on the typical static/dynamic name rules.
-  // Matching is case-insensitive.
-
-  // We support the ranges [96, 127] and more recently [35, 65].
-  // https://www.iana.org/assignments/rtp-parameters/rtp-parameters.xhtml#rtp-parameters-1
-  // Within those ranges we match by codec name, outside by codec id.
-  // Since no codecs are assigned an id in the range [66, 95] by us, these will
-  // never match.
-  const int kLowerDynamicRangeMin = 35;
-  const int kLowerDynamicRangeMax = 65;
-  const int kUpperDynamicRangeMin = 96;
-  const int kUpperDynamicRangeMax = 127;
-  const bool is_id_in_dynamic_range =
-      (id >= kLowerDynamicRangeMin && id <= kLowerDynamicRangeMax) ||
-      (id >= kUpperDynamicRangeMin && id <= kUpperDynamicRangeMax);
-  const bool is_codec_id_in_dynamic_range =
-      (codec.id >= kLowerDynamicRangeMin &&
-       codec.id <= kLowerDynamicRangeMax) ||
-      (codec.id >= kUpperDynamicRangeMin && codec.id <= kUpperDynamicRangeMax);
-  bool matches_id = is_id_in_dynamic_range && is_codec_id_in_dynamic_range
-                        ? (absl::EqualsIgnoreCase(name, codec.name))
-                        : (id == codec.id);
-
-  auto matches_type_specific = [&]() {
-    switch (type) {
-      case Type::kAudio:
-        // If a nonzero clockrate is specified, it must match the actual
-        // clockrate. If a nonzero bitrate is specified, it must match the
-        // actual bitrate, unless the codec is VBR (0), where we just force the
-        // supplied value. The number of channels must match exactly, with the
-        // exception that channels=0 is treated synonymously as channels=1, per
-        // RFC 4566 section 6: " [The channels] parameter is OPTIONAL and may be
-        // omitted if the number of channels is one."
-        // Preference is ignored.
-        // TODO(juberti): Treat a zero clockrate as 8000Hz, the RTP default
-        // clockrate.
-        return ((codec.clockrate == 0 /*&& clockrate == 8000*/) ||
-                clockrate == codec.clockrate) &&
-               (codec.bitrate == 0 || bitrate <= 0 ||
-                bitrate == codec.bitrate) &&
-               ((codec.channels < 2 && channels < 2) ||
-                channels == codec.channels);
-
-      case Type::kVideo:
-        return IsSameCodecSpecific(name, params, codec.name, codec.params);
-    }
-  };
-
-  return matches_id && matches_type_specific();
+bool Codec::Matches(const Codec& codec) const {
+  return webrtc::MatchesWithCodecRules(*this, codec);
 }
 
 bool Codec::MatchesRtpCodec(const webrtc::RtpCodec& codec_capability) const {
@@ -216,37 +149,37 @@ bool Codec::MatchesRtpCodec(const webrtc::RtpCodec& codec_capability) const {
 
   return codec_parameters.name == codec_capability.name &&
          codec_parameters.kind == codec_capability.kind &&
-         (codec_parameters.name == cricket::kRtxCodecName ||
-          (codec_parameters.num_channels == codec_capability.num_channels &&
-           codec_parameters.clock_rate == codec_capability.clock_rate &&
-           codec_parameters.parameters == codec_capability.parameters));
+         codec_parameters.num_channels == codec_capability.num_channels &&
+         codec_parameters.clock_rate == codec_capability.clock_rate &&
+         (codec_parameters.name == kRtxCodecName ||
+          codec_parameters.parameters == codec_capability.parameters);
 }
 
-bool Codec::GetParam(const std::string& name, std::string* out) const {
-  CodecParameterMap::const_iterator iter = params.find(name);
+bool Codec::GetParam(const std::string& key, std::string* out) const {
+  webrtc::CodecParameterMap::const_iterator iter = params.find(key);
   if (iter == params.end())
     return false;
   *out = iter->second;
   return true;
 }
 
-bool Codec::GetParam(const std::string& name, int* out) const {
-  CodecParameterMap::const_iterator iter = params.find(name);
+bool Codec::GetParam(const std::string& key, int* out) const {
+  webrtc::CodecParameterMap::const_iterator iter = params.find(key);
   if (iter == params.end())
     return false;
-  return rtc::FromString(iter->second, out);
+  return webrtc::FromString(iter->second, out);
 }
 
-void Codec::SetParam(const std::string& name, const std::string& value) {
-  params[name] = value;
+void Codec::SetParam(const std::string& key, const std::string& value) {
+  params[key] = value;
 }
 
-void Codec::SetParam(const std::string& name, int value) {
-  params[name] = rtc::ToString(value);
+void Codec::SetParam(const std::string& key, int value) {
+  params[key] = absl::StrCat(value);
 }
 
-bool Codec::RemoveParam(const std::string& name) {
-  return params.erase(name) == 1;
+bool Codec::RemoveParam(const std::string& key) {
+  return params.erase(key) == 1;
 }
 
 void Codec::AddFeedbackParam(const FeedbackParam& param) {
@@ -271,11 +204,11 @@ webrtc::RtpCodecParameters Codec::ToCodecParameters() const {
   switch (type) {
     case Type::kAudio: {
       codec_params.num_channels = static_cast<int>(channels);
-      codec_params.kind = MEDIA_TYPE_AUDIO;
+      codec_params.kind = webrtc::MediaType::AUDIO;
       break;
     }
     case Type::kVideo: {
-      codec_params.kind = MEDIA_TYPE_VIDEO;
+      codec_params.kind = webrtc::MediaType::VIDEO;
       break;
     }
   }
@@ -284,7 +217,8 @@ webrtc::RtpCodecParameters Codec::ToCodecParameters() const {
 }
 
 bool Codec::IsMediaCodec() const {
-  return !IsResiliencyCodec();
+  return !IsResiliencyCodec() &&
+         !absl::EqualsIgnoreCase(name, kComfortNoiseCodecName);
 }
 
 bool Codec::IsResiliencyCodec() const {
@@ -331,7 +265,7 @@ bool Codec::ValidateCodecFormat() const {
 std::string Codec::ToString() const {
   char buf[256];
 
-  rtc::SimpleStringBuilder sb(buf);
+  SimpleStringBuilder sb(buf);
   switch (type) {
     case Type::kAudio: {
       sb << "AudioCodec[" << id << ":" << name << ":" << clockrate << ":"
@@ -362,6 +296,14 @@ Codec CreateVideoRtxCodec(int rtx_payload_type, int associated_payload_type) {
   return rtx_codec;
 }
 
+const Codec* FindCodecById(const std::vector<Codec>& codecs, int payload_type) {
+  for (const auto& codec : codecs) {
+    if (codec.id == payload_type)
+      return &codec;
+  }
+  return nullptr;
+}
+
 bool HasLntf(const Codec& codec) {
   return codec.HasFeedbackParam(
       FeedbackParam(kRtcpFbParamLntf, kParamValueEmpty));
@@ -382,22 +324,29 @@ bool HasRrtr(const Codec& codec) {
       FeedbackParam(kRtcpFbParamRrtr, kParamValueEmpty));
 }
 
-bool HasTransportCc(const Codec& codec) {
-  return codec.HasFeedbackParam(
-      FeedbackParam(kRtcpFbParamTransportCc, kParamValueEmpty));
-}
-
-const VideoCodec* FindMatchingCodec(
-    const std::vector<VideoCodec>& supported_codecs,
-    const VideoCodec& codec) {
+const Codec* FindMatchingVideoCodec(const std::vector<Codec>& supported_codecs,
+                                    const Codec& codec) {
   webrtc::SdpVideoFormat sdp_video_format{codec.name, codec.params};
-  for (const VideoCodec& supported_codec : supported_codecs) {
+  for (const Codec& supported_codec : supported_codecs) {
     if (sdp_video_format.IsSameCodec(
             {supported_codec.name, supported_codec.params})) {
       return &supported_codec;
     }
   }
   return nullptr;
+}
+
+std::vector<const Codec*> FindAllMatchingCodecs(
+    const std::vector<Codec>& supported_codecs,
+    const Codec& codec) {
+  std::vector<const Codec*> result;
+  webrtc::SdpVideoFormat sdp(codec.name, codec.params);
+  for (const Codec& supported_codec : supported_codecs) {
+    if (sdp.IsSameCodec({supported_codec.name, supported_codec.params})) {
+      result.push_back(&supported_codec);
+    }
+  }
+  return result;
 }
 
 // If a decoder supports any H264 profile, it is implicitly assumed to also
@@ -410,8 +359,8 @@ void AddH264ConstrainedBaselineProfileToSupportedFormats(
   // profile.
   for (auto it = supported_formats->cbegin(); it != supported_formats->cend();
        ++it) {
-    if (it->name == cricket::kH264CodecName) {
-      const absl::optional<webrtc::H264ProfileLevelId> profile_level_id =
+    if (it->name == kH264CodecName) {
+      const std::optional<webrtc::H264ProfileLevelId> profile_level_id =
           webrtc::ParseSdpForH264ProfileLevelId(it->parameters);
       if (profile_level_id &&
           profile_level_id->profile !=
@@ -419,7 +368,7 @@ void AddH264ConstrainedBaselineProfileToSupportedFormats(
         webrtc::SdpVideoFormat cbp_format = *it;
         webrtc::H264ProfileLevelId cbp_profile = *profile_level_id;
         cbp_profile.profile = webrtc::H264Profile::kProfileConstrainedBaseline;
-        cbp_format.parameters[cricket::kH264FmtpProfileLevelId] =
+        cbp_format.parameters[kH264FmtpProfileLevelId] =
             *webrtc::H264ProfileLevelIdToString(cbp_profile);
         cbr_supported_formats.push_back(cbp_format);
       }
@@ -435,8 +384,8 @@ void AddH264ConstrainedBaselineProfileToSupportedFormats(
                });
 
   if (supported_formats->size() > original_size) {
-    RTC_LOG(LS_WARNING) << "Explicitly added H264 constrained baseline to list "
-                           "of supported formats.";
+    RTC_LOG(LS_INFO) << "Explicitly added H264 constrained baseline to list "
+                        "of supported formats.";
   }
 }
 
@@ -452,7 +401,7 @@ Codec CreateAudioCodec(const webrtc::SdpAudioFormat& c) {
 }
 
 Codec CreateVideoCodec(const std::string& name) {
-  return CreateVideoCodec(0, name);
+  return CreateVideoCodec(Codec::kIdNotSet, name);
 }
 
 Codec CreateVideoCodec(int id, const std::string& name) {
@@ -471,4 +420,10 @@ Codec CreateVideoCodec(const webrtc::SdpVideoFormat& c) {
   return Codec(c);
 }
 
-}  // namespace cricket
+Codec CreateVideoCodec(int id, const webrtc::SdpVideoFormat& sdp) {
+  Codec c = CreateVideoCodec(sdp);
+  c.id = id;
+  return c;
+}
+
+}  // namespace webrtc
