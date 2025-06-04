@@ -12,9 +12,18 @@
 
 #include <string.h>
 
+#include <cstdint>
+#include <vector>
+
 #include "api/video/encoded_image.h"
+#include "api/video/video_frame_type.h"
 #include "api/video/video_timing.h"
+#include "modules/video_coding/codecs/h264/include/h264_globals.h"
+#include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
+#include "modules/video_coding/deprecated/jitter_buffer_common.h"
 #include "modules/video_coding/deprecated/packet.h"
+#include "modules/video_coding/deprecated/session_info.h"
+#include "modules/video_coding/encoded_frame.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/trace_event.h"
@@ -81,7 +90,7 @@ VCMFrameBufferEnum VCMFrameBuffer::InsertPacket(const VCMPacket& packet,
   if (kStateEmpty == _state) {
     // First packet (empty and/or media) inserted into this frame.
     // store some info and set some initial values.
-    SetTimestamp(packet.timestamp);
+    SetRtpTimestamp(packet.timestamp);
     // We only take the ntp timestamp of the first packet of a frame.
     ntp_time_ms_ = packet.ntp_time_ms_;
     _codec = packet.codec();

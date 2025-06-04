@@ -11,9 +11,17 @@
 #include "rtc_tools/rtc_event_log_visualizer/plot_base.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdio>
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "absl/strings/string_view.h"
 #include "rtc_base/checks.h"
+#include "rtc_tools/rtc_event_log_visualizer/proto/chart.pb.h"
+#include "rtc_tools/rtc_event_log_visualizer/proto/chart_enums.pb.h"
 
 namespace webrtc {
 
@@ -77,6 +85,10 @@ void Plot::SetTitle(const std::string& title) {
 }
 
 void Plot::SetId(const std::string& id) {
+  id_ = id;
+}
+
+void Plot::SetId(absl::string_view id) {
   id_ = id;
 }
 
@@ -335,6 +347,12 @@ void PlotCollection::ExportProtobuf(
 
 Plot* PlotCollection::AppendNewPlot() {
   plots_.push_back(std::make_unique<Plot>());
+  return plots_.back().get();
+}
+
+Plot* PlotCollection::AppendNewPlot(absl::string_view chart_id) {
+  plots_.push_back(std::make_unique<Plot>());
+  plots_.back()->SetId(chart_id);
   return plots_.back().get();
 }
 

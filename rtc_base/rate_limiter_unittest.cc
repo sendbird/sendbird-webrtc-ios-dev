@@ -15,7 +15,6 @@
 #include "rtc_base/event.h"
 #include "rtc_base/platform_thread.h"
 #include "system_wrappers/include/clock.h"
-#include "test/field_trial.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -107,19 +106,6 @@ TEST_F(RateLimitTest, WindowSizeLimits) {
   EXPECT_FALSE(rate_limiter->SetWindowSize(kWindowSizeMs + 1));
 }
 
-TEST_F(RateLimitTest, DiablesRtxRateLimiterByFieldTrial) {
-  webrtc::test::ScopedFieldTrials trial(
-      "WebRTC-DisableRtxRateLimiter/Enabled/");
-
-  // Fill rate, extend window to full size.
-  EXPECT_TRUE(rate_limiter->TryUseRate(kRateFillingBytes / 2));
-  clock_.AdvanceTimeMilliseconds(kWindowSizeMs - 1);
-  EXPECT_TRUE(rate_limiter->TryUseRate(kRateFillingBytes / 2));
-
-  // Does not limit rate even when all rate consumed.
-  EXPECT_TRUE(rate_limiter->TryUseRate(1));
-}
-
 static constexpr TimeDelta kMaxTimeout = TimeDelta::Seconds(30);
 
 class ThreadTask {
@@ -137,8 +123,8 @@ class ThreadTask {
   virtual void DoRun() = 0;
 
   RateLimiter* const rate_limiter_;
-  rtc::Event start_signal_;
-  rtc::Event end_signal_;
+  Event start_signal_;
+  Event end_signal_;
 };
 
 TEST_F(RateLimitTest, MultiThreadedUsage) {
@@ -159,7 +145,7 @@ TEST_F(RateLimitTest, MultiThreadedUsage) {
       EXPECT_TRUE(rate_limiter_->SetWindowSize(kWindowSizeMs / 2));
     }
   } set_window_size_task(rate_limiter.get());
-  auto thread1 = rtc::PlatformThread::SpawnJoinable(
+  auto thread1 = PlatformThread::SpawnJoinable(
       [&set_window_size_task] { set_window_size_task.Run(); }, "Thread1");
 
   class SetMaxRateTask : public ThreadTask {
@@ -170,7 +156,7 @@ TEST_F(RateLimitTest, MultiThreadedUsage) {
 
     void DoRun() override { rate_limiter_->SetMaxRate(kMaxRateBps * 2); }
   } set_max_rate_task(rate_limiter.get());
-  auto thread2 = rtc::PlatformThread::SpawnJoinable(
+  auto thread2 = PlatformThread::SpawnJoinable(
       [&set_max_rate_task] { set_max_rate_task.Run(); }, "Thread2");
 
   class UseRateTask : public ThreadTask {
@@ -187,7 +173,7 @@ TEST_F(RateLimitTest, MultiThreadedUsage) {
 
     SimulatedClock* const clock_;
   } use_rate_task(rate_limiter.get(), &clock_);
-  auto thread3 = rtc::PlatformThread::SpawnJoinable(
+  auto thread3 = PlatformThread::SpawnJoinable(
       [&use_rate_task] { use_rate_task.Run(); }, "Thread3");
 
   set_window_size_task.start_signal_.Set();

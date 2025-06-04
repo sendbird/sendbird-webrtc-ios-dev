@@ -47,6 +47,7 @@ enum HistogramCodecType {
   kVideoVp9 = 2,
   kVideoH264 = 3,
   kVideoAv1 = 4,
+  kVideoH265 = 5,
   kVideoMax = 64,
 };
 
@@ -76,6 +77,8 @@ HistogramCodecType PayloadNameToHistogramCodecType(
       return kVideoH264;
     case kVideoCodecAV1:
       return kVideoAv1;
+    case kVideoCodecH265:
+      return kVideoH265;
     default:
       return kVideoUnknown;
   }
@@ -94,42 +97,40 @@ bool IsForcedFallbackPossible(const CodecSpecificInfo* codec_info,
           codec_info->codecSpecific.VP8.temporalIdx == kNoTemporalIdx);
 }
 
-absl::optional<int> GetFallbackMaxPixels(const std::string& group) {
+std::optional<int> GetFallbackMaxPixels(const std::string& group) {
   if (group.empty())
-    return absl::nullopt;
+    return std::nullopt;
 
   int min_pixels;
   int max_pixels;
   int min_bps;
   if (sscanf(group.c_str(), "-%d,%d,%d", &min_pixels, &max_pixels, &min_bps) !=
       3) {
-    return absl::optional<int>();
+    return std::optional<int>();
   }
 
   if (min_pixels <= 0 || max_pixels <= 0 || max_pixels < min_pixels)
-    return absl::optional<int>();
+    return std::optional<int>();
 
-  return absl::optional<int>(max_pixels);
+  return std::optional<int>(max_pixels);
 }
 
-absl::optional<int> GetFallbackMaxPixelsIfFieldTrialEnabled(
+std::optional<int> GetFallbackMaxPixelsIfFieldTrialEnabled(
     const webrtc::FieldTrialsView& field_trials) {
   std::string group = field_trials.Lookup(kVp8ForcedFallbackEncoderFieldTrial);
   return (absl::StartsWith(group, "Enabled"))
              ? GetFallbackMaxPixels(group.substr(7))
-             : absl::optional<int>();
+             : std::optional<int>();
 }
 
-absl::optional<int> GetFallbackMaxPixelsIfFieldTrialDisabled(
+std::optional<int> GetFallbackMaxPixelsIfFieldTrialDisabled(
     const webrtc::FieldTrialsView& field_trials) {
   std::string group = field_trials.Lookup(kVp8ForcedFallbackEncoderFieldTrial);
   return (absl::StartsWith(group, "Disabled"))
              ? GetFallbackMaxPixels(group.substr(8))
-             : absl::optional<int>();
+             : std::optional<int>();
 }
 }  // namespace
-
-const int SendStatisticsProxy::kStatsTimeoutMs = 5000;
 
 SendStatisticsProxy::SendStatisticsProxy(
     Clock* clock,
@@ -171,6 +172,9 @@ SendStatisticsProxy::~SendStatisticsProxy() {
 }
 
 SendStatisticsProxy::FallbackEncoderInfo::FallbackEncoderInfo() = default;
+
+SendStatisticsProxy::Trackers::Trackers()
+    : encoded_frame_rate(kBucketSizeMs, kBucketCount) {}
 
 SendStatisticsProxy::UmaSamplesContainer::UmaSamplesContainer(
     const char* prefix,
@@ -267,7 +271,7 @@ bool SendStatisticsProxy::UmaSamplesContainer::InsertEncodedFrame(
   // Check for jump in timestamp.
   if (!encoded_frames_.empty()) {
     uint32_t oldest_timestamp = encoded_frames_.begin()->first;
-    if (ForwardDiff(oldest_timestamp, encoded_frame.Timestamp()) >
+    if (ForwardDiff(oldest_timestamp, encoded_frame.RtpTimestamp()) >
         kMaxEncodedFrameTimestampDiff) {
       // Gap detected, clear frames to have a sequence where newest timestamp
       // is not too far away from oldest in order to distinguish old and new.
@@ -275,11 +279,11 @@ bool SendStatisticsProxy::UmaSamplesContainer::InsertEncodedFrame(
     }
   }
 
-  auto it = encoded_frames_.find(encoded_frame.Timestamp());
+  auto it = encoded_frames_.find(encoded_frame.RtpTimestamp());
   if (it == encoded_frames_.end()) {
     // First frame with this timestamp.
     encoded_frames_.insert(
-        std::make_pair(encoded_frame.Timestamp(),
+        std::make_pair(encoded_frame.RtpTimestamp(),
                        Frame(now_ms, encoded_frame._encodedWidth,
                              encoded_frame._encodedHeight, simulcast_idx)));
     sent_fps_counter_.Add(1);
@@ -302,7 +306,7 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
   const int kIndex = uma_prefix_ == kScreenPrefix ? 1 : 0;
   const int kMinRequiredPeriodicSamples = 6;
   char log_stream_buf[8 * 1024];
-  rtc::SimpleStringBuilder log_stream(log_stream_buf);
+  SimpleStringBuilder log_stream(log_stream_buf);
   int in_width = input_width_counter_.Avg(kMinRequiredMetricsSamples);
   int in_height = input_height_counter_.Avg(kMinRequiredMetricsSamples);
   if (in_width != -1) {
@@ -654,6 +658,10 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
              << current_stats.frames_dropped_by_capturer << "\n";
   RTC_HISTOGRAMS_COUNTS_1000(kIndex, uma_prefix_ + "DroppedFrames.Capturer",
                              current_stats.frames_dropped_by_capturer);
+  log_stream << uma_prefix_ << "DroppedFrames.BadTimestamp"
+             << current_stats.frames_dropped_by_bad_timestamp << "\n";
+  RTC_HISTOGRAMS_COUNTS_1000(kIndex, uma_prefix_ + "DroppedFrames.BadTimestamp",
+                             current_stats.frames_dropped_by_bad_timestamp);
   log_stream << uma_prefix_ << "DroppedFrames.EncoderQueue "
              << current_stats.frames_dropped_by_encoder_queue << "\n";
   RTC_HISTOGRAMS_COUNTS_1000(kIndex, uma_prefix_ + "DroppedFrames.EncoderQueue",
@@ -753,25 +761,25 @@ VideoSendStream::Stats SendStatisticsProxy::GetStats() {
   stats_.quality_limitation_durations_ms =
       quality_limitation_reason_tracker_.DurationsMs();
 
-  for (auto& substream : stats_.substreams) {
-    uint32_t ssrc = substream.first;
-    if (encoded_frame_rate_trackers_.count(ssrc) > 0) {
-      substream.second.encode_frame_rate =
-          encoded_frame_rate_trackers_[ssrc]->ComputeRate();
+  for (auto& [ssrc, substream] : stats_.substreams) {
+    if (auto it = trackers_.find(ssrc); it != trackers_.end()) {
+      substream.encode_frame_rate = it->second.encoded_frame_rate.ComputeRate();
     }
   }
   return stats_;
 }
 
+void SendStatisticsProxy::SetStats(const VideoSendStream::Stats& stats) {
+  MutexLock lock(&mutex_);
+  stats_ = stats;
+}
+
 void SendStatisticsProxy::PurgeOldStats() {
-  int64_t old_stats_ms = clock_->TimeInMilliseconds() - kStatsTimeoutMs;
-  for (std::map<uint32_t, VideoSendStream::StreamStats>::iterator it =
-           stats_.substreams.begin();
-       it != stats_.substreams.end(); ++it) {
-    uint32_t ssrc = it->first;
-    if (update_times_[ssrc].resolution_update_ms <= old_stats_ms) {
-      it->second.width = 0;
-      it->second.height = 0;
+  Timestamp now = clock_->CurrentTime();
+  for (auto& [ssrc, substream] : stats_.substreams) {
+    if (now - trackers_[ssrc].resolution_update >= kStatsTimeout) {
+      substream.width = 0;
+      substream.height = 0;
     }
   }
 }
@@ -969,16 +977,13 @@ void SendStatisticsProxy::OnSendEncodedImage(
   if (!stats)
     return;
 
-  if (encoded_frame_rate_trackers_.count(ssrc) == 0) {
-    encoded_frame_rate_trackers_[ssrc] =
-        std::make_unique<rtc::RateTracker>(kBucketSizeMs, kBucketCount);
-  }
+  Trackers& track = trackers_[ssrc];
 
   stats->frames_encoded++;
   stats->total_encode_time_ms += encoded_image.timing_.encode_finish_ms -
                                  encoded_image.timing_.encode_start_ms;
   stats->scalability_mode =
-      codec_info ? codec_info->scalability_mode : absl::nullopt;
+      codec_info ? codec_info->scalability_mode : std::nullopt;
   // Report resolution of the top spatial layer.
   bool is_top_spatial_layer =
       codec_info == nullptr || codec_info->end_of_picture;
@@ -986,7 +991,7 @@ void SendStatisticsProxy::OnSendEncodedImage(
   if (!stats->width || !stats->height || is_top_spatial_layer) {
     stats->width = encoded_image._encodedWidth;
     stats->height = encoded_image._encodedHeight;
-    update_times_[ssrc].resolution_update_ms = clock_->TimeInMilliseconds();
+    track.resolution_update = clock_->CurrentTime();
   }
 
   uma_container_->key_frame_counter_.Add(encoded_image._frameType ==
@@ -1036,10 +1041,11 @@ void SendStatisticsProxy::OnSendEncodedImage(
   }
   // is_top_spatial_layer pertains only to SVC, will always be true for
   // simulcast.
-  if (is_top_spatial_layer)
-    encoded_frame_rate_trackers_[ssrc]->AddSamples(1);
+  if (is_top_spatial_layer) {
+    track.encoded_frame_rate.AddSamples(1);
+  }
 
-  absl::optional<int> downscales =
+  std::optional<int> downscales =
       adaptation_limitations_.MaskedQualityCounts().resolution_adaptations;
   stats_.bw_limited_resolution |=
       (downscales.has_value() && downscales.value() > 0);
@@ -1062,7 +1068,7 @@ void SendStatisticsProxy::OnEncoderImplementationChanged(
   // Clear cached scalability mode values, they may no longer be accurate.
   for (auto& pair : stats_.substreams) {
     VideoSendStream::StreamStats& stream_stats = pair.second;
-    stream_stats.scalability_mode = absl::nullopt;
+    stream_stats.scalability_mode = std::nullopt;
   }
 }
 
@@ -1099,6 +1105,9 @@ void SendStatisticsProxy::OnFrameDropped(DropReason reason) {
   switch (reason) {
     case DropReason::kSource:
       ++stats_.frames_dropped_by_capturer;
+      break;
+    case DropReason::kBadTimestamp:
+      ++stats_.frames_dropped_by_bad_timestamp;
       break;
     case DropReason::kEncoderQueue:
       ++stats_.frames_dropped_by_encoder_queue;
@@ -1237,6 +1246,26 @@ void SendStatisticsProxy::OnBitrateAllocationUpdated(
   bw_limited_layers_ = allocation.is_bw_limited();
   UpdateAdaptationStats();
 
+  // Store target bitrates per substream stats.
+  for (auto& [ssrc, substream] : stats_.substreams) {
+    std::optional<size_t> simulcast_index;
+    for (size_t i = 0; i < rtp_config_.ssrcs.size(); ++i) {
+      if (rtp_config_.ssrcs[i] == ssrc) {
+        simulcast_index = i;
+        break;
+      }
+    }
+    if (!simulcast_index.has_value()) {
+      substream.target_bitrate = std::nullopt;
+      continue;
+    }
+    substream.target_bitrate =
+        DataRate::BitsPerSec(allocation.GetSpatialLayerSum(*simulcast_index));
+    if (substream.target_bitrate == DataRate::Zero()) {
+      substream.target_bitrate = std::nullopt;
+    }
+  }
+
   if (spatial_layers != last_spatial_layer_use_) {
     // If the number of spatial layers has changed, the resolution change is
     // not due to quality limitations, it is because the configuration
@@ -1267,8 +1296,8 @@ void SendStatisticsProxy::OnInitialQualityResolutionAdaptDown() {
 }
 
 void SendStatisticsProxy::TryUpdateInitialQualityResolutionAdaptUp(
-    absl::optional<int> old_quality_downscales,
-    absl::optional<int> updated_quality_downscales) {
+    std::optional<int> old_quality_downscales,
+    std::optional<int> updated_quality_downscales) {
   if (uma_container_->initial_quality_changes_.down == 0)
     return;
 
@@ -1324,18 +1353,19 @@ void SendStatisticsProxy::OnReportBlockDataUpdated(
   stats->report_block_data = std::move(report_block);
 }
 
+StreamDataCounters SendStatisticsProxy::GetDataCounters(uint32_t ssrc) const {
+  MutexLock lock(&mutex_);
+  auto it = stats_.substreams.find(ssrc);
+  return it != stats_.substreams.end() ? it->second.rtp_stats
+                                       : StreamDataCounters();
+}
+
 void SendStatisticsProxy::DataCountersUpdated(
     const StreamDataCounters& counters,
     uint32_t ssrc) {
   MutexLock lock(&mutex_);
   VideoSendStream::StreamStats* stats = GetStatsEntry(ssrc);
   RTC_DCHECK(stats) << "DataCountersUpdated reported for unknown ssrc " << ssrc;
-
-  if (stats->type == VideoSendStream::StreamStats::StreamType::kFlexfec) {
-    // The same counters are reported for both the media ssrc and flexfec ssrc.
-    // Bitrate stats are summed for all SSRCs. Use fec stats from media update.
-    return;
-  }
 
   stats->rtp_stats = counters;
   if (uma_container_->first_rtp_stats_time_ms_ == -1) {
@@ -1388,13 +1418,52 @@ void SendStatisticsProxy::FrameCountUpdated(const FrameCounts& frame_counts,
   stats->frame_counts = frame_counts;
 }
 
-void SendStatisticsProxy::SendSideDelayUpdated(int avg_delay_ms,
-                                               int max_delay_ms,
-                                               uint32_t ssrc) {
+void SendStatisticsProxy::Trackers::AddSendDelay(Timestamp now,
+                                                 TimeDelta send_delay) {
+  // Add the new measurement.
+  send_delays.push_back({.when = now, .send_delay = send_delay});
+  send_delay_sum += send_delay;
+  if (send_delay_max == nullptr || *send_delay_max <= send_delay) {
+    send_delay_max = &send_delays.back().send_delay;
+  }
+
+  // Remove old. No need to check for emptiness because newly added entry would
+  // never be too old.
+  while (now - send_delays.front().when > TimeDelta::Seconds(1)) {
+    send_delay_sum -= send_delays.front().send_delay;
+    if (send_delay_max == &send_delays.front().send_delay) {
+      send_delay_max = nullptr;
+    }
+    send_delays.pop_front();
+  }
+
+  // Check if max value was pushed out from the queue as too old.
+  if (send_delay_max == nullptr) {
+    send_delay_max = &send_delays.front().send_delay;
+    for (const SendDelayEntry& entry : send_delays) {
+      // Use '>=' rather than '>' to prefer latest maximum as it would be pushed
+      // out later and thus trigger less recalculations.
+      if (entry.send_delay >= *send_delay_max) {
+        send_delay_max = &entry.send_delay;
+      }
+    }
+  }
+}
+
+void SendStatisticsProxy::OnSendPacket(uint32_t ssrc, Timestamp capture_time) {
+  Timestamp now = clock_->CurrentTime();
+
   MutexLock lock(&mutex_);
   VideoSendStream::StreamStats* stats = GetStatsEntry(ssrc);
   if (!stats)
     return;
+
+  Trackers& track = trackers_[ssrc];
+  track.AddSendDelay(now, now - capture_time);
+
+  int64_t avg_delay_ms = (track.send_delay_sum / track.send_delays.size()).ms();
+  int64_t max_delay_ms = track.send_delay_max->ms();
+
   stats->avg_delay_ms = avg_delay_ms;
   stats->max_delay_ms = max_delay_ms;
 

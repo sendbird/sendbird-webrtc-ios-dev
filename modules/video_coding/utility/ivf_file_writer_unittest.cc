@@ -12,10 +12,14 @@
 
 #include <string.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
+#include "api/video/encoded_image.h"
+#include "api/video/video_codec_type.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
+#include "rtc_base/system/file_wrapper.h"
 #include "test/gtest.h"
 #include "test/testsupport/file_utils.h"
 
@@ -54,7 +58,7 @@ class IvfFileWriterTest : public ::testing::Test {
       if (use_capture_tims_ms) {
         frame.capture_time_ms_ = i;
       } else {
-        frame.SetTimestamp(i);
+        frame.SetRtpTimestamp(i);
       }
       if (!file_writer_->WriteFrame(frame, codec_type))
         return false;

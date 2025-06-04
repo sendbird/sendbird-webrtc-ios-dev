@@ -14,26 +14,32 @@
 #include <string.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
-#include "absl/types/optional.h"
+#include "api/environment/environment.h"
+#include "api/field_trials_view.h"
 #include "api/scoped_refptr.h"
+#include "api/video/color_space.h"
+#include "api/video/encoded_image.h"
 #include "api/video/i420_buffer.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_frame_buffer.h"
-#include "api/video/video_rotation.h"
+#include "api/video/video_frame_type.h"
+#include "api/video_codecs/video_decoder.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
 #include "modules/video_coding/include/video_error_codes.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/numerics/exp_filter.h"
 #include "rtc_base/time_utils.h"
-#include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
 #include "third_party/libyuv/include/libyuv/convert.h"
 #include "vpx/vp8.h"
 #include "vpx/vp8dx.h"
 #include "vpx/vpx_decoder.h"
+#include "vpx/vpx_image.h"
 
 namespace webrtc {
 namespace {
@@ -52,16 +58,16 @@ constexpr bool kIsArm = true;
 constexpr bool kIsArm = false;
 #endif
 
-absl::optional<LibvpxVp8Decoder::DeblockParams> DefaultDeblockParams() {
+std::optional<LibvpxVp8Decoder::DeblockParams> DefaultDeblockParams() {
   return LibvpxVp8Decoder::DeblockParams(/*max_level=*/8,
                                          /*degrade_qp=*/60,
                                          /*min_qp=*/30);
 }
 
-absl::optional<LibvpxVp8Decoder::DeblockParams>
-GetPostProcParamsFromFieldTrialGroup() {
-  std::string group = webrtc::field_trial::FindFullName(
-      kIsArm ? kVp8PostProcArmFieldTrial : kVp8PostProcFieldTrial);
+std::optional<LibvpxVp8Decoder::DeblockParams>
+GetPostProcParamsFromFieldTrialGroup(const FieldTrialsView& field_trials) {
+  std::string group = field_trials.Lookup(kIsArm ? kVp8PostProcArmFieldTrial
+                                                 : kVp8PostProcFieldTrial);
   if (group.empty()) {
     return DefaultDeblockParams();
   }
@@ -85,22 +91,21 @@ GetPostProcParamsFromFieldTrialGroup() {
 
 }  // namespace
 
-std::unique_ptr<VideoDecoder> VP8Decoder::Create() {
-  return std::make_unique<LibvpxVp8Decoder>();
+std::unique_ptr<VideoDecoder> CreateVp8Decoder(const Environment& env) {
+  return std::make_unique<LibvpxVp8Decoder>(env);
 }
 
 class LibvpxVp8Decoder::QpSmoother {
  public:
-  QpSmoother() : last_sample_ms_(rtc::TimeMillis()), smoother_(kAlpha) {}
+  QpSmoother() : last_sample_ms_(TimeMillis()), smoother_(kAlpha) {}
 
   int GetAvg() const {
     float value = smoother_.filtered();
-    return (value == rtc::ExpFilter::kValueUndefined) ? 0
-                                                      : static_cast<int>(value);
+    return (value == ExpFilter::kValueUndefined) ? 0 : static_cast<int>(value);
   }
 
   void Add(float sample) {
-    int64_t now_ms = rtc::TimeMillis();
+    int64_t now_ms = TimeMillis();
     smoother_.Apply(static_cast<float>(now_ms - last_sample_ms_), sample);
     last_sample_ms_ = now_ms;
   }
@@ -110,12 +115,12 @@ class LibvpxVp8Decoder::QpSmoother {
  private:
   const float kAlpha = 0.95f;
   int64_t last_sample_ms_;
-  rtc::ExpFilter smoother_;
+  ExpFilter smoother_;
 };
 
-LibvpxVp8Decoder::LibvpxVp8Decoder()
+LibvpxVp8Decoder::LibvpxVp8Decoder(const Environment& env)
     : use_postproc_(
-          kIsArm ? webrtc::field_trial::IsEnabled(kVp8PostProcArmFieldTrial)
+          kIsArm ? env.field_trials().IsEnabled(kVp8PostProcArmFieldTrial)
                  : true),
       buffer_pool_(false, 300 /* max_number_of_buffers*/),
       decode_complete_callback_(NULL),
@@ -124,8 +129,9 @@ LibvpxVp8Decoder::LibvpxVp8Decoder()
       last_frame_width_(0),
       last_frame_height_(0),
       key_frame_required_(true),
-      deblock_params_(use_postproc_ ? GetPostProcParamsFromFieldTrialGroup()
-                                    : absl::nullopt),
+      deblock_params_(use_postproc_ ? GetPostProcParamsFromFieldTrialGroup(
+                                          env.field_trials())
+                                    : std::nullopt),
       qp_smoother_(use_postproc_ ? new QpSmoother() : nullptr) {}
 
 LibvpxVp8Decoder::~LibvpxVp8Decoder() {
@@ -158,7 +164,7 @@ bool LibvpxVp8Decoder::Configure(const Settings& settings) {
 
   // Always start with a complete key frame.
   key_frame_required_ = true;
-  if (absl::optional<int> buffer_pool_size = settings.buffer_pool_size()) {
+  if (std::optional<int> buffer_pool_size = settings.buffer_pool_size()) {
     if (!buffer_pool_.Resize(*buffer_pool_size)) {
       return false;
     }
@@ -249,8 +255,8 @@ int LibvpxVp8Decoder::Decode(const EncodedImage& input_image,
   vpx_codec_err_t vpx_ret =
       vpx_codec_control(decoder_, VPXD_GET_LAST_QUANTIZER, &qp);
   RTC_DCHECK_EQ(vpx_ret, VPX_CODEC_OK);
-  int ret =
-      ReturnFrame(img, input_image.Timestamp(), qp, input_image.ColorSpace());
+  int ret = ReturnFrame(img, input_image.RtpTimestamp(), qp,
+                        input_image.ColorSpace());
   if (ret != 0) {
     return ret;
   }
@@ -276,9 +282,9 @@ int LibvpxVp8Decoder::ReturnFrame(
   last_frame_width_ = img->d_w;
   last_frame_height_ = img->d_h;
   // Allocate memory for decoded image.
-  rtc::scoped_refptr<VideoFrameBuffer> buffer;
+  scoped_refptr<VideoFrameBuffer> buffer;
 
-  rtc::scoped_refptr<I420Buffer> i420_buffer =
+  scoped_refptr<I420Buffer> i420_buffer =
       buffer_pool_.CreateI420Buffer(img->d_w, img->d_h);
   buffer = i420_buffer;
   if (i420_buffer.get()) {
@@ -300,10 +306,10 @@ int LibvpxVp8Decoder::ReturnFrame(
 
   VideoFrame decoded_image = VideoFrame::Builder()
                                  .set_video_frame_buffer(buffer)
-                                 .set_timestamp_rtp(timestamp)
+                                 .set_rtp_timestamp(timestamp)
                                  .set_color_space(explicit_color_space)
                                  .build();
-  decode_complete_callback_->Decoded(decoded_image, absl::nullopt, qp);
+  decode_complete_callback_->Decoded(decoded_image, std::nullopt, qp);
 
   return WEBRTC_VIDEO_CODEC_OK;
 }

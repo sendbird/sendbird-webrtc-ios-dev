@@ -11,20 +11,13 @@
 #ifndef P2P_BASE_BASIC_ASYNC_RESOLVER_FACTORY_H_
 #define P2P_BASE_BASIC_ASYNC_RESOLVER_FACTORY_H_
 
-#include <functional>
 #include <memory>
-#include <utility>
 
+#include "absl/functional/any_invocable.h"
 #include "api/async_dns_resolver.h"
-#include "api/async_resolver_factory.h"
-#include "rtc_base/async_resolver_interface.h"
+#include "rtc_base/socket_address.h"
 
 namespace webrtc {
-
-class BasicAsyncResolverFactory final : public AsyncResolverFactory {
- public:
-  rtc::AsyncResolverInterface* Create() override;
-};
 
 // A factory that vends AsyncDnsResolver instances.
 class BasicAsyncDnsResolverFactory final
@@ -33,46 +26,15 @@ class BasicAsyncDnsResolverFactory final
   BasicAsyncDnsResolverFactory() = default;
 
   std::unique_ptr<webrtc::AsyncDnsResolverInterface> CreateAndResolve(
-      const rtc::SocketAddress& addr,
+      const SocketAddress& addr,
       absl::AnyInvocable<void()> callback) override;
 
   std::unique_ptr<webrtc::AsyncDnsResolverInterface> CreateAndResolve(
-      const rtc::SocketAddress& addr,
+      const SocketAddress& addr,
       int family,
       absl::AnyInvocable<void()> callback) override;
 
   std::unique_ptr<webrtc::AsyncDnsResolverInterface> Create() override;
-};
-
-// This class wraps a factory using the older webrtc::AsyncResolverFactory API,
-// and produces webrtc::AsyncDnsResolver objects that contain an
-// rtc::AsyncResolver object.
-class WrappingAsyncDnsResolverFactory final
-    : public AsyncDnsResolverFactoryInterface {
- public:
-  explicit WrappingAsyncDnsResolverFactory(
-      std::unique_ptr<AsyncResolverFactory> wrapped_factory)
-      : owned_factory_(std::move(wrapped_factory)),
-        wrapped_factory_(owned_factory_.get()) {}
-
-  explicit WrappingAsyncDnsResolverFactory(
-      AsyncResolverFactory* non_owned_factory)
-      : wrapped_factory_(non_owned_factory) {}
-
-  std::unique_ptr<webrtc::AsyncDnsResolverInterface> CreateAndResolve(
-      const rtc::SocketAddress& addr,
-      absl::AnyInvocable<void()> callback) override;
-
-  std::unique_ptr<webrtc::AsyncDnsResolverInterface> CreateAndResolve(
-      const rtc::SocketAddress& addr,
-      int family,
-      absl::AnyInvocable<void()> callback) override;
-
-  std::unique_ptr<webrtc::AsyncDnsResolverInterface> Create() override;
-
- private:
-  const std::unique_ptr<AsyncResolverFactory> owned_factory_;
-  AsyncResolverFactory* const wrapped_factory_;
 };
 
 }  // namespace webrtc

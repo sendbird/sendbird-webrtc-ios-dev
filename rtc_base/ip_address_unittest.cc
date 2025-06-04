@@ -13,7 +13,7 @@
 #include "absl/strings/string_view.h"
 #include "test/gtest.h"
 
-namespace rtc {
+namespace webrtc {
 
 static const unsigned int kIPv4AddrSize = 4;
 static const unsigned int kIPv6AddrSize = 16;
@@ -61,10 +61,6 @@ static const std::string kIPv6PublicAddrAnonymizedString =
     "2401:fa00:4:x:x:x:x:x";
 static const std::string kIPv6PublicAddr2AnonymizedString =
     "2401:0:0:x:x:x:x:x";
-static const std::string kIPv4MappedAnyAddrString = "::ffff:0:0";
-static const std::string kIPv4MappedRFC1918AddrString = "::ffff:c0a8:701";
-static const std::string kIPv4MappedLoopbackAddrString = "::ffff:7f00:1";
-static const std::string kIPv4MappedPublicAddrString = "::ffff:102:0304";
 static const std::string kIPv4MappedV4StyleAddrString = "::ffff:192.168.7.1";
 
 static const std::string kIPv4BrokenString1 = "192.168.7.";
@@ -526,7 +522,7 @@ TEST(IPAddressTest, TestIPFromAddrInfo) {
   test_info.ai_next = &next_info;
   // Check that we can get an IPv4 address out.
   test_info.ai_addr = reinterpret_cast<struct sockaddr*>(&expected4);
-  expected4.sin_addr.s_addr = HostToNetwork32(kIPv4PublicAddr);
+  expected4.sin_addr.s_addr = webrtc::HostToNetwork32(kIPv4PublicAddr);
   expected4.sin_family = AF_INET;
   IPAddress expected(kIPv4PublicAddr);
   IPAddress addr;
@@ -978,4 +974,4 @@ TEST(IPAddressTest, TestInterfaceAddress) {
   EXPECT_NE(addr1, addr5);
 }
 
-}  // namespace rtc
+}  // namespace webrtc

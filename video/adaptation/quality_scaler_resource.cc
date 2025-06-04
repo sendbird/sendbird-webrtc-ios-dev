@@ -12,6 +12,7 @@
 
 #include <utility>
 
+#include "api/field_trials_view.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/experiments/balanced_degradation_settings.h"
 #include "rtc_base/time_utils.h"
@@ -19,8 +20,8 @@
 namespace webrtc {
 
 // static
-rtc::scoped_refptr<QualityScalerResource> QualityScalerResource::Create() {
-  return rtc::make_ref_counted<QualityScalerResource>();
+scoped_refptr<QualityScalerResource> QualityScalerResource::Create() {
+  return make_ref_counted<QualityScalerResource>();
 }
 
 QualityScalerResource::QualityScalerResource()
@@ -37,11 +38,12 @@ bool QualityScalerResource::is_started() const {
 }
 
 void QualityScalerResource::StartCheckForOveruse(
-    VideoEncoder::QpThresholds qp_thresholds) {
+    VideoEncoder::QpThresholds qp_thresholds,
+    const FieldTrialsView& field_trials) {
   RTC_DCHECK_RUN_ON(encoder_queue());
   RTC_DCHECK(!is_started());
-  quality_scaler_ =
-      std::make_unique<QualityScaler>(this, std::move(qp_thresholds));
+  quality_scaler_ = std::make_unique<QualityScaler>(
+      this, std::move(qp_thresholds), field_trials);
 }
 
 void QualityScalerResource::StopCheckForOveruse() {
@@ -57,12 +59,6 @@ void QualityScalerResource::SetQpThresholds(
   RTC_DCHECK_RUN_ON(encoder_queue());
   RTC_DCHECK(is_started());
   quality_scaler_->SetQpThresholds(std::move(qp_thresholds));
-}
-
-bool QualityScalerResource::QpFastFilterLow() {
-  RTC_DCHECK_RUN_ON(encoder_queue());
-  RTC_DCHECK(is_started());
-  return quality_scaler_->QpFastFilterLow();
 }
 
 void QualityScalerResource::OnEncodeCompleted(const EncodedImage& encoded_image,

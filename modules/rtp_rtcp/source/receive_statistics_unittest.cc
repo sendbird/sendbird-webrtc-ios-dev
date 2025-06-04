@@ -10,13 +10,17 @@
 
 #include "modules/rtp_rtcp/include/receive_statistics.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <vector>
 
 #include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/report_block.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
-#include "rtc_base/random.h"
+#include "rtc_base/checks.h"
 #include "system_wrappers/include/clock.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -896,6 +900,23 @@ TEST(ReviseJitterTest,
   //          / 16 = 2'757
   // final jitter: 2'757 / 16 = 172
   EXPECT_EQ(GetJitter(*statistics), 172U);
+}
+
+TEST(ReviseJitterTest, TwoPacketsWithMaximumRtpTimestampDifference) {
+  SimulatedClock clock(0);
+  std::unique_ptr<ReceiveStatistics> statistics =
+      ReceiveStatistics::Create(&clock);
+  RtpPacketReceived packet1 = MakeRtpPacket(/*payload_type_frequency=*/90'000,
+                                            /*timestamp=*/0x01234567);
+  RtpPacketReceived packet2 =
+      MakeNextRtpPacket(packet1,
+                        /*payload_type_frequency=*/90'000,
+                        /*timestamp=*/0x81234567);
+  statistics->OnRtpPacket(packet1);
+  statistics->OnRtpPacket(packet2);
+
+  // Expect large jump in RTP timestamp is ignored for jitter calculation.
+  EXPECT_EQ(GetJitter(*statistics), 0U);
 }
 
 }  // namespace

@@ -11,17 +11,19 @@
 #include "pc/used_ids.h"
 
 #include "absl/strings/string_view.h"
+#include "api/rtp_parameters.h"
+#include "rtc_base/checks.h"
 #include "test/gtest.h"
 
-using cricket::UsedIds;
-using cricket::UsedRtpHeaderExtensionIds;
+using ::webrtc::UsedIds;
+using ::webrtc::UsedRtpHeaderExtensionIds;
 
 struct Foo {
   int id;
 };
 
 TEST(UsedIdsTest, UniqueIdsAreUnchanged) {
-  UsedIds<Foo> used_ids(1, 5);
+  webrtc::UsedIds<Foo> used_ids(1, 5);
   for (int i = 1; i <= 5; ++i) {
     Foo id = {i};
     used_ids.FindAndSetIdUsed(&id);
@@ -30,7 +32,7 @@ TEST(UsedIdsTest, UniqueIdsAreUnchanged) {
 }
 
 TEST(UsedIdsTest, IdsOutsideRangeAreUnchanged) {
-  UsedIds<Foo> used_ids(1, 5);
+  webrtc::UsedIds<Foo> used_ids(1, 5);
 
   Foo id_11 = {11};
   Foo id_12 = {12};
@@ -51,7 +53,7 @@ TEST(UsedIdsTest, IdsOutsideRangeAreUnchanged) {
 }
 
 TEST(UsedIdsTest, CollisionsAreReassignedIdsInReverseOrder) {
-  UsedIds<Foo> used_ids(1, 10);
+  webrtc::UsedIds<Foo> used_ids(1, 10);
   Foo id_1 = {1};
   Foo id_2 = {2};
   Foo id_2_collision = {2};
@@ -119,7 +121,8 @@ TEST_F(UsedRtpHeaderExtensionIdsTest, TwoByteIdsAllowed) {
       UsedRtpHeaderExtensionIds::IdDomain::kTwoByteAllowed);
 
   // Fill all one byte IDs.
-  for (int i = 1; i < 15; ++i) {
+  for (int i = 1; i <= webrtc::RtpExtension::kOneByteHeaderExtensionMaxId;
+       ++i) {
     webrtc::RtpExtension id("", i);
     used_ids.FindAndSetIdUsed(&id);
   }
@@ -131,11 +134,11 @@ TEST_F(UsedRtpHeaderExtensionIdsTest, TwoByteIdsAllowed) {
 
   // Expect to reassign to two-byte header extension IDs.
   used_ids.FindAndSetIdUsed(&id1_collision);
-  EXPECT_EQ(id1_collision.id, 15);
+  EXPECT_EQ(id1_collision.id, 16);
   used_ids.FindAndSetIdUsed(&id2_collision);
-  EXPECT_EQ(id2_collision.id, 16);
+  EXPECT_EQ(id2_collision.id, 17);
   used_ids.FindAndSetIdUsed(&id3_collision);
-  EXPECT_EQ(id3_collision.id, 17);
+  EXPECT_EQ(id3_collision.id, 18);
 }
 
 // Death tests.

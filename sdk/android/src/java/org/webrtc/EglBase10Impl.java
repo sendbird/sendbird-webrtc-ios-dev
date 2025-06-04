@@ -94,6 +94,7 @@ class EglBase10Impl implements EglBase10 {
     private final EGLDisplay eglDisplay;
     private final EGLConfig eglConfig;
     private final RefCountDelegate refCountDelegate;
+    private EGLSurface currentSurface = EGL10.EGL_NO_SURFACE;
 
     public EglConnection(EGLContext sharedContext, int[] configAttributes) {
       egl = (EGL10) EGLContext.getEGL();
@@ -111,6 +112,7 @@ class EglBase10Impl implements EglBase10 {
         }
         egl.eglDestroyContext(eglDisplay, eglContext);
         egl.eglTerminate(eglDisplay);
+        currentSurface = EGL10.EGL_NO_SURFACE;
       });
     }
 
@@ -152,6 +154,31 @@ class EglBase10Impl implements EglBase10 {
     public EGLConfig getConfig() {
       return eglConfig;
     }
+
+    public void makeCurrent(EGLSurface eglSurface) {
+      if (egl.eglGetCurrentContext() == eglContext && currentSurface == eglSurface) {
+        return;
+      }
+
+      synchronized (EglBase.lock) {
+        if (!egl.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)) {
+          throw new GLException(egl.eglGetError(),
+              "eglMakeCurrent failed: 0x" + Integer.toHexString(egl.eglGetError()));
+        }
+      }
+      currentSurface = eglSurface;
+    }
+
+    public void detachCurrent() {
+      synchronized (EglBase.lock) {
+        if (!egl.eglMakeCurrent(
+                eglDisplay, EGL10.EGL_NO_SURFACE, EGL10.EGL_NO_SURFACE, EGL10.EGL_NO_CONTEXT)) {
+          throw new GLException(egl.eglGetError(),
+              "eglDetachCurrent failed: 0x" + Integer.toHexString(egl.eglGetError()));
+        }
+      }
+      currentSurface = EGL10.EGL_NO_SURFACE;
+    }
   }
 
   // Create a new context with the specified config type, sharing data with sharedContext.
@@ -166,11 +193,9 @@ class EglBase10Impl implements EglBase10 {
 
   @Override
   public void createSurface(Surface surface) {
-    /**
-     * We have to wrap Surface in a SurfaceHolder because for some reason eglCreateWindowSurface
-     * couldn't actually take a Surface object until API 17. Older versions fortunately just call
-     * SurfaceHolder.getSurface(), so we'll do that. No other methods are relevant.
-     */
+    // We have to wrap Surface in a SurfaceHolder because for some reason eglCreateWindowSurface
+    // couldn't actually take a Surface object until API 17. Older versions fortunately just call
+    // SurfaceHolder.getSurface(), so we'll do that. No other methods are relevant.
     class FakeSurfaceHolder implements SurfaceHolder {
       private final Surface surface;
 
@@ -339,27 +364,13 @@ class EglBase10Impl implements EglBase10 {
     if (eglSurface == EGL10.EGL_NO_SURFACE) {
       throw new RuntimeException("No EGLSurface - can't make current");
     }
-    synchronized (EglBase.lock) {
-      EGL10 egl = eglConnection.getEgl();
-      if (!egl.eglMakeCurrent(
-              eglConnection.getDisplay(), eglSurface, eglSurface, eglConnection.getContext())) {
-        throw new GLException(egl.eglGetError(),
-            "eglMakeCurrent failed: 0x" + Integer.toHexString(egl.eglGetError()));
-      }
-    }
+    eglConnection.makeCurrent(eglSurface);
   }
 
   // Detach the current EGL context, so that it can be made current on another thread.
   @Override
   public void detachCurrent() {
-    synchronized (EglBase.lock) {
-      EGL10 egl = eglConnection.getEgl();
-      if (!egl.eglMakeCurrent(eglConnection.getDisplay(), EGL10.EGL_NO_SURFACE,
-              EGL10.EGL_NO_SURFACE, EGL10.EGL_NO_CONTEXT)) {
-        throw new GLException(egl.eglGetError(),
-            "eglDetachCurrent failed: 0x" + Integer.toHexString(egl.eglGetError()));
-      }
-    }
+    eglConnection.detachCurrent();
   }
 
   @Override

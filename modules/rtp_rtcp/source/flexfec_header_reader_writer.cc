@@ -12,8 +12,12 @@
 
 #include <string.h>
 
+#include <cstdint>
+
+#include "api/array_view.h"
 #include "api/scoped_refptr.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
+#include "modules/rtp_rtcp/source/forward_error_correction.h"
 #include "modules/rtp_rtcp/source/forward_error_correction_internal.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -138,9 +142,9 @@ bool FlexfecHeaderReader::ReadFecHeader(
     mask_part0 <<= 1;
     ByteWriter<uint16_t>::WriteBigEndian(&data[byte_index], mask_part0);
     byte_index += kFlexfecPacketMaskSizes[0];
-    if (k_bit0) {
-      // The first K-bit is set, and the packet mask is thus only 2 bytes long.
-      // We have finished reading the properties for current ssrc.
+    if (!k_bit0) {
+      // The first K-bit is clear, and the packet mask is thus only 2 bytes
+      // long. We have finished reading the properties for current ssrc.
       fec_packet->protected_streams[i].packet_mask_size =
           kFlexfecPacketMaskSizes[0];
     } else {
@@ -162,8 +166,8 @@ bool FlexfecHeaderReader::ReadFecHeader(
       mask_part1 <<= 2;
       ByteWriter<uint32_t>::WriteBigEndian(&data[byte_index], mask_part1);
       byte_index += kFlexfecPacketMaskSizes[1] - kFlexfecPacketMaskSizes[0];
-      if (k_bit1) {
-        // The first K-bit is clear, but the second K-bit is set. The packet
+      if (!k_bit1) {
+        // The first K-bit is set, but the second K-bit is clear. The packet
         // mask is thus 6 bytes long. We have finished reading the properties
         // for current ssrc.
         fec_packet->protected_streams[i].packet_mask_size =
@@ -247,7 +251,7 @@ size_t FlexfecHeaderWriter::FecHeaderSize(size_t packet_mask_size) const {
 // TODO(brandtr): Update this function when we support offset-based masks
 // and retransmissions.
 void FlexfecHeaderWriter::FinalizeFecHeader(
-    rtc::ArrayView<const ProtectedStream> protected_streams,
+    ArrayView<const ProtectedStream> protected_streams,
     ForwardErrorCorrection::Packet& fec_packet) const {
   uint8_t* data = fec_packet.data.MutableData();
   *data &= 0x7f;  // Clear R bit.
@@ -273,8 +277,9 @@ void FlexfecHeaderWriter::FinalizeFecHeader(
 
       tmp_mask_part0 >>= 1;  // Shift, thus clearing K-bit 0.
       ByteWriter<uint16_t>::WriteBigEndian(write_at, tmp_mask_part0);
+      *write_at |= 0x80;  // Set K-bit 0.
       write_at += kFlexfecPacketMaskSizes[0];
-      tmp_mask_part1 >>= 2;  // Shift, thus clearing K-bit 1 and bit 15.
+      tmp_mask_part1 >>= 2;  // Shift twice, thus clearing K-bit 1 and bit 15.
       ByteWriter<uint32_t>::WriteBigEndian(write_at, tmp_mask_part1);
 
       bool bit15 = (protected_stream.packet_mask[1] & 0x01) != 0;
@@ -284,9 +289,9 @@ void FlexfecHeaderWriter::FinalizeFecHeader(
       bool bit46 = (protected_stream.packet_mask[5] & 0x02) != 0;
       bool bit47 = (protected_stream.packet_mask[5] & 0x01) != 0;
       if (!bit46 && !bit47) {
-        *write_at |= 0x80;  // Set K-bit 1.
         write_at += kFlexfecPacketMaskSizes[1] - kFlexfecPacketMaskSizes[0];
       } else {
+        *write_at |= 0x80;  // Set K-bit 1.
         write_at += kFlexfecPacketMaskSizes[1] - kFlexfecPacketMaskSizes[0];
         // Clear all trailing bits.
         memset(write_at, 0,
@@ -307,14 +312,13 @@ void FlexfecHeaderWriter::FinalizeFecHeader(
       ByteWriter<uint16_t>::WriteBigEndian(write_at, tmp_mask_part0);
       bool bit15 = (protected_stream.packet_mask[1] & 0x01) != 0;
       if (!bit15) {
-        *write_at |= 0x80;  // Set K-bit 0.
         write_at += kFlexfecPacketMaskSizes[0];
       } else {
+        *write_at |= 0x80;  // Set K-bit 0.
         write_at += kFlexfecPacketMaskSizes[0];
         // Clear all trailing bits.
         memset(write_at, 0U,
                kFlexfecPacketMaskSizes[1] - kFlexfecPacketMaskSizes[0]);
-        *write_at |= 0x80;  // Set K-bit 1.
         *write_at |= 0x40;  // Set bit 15.
         write_at += kFlexfecPacketMaskSizes[1] - kFlexfecPacketMaskSizes[0];
       }
