@@ -40,11 +40,11 @@ DEFAULT_ARCHS = [
     'device:arm64', 'simulator:arm64', 'simulator:x64'
 ]
 IOS_MINIMUM_DEPLOYMENT_TARGET = {
-    'device': '14.0',
-    'simulator': '14.0',
-    'catalyst': '14.0'
+    'device': '13.0',
+    'simulator': '13.0',
+    'catalyst': '13.0'
 }
-LIBVPX_BUILD_VP9 = False
+LIBVPX_BUILD_VP9 = True
 
 sys.path.append(os.path.join(SCRIPT_DIR, '..', 'libs'))
 from generate_licenses import LicenseBuilder
