@@ -572,7 +572,8 @@ const int64_t kNanosecondsPerSecond = 1000000000;
   [RTC_OBJC_TYPE(RTCDispatcher)
       dispatchAsyncOnType:RTCDispatcherTypeMain
                     block:^{
-    UIInterfaceOrientation interfaceOrientation = [UIApplication sharedApplication].statusBarOrientation;
+    UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;
+    UIInterfaceOrientation interfaceOrientation = keyWindow.windowScene.interfaceOrientation;
   
     [RTC_OBJC_TYPE(RTCDispatcher)
         dispatchAsyncOnType:RTCDispatcherTypeCaptureSession
@@ -594,8 +595,8 @@ const int64_t kNanosecondsPerSecond = 1000000000;
             self->_orientation = UIDeviceOrientationUnknown;
             break;
         }
-                      }];
-                    }];
+    }];
+  }];
 #endif
 }
 

@@ -137,8 +137,7 @@
   if (audioDevice) {
     dependencies.adm = webrtc::CreateAudioDeviceModule(audioDevice);
   } else {
-    audio_device_module = [self audioDeviceModuleWithAudioSink:audioSink];
-    // dependencies.adm = [self audioDeviceModule];
+    dependencies.adm = [self audioDeviceModuleWithAudioSink:audioSink];
   }
   return [self initWithMediaAndDependencies:std::move(dependencies)];
 #endif

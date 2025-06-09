@@ -33,9 +33,9 @@ class AudioDeviceModuleIOS : public AudioDeviceModule {
 
   explicit AudioDeviceModuleIOS(
       bool bypass_voice_processing,
-      AudioSourceSink* audioSink,
       MutedSpeechEventHandler muted_speech_event_handler,
-      ADMErrorHandler error_handler);
+      ADMErrorHandler error_handler,
+      AudioSourceSink* audioSink);
   ~AudioDeviceModuleIOS() override;
 
   // Retrieve the currently utilized audio layer

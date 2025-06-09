@@ -44,13 +44,14 @@ namespace ios_adm {
 
 AudioDeviceModuleIOS::AudioDeviceModuleIOS(
     bool bypass_voice_processing,
-    AudioSourceSink* audioSink,
     MutedSpeechEventHandler muted_speech_event_handler,
-    ADMErrorHandler error_handler)
+    ADMErrorHandler error_handler,
+    AudioSourceSink* audioSink)
     : bypass_voice_processing_(bypass_voice_processing),
       muted_speech_event_handler_(muted_speech_event_handler),
       error_handler_(error_handler),
-      task_queue_factory_(CreateDefaultTaskQueueFactory()) {
+      task_queue_factory_(CreateDefaultTaskQueueFactory()),
+      audio_sink_(audioSink) {
   RTC_LOG(LS_INFO) << "current platform is IOS";
   RTC_LOG(LS_INFO) << "iPhone Audio APIs will be utilized.";
   audio_sink_ = audioSink;
