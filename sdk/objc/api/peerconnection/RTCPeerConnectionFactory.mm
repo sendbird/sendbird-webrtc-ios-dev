@@ -74,7 +74,7 @@
 #endif
 }
 
-- (rtc::scoped_refptr<webrtc::AudioDeviceModule>)audioDeviceModuleWithAudioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink { 
+- (webrtc::scoped_refptr<webrtc::AudioDeviceModule>)audioDeviceModuleWithAudioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink { 
 #if defined(WEBRTC_IOS)
   RTCLogInfo(@"Creating AudioDeviceModule with AudioSourceSink");
   webrtc::AudioSourceSink *sink = new webrtc::AudioSourceSink(audioSink);

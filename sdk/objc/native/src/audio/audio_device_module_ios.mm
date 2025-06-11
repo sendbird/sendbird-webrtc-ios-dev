@@ -96,6 +96,7 @@ int32_t AudioDeviceModuleIOS::Init() {
   audio_device_.reset(new ios_adm::AudioDeviceIOS(
       bypass_voice_processing_, muted_speech_event_handler_, error_handler));
   RTC_CHECK(audio_device_);
+  audio_device_->AddAudioSourceSink(audio_sink_);
 
   this->AttachAudioBuffer();
 
