@@ -13,17 +13,18 @@
 #include "rtc_base/event_tracer.h"
 
 void RTCSetupInternalTracer(void) {
-  webrtc::tracing::SetupInternalTracer();
+  // webrtc::tracing::SetupInternalTracer();
 }
 
 BOOL RTCStartInternalCapture(NSString *filePath) {
-  return webrtc::tracing::StartInternalCapture(filePath.UTF8String);
+  // return webrtc::tracing::StartInternalCapture(filePath.UTF8String);
+  return true;
 }
 
 void RTCStopInternalCapture(void) {
-  webrtc::tracing::StopInternalCapture();
+  // webrtc::tracing::StopInternalCapture();
 }
 
 void RTCShutdownInternalTracer(void) {
-  webrtc::tracing::ShutdownInternalTracer();
+  // webrtc::tracing::ShutdownInternalTracer();
 }
