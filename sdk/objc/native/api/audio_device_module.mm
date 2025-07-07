@@ -18,13 +18,46 @@
 
 namespace webrtc {
 
-rtc::scoped_refptr<AudioDeviceModule> CreateAudioDeviceModule(bool bypass_voice_processing, webrtc::AudioSourceSink* audioSink) {
+webrtc::scoped_refptr<AudioDeviceModule> CreateAudioDeviceModule(
+  bool bypass_voice_processing, 
+  webrtc::AudioSourceSink* audioSink) {
   RTC_DLOG(LS_INFO) << __FUNCTION__;
 #if defined(WEBRTC_IOS)
-  return rtc::make_ref_counted<ios_adm::AudioDeviceModuleIOS>(bypass_voice_processing, audioSink);
+  return webrtc::make_ref_counted<ios_adm::AudioDeviceModuleIOS>(
+      bypass_voice_processing,
+      /*muted_speech_event_handler=*/nullptr,
+      /*error_handler=*/nullptr,
+      audioSink);
 #else
-  RTC_LOG(LS_ERROR) << "current platform is not supported => this module will self destruct!";
+  RTC_LOG(LS_ERROR)
+      << "current platform is not supported => this module will self destruct!";
   return nullptr;
 #endif
 }
+
+webrtc::scoped_refptr<AudioDeviceModule> CreateMutedDetectAudioDeviceModule(
+    AudioDeviceModule::MutedSpeechEventHandler muted_speech_event_handler,
+    bool bypass_voice_processing, webrtc::AudioSourceSink* audioSink) {
+  RTC_DLOG(LS_INFO) << __FUNCTION__;
+  return CreateMutedDetectAudioDeviceModule(muted_speech_event_handler,
+                                            /*error_handler=*/nullptr,
+                                            bypass_voice_processing,
+                                            audioSink);
 }
+
+webrtc::scoped_refptr<AudioDeviceModule> CreateMutedDetectAudioDeviceModule(
+    AudioDeviceModule::MutedSpeechEventHandler muted_speech_event_handler,
+    ADMErrorHandler error_handler,
+    bool bypass_voice_processing,
+    webrtc::AudioSourceSink* audioSink) {
+  RTC_DLOG(LS_INFO) << __FUNCTION__;
+#if defined(WEBRTC_IOS)
+  return webrtc::make_ref_counted<ios_adm::AudioDeviceModuleIOS>(
+      bypass_voice_processing, muted_speech_event_handler, error_handler, audioSink);
+#else
+  RTC_LOG(LS_ERROR)
+      << "current platform is not supported => this module will self destruct!";
+  return nullptr;
+#endif
+}
+}  // namespace webrtc

@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "modules/desktop_capture/win/screen_capture_utils.h"
 #include "modules/desktop_capture/win/wgc_desktop_frame.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -75,7 +76,8 @@ enum class GetFrameResult {
   kGetContentSizeFailed = 9,
   kResizeMappedTextureFailed = 10,
   kRecreateFramePoolFailed = 11,
-  kMaxValue = kRecreateFramePoolFailed
+  kFramePoolEmpty = 12,
+  kMaxValue = kFramePoolEmpty
 };
 
 void RecordStartCaptureResult(StartCaptureResult error) {
@@ -98,12 +100,16 @@ bool SizeHasChanged(ABI::Windows::Graphics::SizeInt32 size_new,
 
 }  // namespace
 
-WgcCaptureSession::WgcCaptureSession(ComPtr<ID3D11Device> d3d11_device,
+WgcCaptureSession::WgcCaptureSession(intptr_t source_id,
+                                     ComPtr<ID3D11Device> d3d11_device,
                                      ComPtr<WGC::IGraphicsCaptureItem> item,
                                      ABI::Windows::Graphics::SizeInt32 size)
     : d3d11_device_(std::move(d3d11_device)),
       item_(std::move(item)),
-      size_(size) {}
+      size_(size),
+      source_id_(source_id) {
+  is_window_source_ = ::IsWindow(reinterpret_cast<HWND>(source_id_));
+}
 
 WgcCaptureSession::~WgcCaptureSession() {
   RemoveEventHandler();
@@ -187,6 +193,18 @@ HRESULT WgcCaptureSession::StartCapture(const DesktopCaptureOptions& options) {
     }
   }
 
+  // By default, the WGC capture API adds a yellow border around the captured
+  // window or display to indicate that a capture is in progress. The section
+  // below is an attempt to remove this yellow border to make the capture
+  // experience more inline with the DXGI capture path.
+  // This requires 10.0.20348.0 or later, which practically means Windows 11.
+  ComPtr<ABI::Windows::Graphics::Capture::IGraphicsCaptureSession3> session3;
+  if (SUCCEEDED(session_->QueryInterface(
+          ABI::Windows::Graphics::Capture::IID_IGraphicsCaptureSession3,
+          &session3))) {
+    session3->put_IsBorderRequired(options.wgc_require_border());
+  }
+
   allow_zero_hertz_ = options.allow_wgc_zero_hertz();
 
   hr = session_->StartCapture();
@@ -244,10 +262,22 @@ void WgcCaptureSession::EnsureFrame() {
       << "Unable to process a valid frame even after trying 10 times.";
 }
 
-bool WgcCaptureSession::GetFrame(std::unique_ptr<DesktopFrame>* output_frame) {
+bool WgcCaptureSession::GetFrame(std::unique_ptr<DesktopFrame>* output_frame,
+                                 bool source_should_be_capturable) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
 
-  EnsureFrame();
+  if (item_closed_) {
+    RTC_LOG(LS_ERROR) << "The target source has been closed.";
+    RecordGetFrameResult(GetFrameResult::kItemClosed);
+    return false;
+  }
+
+  // Try to process the captured frame and wait some if needed. Avoid trying
+  // if we know that the source will not be capturable. This can happen e.g.
+  // when captured window is minimized and if EnsureFrame() was called in this
+  // state a large amount of kFrameDropped errors would be logged.
+  if (source_should_be_capturable)
+    EnsureFrame();
 
   // Return a NULL frame and false as `result` if we still don't have a valid
   // frame. This will lead to a DesktopCapturer::Result::ERROR_PERMANENT being
@@ -297,12 +327,6 @@ HRESULT WgcCaptureSession::CreateMappedTexture(
 HRESULT WgcCaptureSession::ProcessFrame() {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
 
-  if (item_closed_) {
-    RTC_LOG(LS_ERROR) << "The target source has been closed.";
-    RecordGetFrameResult(GetFrameResult::kItemClosed);
-    return E_ABORT;
-  }
-
   RTC_DCHECK(is_capture_started_);
 
   ComPtr<WGC::IDirect3D11CaptureFrame> capture_frame;
@@ -314,10 +338,15 @@ HRESULT WgcCaptureSession::ProcessFrame() {
   }
 
   if (!capture_frame) {
-    // Avoid logging errors until at least one valid frame has been captured.
-    if (queue_.current_frame()) {
-      RTC_DLOG(LS_WARNING) << "Frame pool was empty => kFrameDropped.";
+    if (!queue_.current_frame()) {
+      // The frame pool was empty and so is the external queue.
+      RTC_DLOG(LS_ERROR) << "Frame pool was empty => kFrameDropped.";
       RecordGetFrameResult(GetFrameResult::kFrameDropped);
+    } else {
+      // The frame pool was empty but there is still one old frame available in
+      // external the queue.
+      RTC_DLOG(LS_WARNING) << "Frame pool was empty => kFramePoolEmpty.";
+      RecordGetFrameResult(GetFrameResult::kFramePoolEmpty);
     }
     return E_FAIL;
   }
@@ -433,6 +462,34 @@ HRESULT WgcCaptureSession::ProcessFrame() {
 
   DesktopFrame* current_frame = queue_.current_frame();
   DesktopFrame* previous_frame = queue_.previous_frame();
+
+  HMONITOR monitor;
+  if (is_window_source_) {
+    // If the captured window moves to another screen, the HMONITOR associated
+    // with the captured window will change. Therefore, we need to get the value
+    // of HMONITOR per frame.
+    monitor = MonitorFromWindow(reinterpret_cast<HWND>(source_id_),
+                                /*dwFlags=*/MONITOR_DEFAULTTONEAREST);
+  } else {
+    if (!GetHmonitorFromDeviceIndex(source_id_, &monitor)) {
+      RTC_LOG(LS_ERROR) << "Failed to get HMONITOR from device index.";
+      return E_FAIL;
+    }
+  }
+
+  // Captures the device scale factor of the monitor where the frame is captured
+  // from. This value is the same as the scale from windows settings. Valid
+  // values are some distinct numbers in the range of [1,5], for example,
+  // 1, 1.5, 2.5, etc.
+  DEVICE_SCALE_FACTOR device_scale_factor = DEVICE_SCALE_FACTOR_INVALID;
+  HRESULT scale_factor_hr =
+      GetScaleFactorForMonitor(monitor, &device_scale_factor);
+  RTC_LOG_IF(LS_ERROR, FAILED(scale_factor_hr))
+      << "Failed to get scale factor for monitor: " << scale_factor_hr;
+  if (device_scale_factor != DEVICE_SCALE_FACTOR_INVALID) {
+    current_frame->set_device_scale_factor(
+        static_cast<float>(device_scale_factor) / 100.0f);
+  }
 
   // Will be set to true while copying the frame data to the `current_frame` if
   // we can already determine that the content of the new frame differs from the

@@ -10,13 +10,32 @@
 
 #include "modules/rtp_rtcp/source/rtp_sender_video_frame_transformer_delegate.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
 #include <utility>
+#include <vector>
 
+#include "api/array_view.h"
+#include "api/frame_transformer_interface.h"
+#include "api/make_ref_counted.h"
+#include "api/scoped_refptr.h"
+#include "api/test/mock_frame_transformer.h"
 #include "api/test/mock_transformable_video_frame.h"
+#include "api/transport/rtp/dependency_descriptor.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "api/video/encoded_image.h"
+#include "api/video/video_codec_type.h"
+#include "api/video/video_frame_metadata.h"
+#include "api/video/video_frame_type.h"
+#include "api/video/video_layers_allocation.h"
+#include "modules/rtp_rtcp/source/rtp_video_header.h"
+#include "modules/video_coding/codecs/vp8/include/vp8_globals.h"
 #include "rtc_base/event.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "test/mock_frame_transformer.h"
 #include "test/time_controller/simulated_time_controller.h"
 
 namespace webrtc {
@@ -33,10 +52,10 @@ class MockRTPVideoFrameSenderInterface : public RTPVideoFrameSenderInterface {
   MOCK_METHOD(bool,
               SendVideo,
               (int payload_type,
-               absl::optional<VideoCodecType> codec_type,
+               std::optional<VideoCodecType> codec_type,
                uint32_t rtp_timestamp,
                Timestamp capture_time,
-               rtc::ArrayView<const uint8_t> payload,
+               ArrayView<const uint8_t> payload,
                size_t encoder_output_size,
                RTPVideoHeader video_header,
                TimeDelta expected_retransmission_time,
@@ -56,13 +75,13 @@ class MockRTPVideoFrameSenderInterface : public RTPVideoFrameSenderInterface {
 class RtpSenderVideoFrameTransformerDelegateTest : public ::testing::Test {
  protected:
   RtpSenderVideoFrameTransformerDelegateTest()
-      : frame_transformer_(rtc::make_ref_counted<MockFrameTransformer>()),
+      : frame_transformer_(make_ref_counted<MockFrameTransformer>()),
         time_controller_(Timestamp::Seconds(0)) {}
 
   ~RtpSenderVideoFrameTransformerDelegateTest() override = default;
 
   std::unique_ptr<TransformableFrameInterface> GetTransformableFrame(
-      rtc::scoped_refptr<RTPSenderVideoFrameTransformerDelegate> delegate,
+      scoped_refptr<RTPSenderVideoFrameTransformerDelegate> delegate,
       bool key_frame = false) {
     EncodedImage encoded_image;
     encoded_image.SetEncodedData(EncodedImageBuffer::Create(1));
@@ -74,21 +93,27 @@ class RtpSenderVideoFrameTransformerDelegateTest : public ::testing::Test {
                           frame_to_transform) {
           frame = std::move(frame_to_transform);
         });
+    RTPVideoHeader rtp_header;
+
+    VideoFrameMetadata metadata;
+    metadata.SetCodec(VideoCodecType::kVideoCodecVP8);
+    metadata.SetRTPVideoHeaderCodecSpecifics(RTPVideoHeaderVP8());
+
     delegate->TransformFrame(
         /*payload_type=*/1, VideoCodecType::kVideoCodecVP8, /*rtp_timestamp=*/2,
-        encoded_image, RTPVideoHeader(),
-        /*expected_retransmission_time=*/TimeDelta::PlusInfinity());
+        encoded_image, RTPVideoHeader::FromMetadata(metadata),
+        /*expected_retransmission_time=*/TimeDelta::Millis(10));
     return frame;
   }
 
   MockRTPVideoFrameSenderInterface test_sender_;
-  rtc::scoped_refptr<MockFrameTransformer> frame_transformer_;
+  scoped_refptr<MockFrameTransformer> frame_transformer_;
   GlobalSimulatedTimeController time_controller_;
 };
 
 TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
        RegisterTransformedFrameCallbackSinkOnInit) {
-  auto delegate = rtc::make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
+  auto delegate = make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
       &test_sender_, frame_transformer_,
       /*ssrc=*/1111, time_controller_.CreateTaskQueueFactory().get());
   EXPECT_CALL(*frame_transformer_,
@@ -98,7 +123,7 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
 
 TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
        UnregisterTransformedFrameSinkCallbackOnReset) {
-  auto delegate = rtc::make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
+  auto delegate = make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
       &test_sender_, frame_transformer_,
       /*ssrc=*/1111, time_controller_.CreateTaskQueueFactory().get());
   EXPECT_CALL(*frame_transformer_,
@@ -108,7 +133,7 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
 
 TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
        TransformFrameCallsTransform) {
-  auto delegate = rtc::make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
+  auto delegate = make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
       &test_sender_, frame_transformer_,
       /*ssrc=*/1111, time_controller_.CreateTaskQueueFactory().get());
 
@@ -117,16 +142,16 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
   delegate->TransformFrame(
       /*payload_type=*/1, VideoCodecType::kVideoCodecVP8, /*rtp_timestamp=*/2,
       encoded_image, RTPVideoHeader(),
-      /*expected_retransmission_time=*/TimeDelta::PlusInfinity());
+      /*expected_retransmission_time=*/TimeDelta::Millis(10));
 }
 
 TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
        OnTransformedFrameCallsSenderSendVideo) {
-  auto delegate = rtc::make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
+  auto delegate = make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
       &test_sender_, frame_transformer_,
       /*ssrc=*/1111, time_controller_.CreateTaskQueueFactory().get());
 
-  rtc::scoped_refptr<TransformedFrameCallback> callback;
+  scoped_refptr<TransformedFrameCallback> callback;
   EXPECT_CALL(*frame_transformer_, RegisterTransformedFrameSinkCallback)
       .WillOnce(SaveArg<0>(&callback));
   delegate->Init();
@@ -135,8 +160,9 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
   std::unique_ptr<TransformableFrameInterface> frame =
       GetTransformableFrame(delegate);
   ASSERT_TRUE(frame);
+  EXPECT_STRCASEEQ("video/VP8", frame->GetMimeType().c_str());
 
-  rtc::Event event;
+  Event event;
   EXPECT_CALL(test_sender_, SendVideo).WillOnce(WithoutArgs([&] {
     event.Set();
     return true;
@@ -148,7 +174,7 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
 }
 
 TEST_F(RtpSenderVideoFrameTransformerDelegateTest, CloneSenderVideoFrame) {
-  auto delegate = rtc::make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
+  auto delegate = make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
       &test_sender_, frame_transformer_,
       /*ssrc=*/1111, time_controller_.CreateTaskQueueFactory().get());
 
@@ -162,13 +188,14 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest, CloneSenderVideoFrame) {
 
   EXPECT_EQ(clone->IsKeyFrame(), video_frame.IsKeyFrame());
   EXPECT_EQ(clone->GetPayloadType(), video_frame.GetPayloadType());
+  EXPECT_EQ(clone->GetMimeType(), video_frame.GetMimeType());
   EXPECT_EQ(clone->GetSsrc(), video_frame.GetSsrc());
   EXPECT_EQ(clone->GetTimestamp(), video_frame.GetTimestamp());
   EXPECT_EQ(clone->Metadata(), video_frame.Metadata());
 }
 
 TEST_F(RtpSenderVideoFrameTransformerDelegateTest, CloneKeyFrame) {
-  auto delegate = rtc::make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
+  auto delegate = make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
       &test_sender_, frame_transformer_,
       /*ssrc=*/1111, time_controller_.CreateTaskQueueFactory().get());
 
@@ -182,13 +209,14 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest, CloneKeyFrame) {
 
   EXPECT_EQ(clone->IsKeyFrame(), video_frame.IsKeyFrame());
   EXPECT_EQ(clone->GetPayloadType(), video_frame.GetPayloadType());
+  EXPECT_EQ(clone->GetMimeType(), video_frame.GetMimeType());
   EXPECT_EQ(clone->GetSsrc(), video_frame.GetSsrc());
   EXPECT_EQ(clone->GetTimestamp(), video_frame.GetTimestamp());
   EXPECT_EQ(clone->Metadata(), video_frame.Metadata());
 }
 
 TEST_F(RtpSenderVideoFrameTransformerDelegateTest, MetadataAfterSetMetadata) {
-  auto delegate = rtc::make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
+  auto delegate = make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
       &test_sender_, frame_transformer_,
       /*ssrc=*/1111, time_controller_.CreateTaskQueueFactory().get());
 
@@ -216,7 +244,7 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest, MetadataAfterSetMetadata) {
 
 TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
        ReceiverFrameConvertedToSenderFrame) {
-  auto delegate = rtc::make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
+  auto delegate = make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
       &test_sender_, frame_transformer_,
       /*ssrc=*/1111, time_controller_.CreateTaskQueueFactory().get());
 
@@ -233,25 +261,25 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
   metadata.SetRTPVideoHeaderCodecSpecifics(RTPVideoHeaderVP8());
   metadata.SetCsrcs(frame_csrcs);
   ON_CALL(*mock_receiver_frame, Metadata).WillByDefault(Return(metadata));
-  rtc::ArrayView<const uint8_t> buffer =
-      (rtc::ArrayView<const uint8_t>)*EncodedImageBuffer::Create(1);
+  ArrayView<const uint8_t> buffer =
+      (ArrayView<const uint8_t>)*EncodedImageBuffer::Create(1);
   ON_CALL(*mock_receiver_frame, GetData).WillByDefault(Return(buffer));
   ON_CALL(*mock_receiver_frame, GetPayloadType)
       .WillByDefault(Return(payload_type));
   ON_CALL(*mock_receiver_frame, GetTimestamp).WillByDefault(Return(timestamp));
 
-  rtc::scoped_refptr<TransformedFrameCallback> callback;
+  scoped_refptr<TransformedFrameCallback> callback;
   EXPECT_CALL(*frame_transformer_, RegisterTransformedFrameSinkCallback)
       .WillOnce(SaveArg<0>(&callback));
   delegate->Init();
   ASSERT_TRUE(callback);
 
-  rtc::Event event;
+  Event event;
   EXPECT_CALL(
       test_sender_,
-      SendVideo(payload_type, absl::make_optional(kVideoCodecVP8), timestamp,
+      SendVideo(payload_type, std::make_optional(kVideoCodecVP8), timestamp,
                 /*capture_time=*/Timestamp::MinusInfinity(), buffer, _, _,
-                /*expected_retransmission_time=*/TimeDelta::PlusInfinity(),
+                /*expected_retransmission_time=*/TimeDelta::Millis(10),
                 frame_csrcs))
       .WillOnce(WithoutArgs([&] {
         event.Set();
@@ -264,7 +292,7 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
 }
 
 TEST_F(RtpSenderVideoFrameTransformerDelegateTest, SettingRTPTimestamp) {
-  auto delegate = rtc::make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
+  auto delegate = make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
       &test_sender_, frame_transformer_,
       /*ssrc=*/1111, time_controller_.CreateTaskQueueFactory().get());
 
@@ -278,6 +306,30 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest, SettingRTPTimestamp) {
 
   video_frame.SetRTPTimestamp(rtp_timestamp);
   EXPECT_EQ(video_frame.GetTimestamp(), rtp_timestamp);
+}
+
+TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
+       ShortCircuitingSkipsTransform) {
+  auto delegate = make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
+      &test_sender_, frame_transformer_,
+      /*ssrc=*/1111, time_controller_.CreateTaskQueueFactory().get());
+  EXPECT_CALL(*frame_transformer_,
+              RegisterTransformedFrameSinkCallback(_, 1111));
+  delegate->Init();
+
+  delegate->StartShortCircuiting();
+
+  // Will not call the actual transformer.
+  EXPECT_CALL(*frame_transformer_, Transform).Times(0);
+  // Will pass the frame straight to the reciever.
+  EXPECT_CALL(test_sender_, SendVideo);
+
+  EncodedImage encoded_image;
+  encoded_image.SetEncodedData(EncodedImageBuffer::Create(1));
+  delegate->TransformFrame(
+      /*payload_type=*/1, VideoCodecType::kVideoCodecVP8, /*rtp_timestamp=*/2,
+      encoded_image, RTPVideoHeader(),
+      /*expected_retransmission_time=*/TimeDelta::Millis(10));
 }
 
 }  // namespace

@@ -16,8 +16,7 @@
 #include <utility>
 
 #include "absl/memory/memory.h"
-#include "api/task_queue/default_task_queue_factory.h"
-#include "api/transport/field_trial_based_config.h"
+#include "api/environment/environment_factory.h"
 #include "api/units/timestamp.h"
 #include "modules/rtp_rtcp/source/rtp_packet.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
@@ -48,7 +47,7 @@ void RtpReplayer::Replay(
     const uint8_t* rtp_dump_data,
     size_t rtp_dump_size) {
   RunLoop loop;
-  rtc::ScopedBaseFakeClock fake_clock;
+  ScopedBaseFakeClock fake_clock;
 
   // Work around: webrtc calls webrtc::Random(clock.TimeInMicroseconds())
   // everywhere and Random expects non-zero seed. Let's set the clock non-zero
@@ -73,14 +72,8 @@ void RtpReplayer::Replay(
   }
 
   // Setup the video streams based on the configuration.
-  webrtc::RtcEventLogNull event_log;
-  std::unique_ptr<TaskQueueFactory> task_queue_factory =
-      CreateDefaultTaskQueueFactory();
-  Call::Config call_config(&event_log);
-  call_config.task_queue_factory = task_queue_factory.get();
-  FieldTrialBasedConfig field_trials;
-  call_config.trials = &field_trials;
-  std::unique_ptr<Call> call(Call::Create(call_config));
+  CallConfig call_config(CreateEnvironment());
+  std::unique_ptr<Call> call(Call::Create(std::move(call_config)));
   SetupVideoStreams(&receive_stream_configs, stream_state.get(), call.get());
 
   // Start replaying the provided stream now that it has been configured.
@@ -156,14 +149,14 @@ std::unique_ptr<test::RtpFileReader> RtpReplayer::CreateRtpReader(
 }
 
 void RtpReplayer::ReplayPackets(
-    rtc::FakeClock* clock,
+    FakeClock* clock,
     Call* call,
     test::RtpFileReader* rtp_reader,
     const RtpPacketReceived::ExtensionManager& extensions) {
   int64_t replay_start_ms = -1;
 
   while (true) {
-    int64_t now_ms = rtc::TimeMillis();
+    int64_t now_ms = TimeMillis();
     if (replay_start_ms == -1) {
       replay_start_ms = now_ms;
     }

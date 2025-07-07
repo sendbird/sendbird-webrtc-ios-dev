@@ -11,12 +11,45 @@
 #include "p2p/base/stun_dictionary.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <deque>
+#include <memory>
+#include <optional>
 #include <utility>
+#include <vector>
 
+#include "api/rtc_error.h"
+#include "api/transport/stun.h"
+#include "rtc_base/byte_buffer.h"
 #include "rtc_base/logging.h"
 
-namespace cricket {
+namespace webrtc {
+
+namespace {
+
+StunAttributeValueType GetStunAttributeValueType(int value_type) {
+  switch (value_type) {
+    case STUN_VALUE_ADDRESS:
+      return STUN_VALUE_ADDRESS;
+    case STUN_VALUE_XOR_ADDRESS:
+      return STUN_VALUE_XOR_ADDRESS;
+    case STUN_VALUE_UINT32:
+      return STUN_VALUE_UINT32;
+    case STUN_VALUE_UINT64:
+      return STUN_VALUE_UINT64;
+    case STUN_VALUE_BYTE_STRING:
+      return STUN_VALUE_BYTE_STRING;
+    case STUN_VALUE_ERROR_CODE:
+      return STUN_VALUE_ERROR_CODE;
+    case STUN_VALUE_UINT16_LIST:
+      return STUN_VALUE_UINT16_LIST;
+    default:
+      return STUN_VALUE_UNKNOWN;
+  }
+}
+
+}  // namespace
 
 const StunAddressAttribute* StunDictionaryView::GetAddress(int key) const {
   const StunAttribute* attr = GetOrNull(key, STUN_VALUE_ADDRESS);
@@ -62,7 +95,7 @@ const StunUInt16ListAttribute* StunDictionaryView::GetUInt16List(
 
 const StunAttribute* StunDictionaryView::GetOrNull(
     int key,
-    absl::optional<StunAttributeValueType> type) const {
+    std::optional<StunAttributeValueType> type) const {
   const auto it = attrs_.find(key);
   if (it == attrs_.end()) {
     return nullptr;
@@ -77,29 +110,26 @@ const StunAttribute* StunDictionaryView::GetOrNull(
   return (*it).second.get();
 }
 
-webrtc::RTCErrorOr<
-    std::pair<uint64_t, std::deque<std::unique_ptr<StunAttribute>>>>
+RTCErrorOr<std::pair<uint64_t, std::deque<std::unique_ptr<StunAttribute>>>>
 StunDictionaryView::ParseDelta(const StunByteStringAttribute& delta) {
-  rtc::ByteBufferReader buf(delta.bytes(), delta.length());
+  ByteBufferReader buf(delta.array_view());
   uint16_t magic;
   if (!buf.ReadUInt16(&magic)) {
-    return webrtc::RTCError(webrtc::RTCErrorType::INVALID_PARAMETER,
-                            "Failed to read magic number");
+    return RTCError(RTCErrorType::INVALID_PARAMETER,
+                    "Failed to read magic number");
   }
   if (magic != kDeltaMagic) {
-    return webrtc::RTCError(webrtc::RTCErrorType::INVALID_PARAMETER,
-                            "Invalid magic number");
+    return RTCError(RTCErrorType::INVALID_PARAMETER, "Invalid magic number");
   }
 
   uint16_t delta_version;
   if (!buf.ReadUInt16(&delta_version)) {
-    return webrtc::RTCError(webrtc::RTCErrorType::INVALID_PARAMETER,
-                            "Failed to read version");
+    return RTCError(RTCErrorType::INVALID_PARAMETER, "Failed to read version");
   }
 
   if (delta_version != kDeltaVersion) {
-    return webrtc::RTCError(webrtc::RTCErrorType::INVALID_PARAMETER,
-                            "Unsupported delta version");
+    return RTCError(RTCErrorType::INVALID_PARAMETER,
+                    "Unsupported delta version");
   }
 
   // Now read all the attributes
@@ -107,47 +137,45 @@ StunDictionaryView::ParseDelta(const StunByteStringAttribute& delta) {
   while (buf.Length()) {
     uint16_t key, length, value_type;
     if (!buf.ReadUInt16(&key)) {
-      return webrtc::RTCError(webrtc::RTCErrorType::INVALID_PARAMETER,
-                              "Failed to read attribute key");
+      return RTCError(RTCErrorType::INVALID_PARAMETER,
+                      "Failed to read attribute key");
     }
     if (!buf.ReadUInt16(&length)) {
-      return webrtc::RTCError(webrtc::RTCErrorType::INVALID_PARAMETER,
-                              "Failed to read attribute length");
+      return RTCError(RTCErrorType::INVALID_PARAMETER,
+                      "Failed to read attribute length");
     }
     if (!buf.ReadUInt16(&value_type)) {
-      return webrtc::RTCError(webrtc::RTCErrorType::INVALID_PARAMETER,
-                              "Failed to read value type");
+      return RTCError(RTCErrorType::INVALID_PARAMETER,
+                      "Failed to read value type");
     }
 
     StunAttributeValueType value_type_enum =
-        static_cast<StunAttributeValueType>(value_type);
+        GetStunAttributeValueType(value_type);
     std::unique_ptr<StunAttribute> attr(
         StunAttribute::Create(value_type_enum, key, length, nullptr));
     if (!attr) {
-      return webrtc::RTCError(webrtc::RTCErrorType::INVALID_PARAMETER,
-                              "Failed to create attribute");
+      return RTCError(RTCErrorType::INVALID_PARAMETER,
+                      "Failed to create attribute");
     }
     if (attr->length() != length) {
-      return webrtc::RTCError(webrtc::RTCErrorType::INVALID_PARAMETER,
-                              "Inconsistent attribute length");
+      return RTCError(RTCErrorType::INVALID_PARAMETER,
+                      "Inconsistent attribute length");
     }
     if (!attr->Read(&buf)) {
-      return webrtc::RTCError(webrtc::RTCErrorType::INVALID_PARAMETER,
-                              "Failed to read attribute content");
+      return RTCError(RTCErrorType::INVALID_PARAMETER,
+                      "Failed to read attribute content");
     }
     attrs.push_back(std::move(attr));
   }
 
   // The first attribute should be the version...
   if (attrs.empty()) {
-    return webrtc::RTCError(webrtc::RTCErrorType::INVALID_PARAMETER,
-                            "Empty delta!");
+    return RTCError(RTCErrorType::INVALID_PARAMETER, "Empty delta!");
   }
 
   if (attrs[0]->type() != kVersionKey ||
       attrs[0]->value_type() != STUN_VALUE_UINT64) {
-    return webrtc::RTCError(webrtc::RTCErrorType::INVALID_PARAMETER,
-                            "Missing version!");
+    return RTCError(RTCErrorType::INVALID_PARAMETER, "Missing version!");
   }
 
   uint64_t version_in_delta =
@@ -159,12 +187,12 @@ StunDictionaryView::ParseDelta(const StunByteStringAttribute& delta) {
 }
 
 // Apply a delta return an StunUInt64Attribute to ack the update.
-webrtc::RTCErrorOr<
+RTCErrorOr<
     std::pair<std::unique_ptr<StunUInt64Attribute>, std::vector<uint16_t>>>
 StunDictionaryView::ApplyDelta(const StunByteStringAttribute& delta) {
   auto parsed_delta = ParseDelta(delta);
   if (!parsed_delta.ok()) {
-    return webrtc::RTCError(parsed_delta.error());
+    return RTCError(parsed_delta.error());
   }
 
   uint64_t version_in_delta = parsed_delta.value().first;
@@ -188,7 +216,7 @@ StunDictionaryView::ApplyDelta(const StunByteStringAttribute& delta) {
             << " new_length: " << new_length
             << " bytes_stored_: " << bytes_stored_
             << " new_bytes_stored: " << new_bytes_stored;
-        return webrtc::RTCError(webrtc::RTCErrorType::INVALID_PARAMETER);
+        return RTCError(RTCErrorType::INVALID_PARAMETER);
       }
       if (new_bytes_stored > max_bytes_stored_) {
         RTC_LOG(LS_INFO) << "attr: " << attr->type()
@@ -202,7 +230,7 @@ StunDictionaryView::ApplyDelta(const StunByteStringAttribute& delta) {
   if (new_bytes_stored > max_bytes_stored_) {
     RTC_LOG(LS_INFO) << " bytes_stored_: " << bytes_stored_
                      << " new_bytes_stored: " << new_bytes_stored;
-    return webrtc::RTCError(webrtc::RTCErrorType::RESOURCE_EXHAUSTED);
+    return RTCError(RTCErrorType::RESOURCE_EXHAUSTED);
   }
 
   // Apply the update.
@@ -214,7 +242,8 @@ StunDictionaryView::ApplyDelta(const StunByteStringAttribute& delta) {
       if (attr->value_type() == STUN_VALUE_BYTE_STRING && attr->length() == 0) {
         attrs_.erase(attr->type());
       } else {
-        attrs_[attr->type()] = std::move(attr);
+        int attribute_type = attr->type();
+        attrs_[attribute_type] = std::move(attr);
       }
     }
   }
@@ -302,7 +331,7 @@ std::unique_ptr<StunByteStringAttribute> StunDictionaryWriter::CreateDelta() {
     return nullptr;
   }
 
-  rtc::ByteBufferWriter buf;
+  ByteBufferWriter buf;
   buf.WriteUInt16(StunDictionaryView::kDeltaMagic);    // 0,1
   buf.WriteUInt16(StunDictionaryView::kDeltaVersion);  // 2,3
 
@@ -354,4 +383,4 @@ int StunDictionaryWriter::Pending() const {
   return pending_.size();
 }
 
-}  // namespace cricket
+}  // namespace webrtc

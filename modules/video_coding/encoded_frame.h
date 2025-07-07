@@ -11,12 +11,12 @@
 #ifndef MODULES_VIDEO_CODING_ENCODED_FRAME_H_
 #define MODULES_VIDEO_CODING_ENCODED_FRAME_H_
 
-#include <vector>
+#include <cstdint>
 
 #include "api/video/encoded_image.h"
+#include "api/video/video_codec_type.h"
 #include "modules/rtp_rtcp/source/rtp_video_header.h"
 #include "modules/video_coding/include/video_codec_interface.h"
-#include "modules/video_coding/include/video_coding_defines.h"
 #include "rtc_base/system/rtc_export.h"
 
 namespace webrtc {
@@ -46,17 +46,17 @@ class RTC_EXPORT VCMEncodedFrame : public EncodedImage {
   using EncodedImage::GetEncodedData;
   using EncodedImage::NtpTimeMs;
   using EncodedImage::PacketInfos;
+  using EncodedImage::RtpTimestamp;
   using EncodedImage::set_size;
   using EncodedImage::SetColorSpace;
   using EncodedImage::SetEncodedData;
   using EncodedImage::SetPacketInfos;
+  using EncodedImage::SetRtpTimestamp;
   using EncodedImage::SetSpatialIndex;
   using EncodedImage::SetSpatialLayerFrameSize;
-  using EncodedImage::SetTimestamp;
   using EncodedImage::size;
   using EncodedImage::SpatialIndex;
   using EncodedImage::SpatialLayerFrameSize;
-  using EncodedImage::Timestamp;
 
   /**
    *   Get render time in milliseconds

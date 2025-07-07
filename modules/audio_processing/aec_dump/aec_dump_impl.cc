@@ -13,11 +13,12 @@
 #include <memory>
 #include <utility>
 
+#include "absl/base/nullability.h"
 #include "absl/strings/string_view.h"
+#include "api/task_queue/task_queue_base.h"
 #include "modules/audio_processing/aec_dump/aec_dump_factory.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/event.h"
-#include "rtc_base/task_queue.h"
 
 namespace webrtc {
 
@@ -59,18 +60,18 @@ void CopyFromConfigToEvent(const webrtc::InternalAPMConfig& config,
 
 AecDumpImpl::AecDumpImpl(FileWrapper debug_file,
                          int64_t max_log_size_bytes,
-                         rtc::TaskQueue* worker_queue)
+                         TaskQueueBase* absl_nonnull worker_queue)
     : debug_file_(std::move(debug_file)),
       num_bytes_left_for_log_(max_log_size_bytes),
       worker_queue_(worker_queue) {}
 
 AecDumpImpl::~AecDumpImpl() {
   // Block until all tasks have finished running.
-  rtc::Event thread_sync_event;
+  Event thread_sync_event;
   worker_queue_->PostTask([&thread_sync_event] { thread_sync_event.Set(); });
   // Wait until the event has been signaled with .Set(). By then all
   // pending tasks will have finished.
-  thread_sync_event.Wait(rtc::Event::kForever);
+  thread_sync_event.Wait(Event::kForever);
 }
 
 void AecDumpImpl::WriteInitMessage(const ProcessingConfig& api_format,
@@ -254,9 +255,10 @@ void AecDumpImpl::PostWriteToFileTask(std::unique_ptr<audioproc::Event> event) {
   });
 }
 
-std::unique_ptr<AecDump> AecDumpFactory::Create(webrtc::FileWrapper file,
-                                                int64_t max_log_size_bytes,
-                                                rtc::TaskQueue* worker_queue) {
+absl_nullable std::unique_ptr<AecDump> AecDumpFactory::Create(
+    FileWrapper file,
+    int64_t max_log_size_bytes,
+    TaskQueueBase* absl_nonnull worker_queue) {
   RTC_DCHECK(worker_queue);
   if (!file.is_open())
     return nullptr;
@@ -265,16 +267,18 @@ std::unique_ptr<AecDump> AecDumpFactory::Create(webrtc::FileWrapper file,
                                        worker_queue);
 }
 
-std::unique_ptr<AecDump> AecDumpFactory::Create(absl::string_view file_name,
-                                                int64_t max_log_size_bytes,
-                                                rtc::TaskQueue* worker_queue) {
+absl_nullable std::unique_ptr<AecDump> AecDumpFactory::Create(
+    absl::string_view file_name,
+    int64_t max_log_size_bytes,
+    TaskQueueBase* absl_nonnull worker_queue) {
   return Create(FileWrapper::OpenWriteOnly(file_name), max_log_size_bytes,
                 worker_queue);
 }
 
-std::unique_ptr<AecDump> AecDumpFactory::Create(FILE* handle,
-                                                int64_t max_log_size_bytes,
-                                                rtc::TaskQueue* worker_queue) {
+absl_nullable std::unique_ptr<AecDump> AecDumpFactory::Create(
+    FILE* absl_nonnull handle,
+    int64_t max_log_size_bytes,
+    TaskQueueBase* absl_nonnull worker_queue) {
   return Create(FileWrapper(handle), max_log_size_bytes, worker_queue);
 }
 

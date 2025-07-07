@@ -13,12 +13,16 @@
 #include <stddef.h>
 
 #include <algorithm>
+#include <optional>
 #include <utility>
+#include <vector>
 
+#include "api/transport/network_types.h"
 #include "api/units/data_rate.h"
 #include "api/units/data_size.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
+#include "modules/congestion_controller/goog_cc/acknowledged_bitrate_estimator_interface.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
@@ -97,9 +101,9 @@ void RobustThroughputEstimator::IncomingPacketFeedbackVector(
   }
 }
 
-absl::optional<DataRate> RobustThroughputEstimator::bitrate() const {
+std::optional<DataRate> RobustThroughputEstimator::bitrate() const {
   if (window_.empty() || window_.size() < settings_.required_packets)
-    return absl::nullopt;
+    return std::nullopt;
 
   TimeDelta largest_recv_gap(TimeDelta::Zero());
   TimeDelta second_largest_recv_gap(TimeDelta::Zero());

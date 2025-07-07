@@ -18,7 +18,7 @@
 
 namespace webrtc {
 
-class VideoCaptureModule : public rtc::RefCountInterface {
+class VideoCaptureModule : public RefCountInterface {
  public:
   // Interface for receiving information about available camera devices.
   class DeviceInfo {
@@ -74,7 +74,7 @@ class VideoCaptureModule : public rtc::RefCountInterface {
 
   //   Register capture data callback
   virtual void RegisterCaptureDataCallback(
-      rtc::VideoSinkInterface<VideoFrame>* dataCallback) = 0;
+      VideoSinkInterface<VideoFrame>* dataCallback) = 0;
   virtual void RegisterCaptureDataCallback(
       RawVideoSinkInterface* dataCallback) = 0;
 
