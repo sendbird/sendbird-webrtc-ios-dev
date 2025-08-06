@@ -10,35 +10,61 @@
 
 #include "sdk/android/src/jni/pc/peer_connection_factory.h"
 
+#include <jni.h>
+#include <stdio.h>
+#include <unistd.h>
+
+#include <cstddef>
+#include <cstdio>
 #include <memory>
+#include <optional>
+#include <string>
 #include <utility>
 
 #include "absl/memory/memory.h"
 #include "api/audio/audio_device.h"
 #include "api/audio/audio_processing.h"
 #include "api/audio/builtin_audio_processing_builder.h"
+#include "api/audio_codecs/audio_decoder_factory.h"
+#include "api/audio_codecs/audio_encoder_factory.h"
+#include "api/audio_options.h"
 #include "api/enable_media.h"
+#include "api/environment/environment.h"
+#include "api/fec_controller.h"
+#include "api/media_stream_interface.h"
+#include "api/neteq/neteq_factory.h"
+#include "api/network_state_predictor.h"
+#include "api/peer_connection_interface.h"
 #include "api/rtc_event_log/rtc_event_log_factory.h"
-#include "api/task_queue/default_task_queue_factory.h"
-#include "api/video_codecs/video_decoder_factory.h"
-#include "api/video_codecs/video_encoder_factory.h"
+#include "api/scoped_refptr.h"
+#include "api/transport/network_control.h"
 #include "modules/utility/include/jvm_android.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/event_tracer.h"
+#include "rtc_base/logging.h"
 #include "rtc_base/physical_socket_server.h"
+#include "rtc_base/rtc_certificate.h"
+#include "rtc_base/rtc_certificate_generator.h"
+#include "rtc_base/socket_factory.h"
+#include "rtc_base/ssl_identity.h"
 #include "rtc_base/thread.h"
 #include "sdk/android/generated_peerconnection_jni/PeerConnectionFactory_jni.h"
 #include "sdk/android/native_api/jni/java_types.h"
+#include "sdk/android/native_api/jni/scoped_java_ref.h"
 #include "sdk/android/native_api/stacktrace/stacktrace.h"
+#include "sdk/android/src/jni/android_network_monitor.h"
 #include "sdk/android/src/jni/jni_helpers.h"
+#include "sdk/android/src/jni/jvm.h"
 #include "sdk/android/src/jni/logging/log_sink.h"
 #include "sdk/android/src/jni/pc/android_network_monitor.h"
-#include "sdk/android/src/jni/pc/ice_candidate.h"
+#include "sdk/android/src/jni/pc/media_constraints.h"
 #include "sdk/android/src/jni/pc/media_stream_track.h"
 #include "sdk/android/src/jni/pc/owned_factory_and_threads.h"
 #include "sdk/android/src/jni/pc/peer_connection.h"
 #include "sdk/android/src/jni/pc/rtp_capabilities.h"
 #include "sdk/android/src/jni/pc/ssl_certificate_verifier_wrapper.h"
 #include "sdk/android/src/jni/pc/video.h"
+#include "sdk/media_constraints.h"
 #include "system_wrappers/include/field_trial.h"
 #include "third_party/jni_zero/jni_zero.h"
 
@@ -114,7 +140,7 @@ StaticObjectContainer& GetStaticObjects() {
 
 ScopedJavaLocalRef<jobject> NativeToScopedJavaPeerConnectionFactory(
     JNIEnv* env,
-    scoped_refptr<webrtc::PeerConnectionFactoryInterface> pcf,
+    scoped_refptr<PeerConnectionFactoryInterface> pcf,
     std::unique_ptr<SocketFactory> socket_factory,
     std::unique_ptr<Thread> network_thread,
     std::unique_ptr<Thread> worker_thread,
@@ -154,7 +180,7 @@ static bool factory_static_initialized = false;
 
 jobject NativeToJavaPeerConnectionFactory(
     JNIEnv* jni,
-    scoped_refptr<webrtc::PeerConnectionFactoryInterface> pcf,
+    scoped_refptr<PeerConnectionFactoryInterface> pcf,
     std::unique_ptr<SocketFactory> socket_factory,
     std::unique_ptr<Thread> network_thread,
     std::unique_ptr<Thread> worker_thread,
@@ -193,14 +219,6 @@ static void JNI_PeerConnectionFactory_InitializeInternalTracer(JNIEnv* jni) {
   tracing::SetupInternalTracer();
 }
 
-static jni_zero::ScopedJavaLocalRef<jstring>
-JNI_PeerConnectionFactory_FindFieldTrialsFullName(
-    JNIEnv* jni,
-    const jni_zero::JavaParamRef<jstring>& j_name) {
-  return NativeToJavaString(
-      jni, field_trial::FindFullName(JavaToStdString(jni, j_name)));
-}
-
 static jboolean JNI_PeerConnectionFactory_StartInternalTracingCapture(
     JNIEnv* jni,
     const jni_zero::JavaParamRef<jstring>& j_event_tracing_filename) {
@@ -231,6 +249,7 @@ ScopedJavaLocalRef<jobject> CreatePeerConnectionFactoryForJava(
     JNIEnv* jni,
     const jni_zero::JavaParamRef<jobject>& jcontext,
     const jni_zero::JavaParamRef<jobject>& joptions,
+    const Environment& env,
     scoped_refptr<AudioDeviceModule> audio_device_module,
     scoped_refptr<AudioEncoderFactory> audio_encoder_factory,
     scoped_refptr<AudioDecoderFactory> audio_decoder_factory,
@@ -267,12 +286,11 @@ ScopedJavaLocalRef<jobject> CreatePeerConnectionFactoryForJava(
       JavaToNativePeerConnectionFactoryOptions(jni, joptions);
 
   PeerConnectionFactoryDependencies dependencies;
-  // TODO(bugs.webrtc.org/13145): Also add socket_server.get() to the
-  // dependencies.
+  dependencies.env = env;
+  dependencies.socket_factory = socket_server.get();
   dependencies.network_thread = network_thread.get();
   dependencies.worker_thread = worker_thread.get();
   dependencies.signaling_thread = signaling_thread.get();
-  dependencies.task_queue_factory = CreateDefaultTaskQueueFactory();
   dependencies.event_log_factory = std::make_unique<RtcEventLogFactory>();
   dependencies.fec_controller_factory = std::move(fec_controller_factory);
   dependencies.network_controller_factory =
@@ -294,7 +312,7 @@ ScopedJavaLocalRef<jobject> CreatePeerConnectionFactoryForJava(
 #ifndef WEBRTC_EXCLUDE_AUDIO_PROCESSING_MODULE
   } else {
     dependencies.audio_processing_builder =
-        std::make_unique<webrtc::BuiltinAudioProcessingBuilder>();
+        std::make_unique<BuiltinAudioProcessingBuilder>();
 #endif
   }
   dependencies.video_encoder_factory =
@@ -323,6 +341,7 @@ JNI_PeerConnectionFactory_CreatePeerConnectionFactory(
     JNIEnv* jni,
     const jni_zero::JavaParamRef<jobject>& jcontext,
     const jni_zero::JavaParamRef<jobject>& joptions,
+    jlong webrtc_env_ref,
     jlong native_audio_device_module,
     jlong native_audio_encoder_factory,
     jlong native_audio_decoder_factory,
@@ -333,10 +352,12 @@ JNI_PeerConnectionFactory_CreatePeerConnectionFactory(
     jlong native_network_controller_factory,
     jlong native_network_state_predictor_factory,
     jlong native_neteq_factory) {
+  const Environment* env = reinterpret_cast<Environment*>(webrtc_env_ref);
+  RTC_CHECK(env != nullptr);
   scoped_refptr<AudioProcessing> audio_processor(
       reinterpret_cast<AudioProcessing*>(native_audio_processor));
   return CreatePeerConnectionFactoryForJava(
-      jni, jcontext, joptions,
+      jni, jcontext, joptions, *env,
       scoped_refptr<AudioDeviceModule>(
           reinterpret_cast<AudioDeviceModule*>(native_audio_device_module)),
       TakeOwnershipOfRefPtr<AudioEncoderFactory>(native_audio_encoder_factory),
