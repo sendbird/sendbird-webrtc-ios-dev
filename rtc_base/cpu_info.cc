@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2011 The WebRTC project authors. All Rights Reserved.
+ *  Copyright (c) 2025 The WebRTC project authors. All Rights Reserved.
  *
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "system_wrappers/include/cpu_info.h"
+#include "rtc_base/cpu_info.h"
 
 #include <cstdint>
 
@@ -25,9 +25,10 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
-namespace internal {
-static int DetectNumberOfCores() {
-  int number_of_cores;
+namespace {
+
+uint32_t DetectNumberOfCores() {
+  int number_of_cores = 0;
 
 #if defined(WEBRTC_WIN)
   SYSTEM_INFO si;
@@ -56,20 +57,24 @@ static int DetectNumberOfCores() {
   RTC_LOG(LS_INFO) << "Available number of cores: " << number_of_cores;
 
   RTC_CHECK_GT(number_of_cores, 0);
-  return number_of_cores;
+  return static_cast<uint32_t>(number_of_cores);
 }
-}  // namespace internal
+
+}  // namespace
 
 namespace webrtc {
 
-uint32_t CpuInfo::DetectNumberOfCores() {
+namespace cpu_info {
+
+uint32_t DetectNumberOfCores() {
   // Statically cache the number of system cores available since if the process
   // is running in a sandbox, we may only be able to read the value once (before
   // the sandbox is initialized) and not thereafter.
   // For more information see crbug.com/176522.
-  static const uint32_t logical_cpus =
-      static_cast<uint32_t>(::internal::DetectNumberOfCores());
+  static const uint32_t logical_cpus = ::DetectNumberOfCores();
   return logical_cpus;
 }
+
+}  // namespace cpu_info
 
 }  // namespace webrtc
