@@ -51,6 +51,9 @@
 
 #if defined(WEBRTC_IOS)
 #import "sdk/objc/native/api/audio_device_module.h"
+#import "sdk/objc/native/src/audio/audio_source_sink.h"
+#import "sdk/objc/native/src/audio/audio_device_module_ios.h"
+#import "RTCAudioSink.h"
 #endif
 
 @implementation RTC_OBJC_TYPE (RTCPeerConnectionFactory) {
@@ -61,6 +64,16 @@
 }
 
 @synthesize nativeFactory = _nativeFactory;
+
+- (webrtc::scoped_refptr<webrtc::AudioDeviceModule>)audioDeviceModuleWithAudioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink environment:(const webrtc::Environment &)env { 
+#if defined(WEBRTC_IOS)
+  RTCLogInfo(@"Creating AudioDeviceModule with AudioSourceSink");
+  webrtc::AudioSourceSink *sink = new webrtc::AudioSourceSink(audioSink);
+  return webrtc::CreateAudioDeviceModule(env, false, sink);
+#else
+  return nullptr;
+#endif
+}
 
 - (instancetype)init {
   webrtc::PeerConnectionFactoryDependencies dependencies;
@@ -74,28 +87,31 @@
       [[RTC_OBJC_TYPE(RTCVideoDecoderFactoryH264) alloc] init]);
   dependencies.env = webrtc::CreateEnvironment();
 #ifdef WEBRTC_IOS
-  dependencies.adm = webrtc::CreateAudioDeviceModule(*dependencies.env);
+  dependencies.adm = webrtc::CreateAudioDeviceModule(dependencies.env.value());
 #endif
   return [self initWithMediaAndDependencies:dependencies];
 }
 
 - (instancetype)
-    initWithEncoderFactory:
-        (nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
-            decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)
-                               decoderFactory {
+    initWithEncoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
+            decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)decoderFactory {
   return [self initWithEncoderFactory:encoderFactory
                        decoderFactory:decoderFactory
-                          audioDevice:nil];
+                       audioSink:nullptr];
 }
 
 - (instancetype)
-    initWithEncoderFactory:
-        (nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
-            decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)
-                               decoderFactory
-               audioDevice:
-                   (nullable id<RTC_OBJC_TYPE(RTCAudioDevice)>)audioDevice {
+    initWithEncoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
+            decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)decoderFactory
+                 audioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink {
+  return [self initWithEncoderFactory:encoderFactory decoderFactory:decoderFactory audioSink:audioSink audioDevice:nil];
+}
+
+- (instancetype)
+    initWithEncoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoEncoderFactory)>)encoderFactory
+            decoderFactory:(nullable id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)>)decoderFactory
+                 audioSink:(nullable RTC_OBJC_TYPE(RTCAudioSink) *)audioSink
+               audioDevice:(nullable id<RTC_OBJC_TYPE(RTCAudioDevice)>)audioDevice {
 #ifdef HAVE_NO_MEDIA
   return [self initWithNoMedia];
 #else
@@ -118,7 +134,7 @@
         webrtc::CreateAudioDeviceModule(*dependencies.env, audioDevice);
 #ifdef WEBRTC_IOS
   } else {
-    dependencies.adm = webrtc::CreateAudioDeviceModule(*dependencies.env);
+    dependencies.adm = [self audioDeviceModuleWithAudioSink:audioSink environment:dependencies.env.value()];
 #endif
   }
   return [self initWithMediaAndDependencies:dependencies];

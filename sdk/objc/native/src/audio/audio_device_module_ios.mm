@@ -22,6 +22,7 @@
 
 #if defined(WEBRTC_IOS)
 #include "audio_device_ios.h"
+#include "audio_source_sink.h"
 #endif
 
 #define CHECKinitialized_()         \
@@ -47,13 +48,16 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS(
     const Environment& env,
     bool bypass_voice_processing,
     MutedSpeechEventHandler muted_speech_event_handler,
-    ADMErrorHandler error_handler)
+    ADMErrorHandler error_handler,
+    AudioSourceSink* audioSink)
     : env_(env),
       bypass_voice_processing_(bypass_voice_processing),
       muted_speech_event_handler_(muted_speech_event_handler),
-      error_handler_(error_handler) {
+      error_handler_(error_handler),
+      audio_sink_(audioSink) {
   RTC_LOG(LS_INFO) << "current platform is IOS";
   RTC_LOG(LS_INFO) << "iPhone Audio APIs will be utilized.";
+  audio_sink_ = audioSink;
 }
 
 int32_t AudioDeviceModuleIOS::AttachAudioBuffer() {
@@ -98,6 +102,7 @@ int32_t AudioDeviceModuleIOS::Init() {
                                                 muted_speech_event_handler_,
                                                 error_handler);
   RTC_CHECK(audio_device_);
+  audio_device_->AddAudioSourceSink(audio_sink_);
 
   this->AttachAudioBuffer();
 
@@ -767,6 +772,7 @@ std::optional<AudioDeviceModule::Stats> AudioDeviceModuleIOS::GetStats() const {
   };
   return audio_device_->GetStats();
 }
+
 
 #if defined(WEBRTC_IOS)
 int AudioDeviceModuleIOS::GetPlayoutAudioParameters(
