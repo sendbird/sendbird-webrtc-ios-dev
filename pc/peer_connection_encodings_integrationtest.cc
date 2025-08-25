@@ -58,6 +58,7 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/physical_socket_server.h"
 #include "rtc_base/thread.h"
+#include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/wait_until.h"
@@ -231,12 +232,13 @@ class PeerConnectionEncodingsIntegrationTest : public ::testing::Test {
   }
 
   scoped_refptr<PeerConnectionTestWrapper> CreatePc(
-      std::unique_ptr<FieldTrialsView> field_trials = nullptr) {
+      absl::string_view field_trials = "") {
     auto pc_wrapper = make_ref_counted<PeerConnectionTestWrapper>(
         "pc", &pss_, background_thread_.get(), background_thread_.get());
-    pc_wrapper->CreatePc({}, CreateBuiltinAudioEncoderFactory(),
-                         CreateBuiltinAudioDecoderFactory(),
-                         std::move(field_trials));
+    pc_wrapper->CreatePc(
+        {}, CreateBuiltinAudioEncoderFactory(),
+        CreateBuiltinAudioDecoderFactory(),
+        std::make_unique<FieldTrials>(CreateTestFieldTrials(field_trials)));
     return pc_wrapper;
   }
 
@@ -260,7 +262,7 @@ class PeerConnectionEncodingsIntegrationTest : public ::testing::Test {
       absl::string_view codec_name) {
     std::vector<RtpCodecCapability> codecs =
         pc_wrapper->pc_factory()
-            ->GetRtpReceiverCapabilities(webrtc::MediaType::VIDEO)
+            ->GetRtpReceiverCapabilities(MediaType::VIDEO)
             .codecs;
     return std::find_if(codecs.begin(), codecs.end(),
                         [&codec_name](const RtpCodecCapability& codec) {
@@ -273,7 +275,7 @@ class PeerConnectionEncodingsIntegrationTest : public ::testing::Test {
       absl::string_view codec_name) {
     std::vector<RtpCodecCapability> codecs =
         pc_wrapper->pc_factory()
-            ->GetRtpReceiverCapabilities(webrtc::MediaType::VIDEO)
+            ->GetRtpReceiverCapabilities(MediaType::VIDEO)
             .codecs;
     codecs.erase(std::remove_if(codecs.begin(), codecs.end(),
                                 [&codec_name](const RtpCodecCapability& codec) {
@@ -581,7 +583,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   // codec preferences because we want the sender to think SVC is a possibility.
   std::vector<RtpCodecCapability> codecs =
       local_pc_wrapper->pc_factory()
-          ->GetRtpSenderCapabilities(webrtc::MediaType::VIDEO)
+          ->GetRtpSenderCapabilities(MediaType::VIDEO)
           .codecs;
   EXPECT_THAT(codecs[0].name, StrCaseEq("VP8"));
   // Attempt SVC (L3T3_KEY), which is not possible with VP8, but the sender does
@@ -1355,7 +1357,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   scoped_refptr<PeerConnectionTestWrapper> local_pc_wrapper = CreatePc();
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::AUDIO);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::AUDIO);
   scoped_refptr<RtpTransceiverInterface> audio_transceiver =
       transceiver_or_error.MoveValue();
   RtpParameters parameters = audio_transceiver->sender()->GetParameters();
@@ -1367,7 +1369,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   scoped_refptr<PeerConnectionTestWrapper> local_pc_wrapper = CreatePc();
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::VIDEO);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO);
   scoped_refptr<RtpTransceiverInterface> video_transceiver =
       transceiver_or_error.MoveValue();
   RtpParameters parameters = video_transceiver->sender()->GetParameters();
@@ -1385,8 +1387,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   scoped_refptr<AudioTrackInterface> track = stream->GetAudioTracks()[0];
 
   std::optional<RtpCodecCapability> pcmu =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::AUDIO,
-                                                   "pcmu");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::AUDIO, "pcmu");
   ASSERT_TRUE(pcmu);
 
   RtpTransceiverInit init;
@@ -1425,8 +1426,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   scoped_refptr<VideoTrackInterface> track = stream->GetVideoTracks()[0];
 
   std::optional<RtpCodecCapability> vp9 =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::VIDEO,
-                                                   "vp9");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::VIDEO, "vp9");
   ASSERT_TRUE(vp9);
 
   RtpTransceiverInit init;
@@ -1471,8 +1471,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   scoped_refptr<AudioTrackInterface> track = stream->GetAudioTracks()[0];
 
   std::optional<RtpCodecCapability> pcmu =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::AUDIO,
-                                                   "pcmu");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::AUDIO, "pcmu");
 
   auto transceiver_or_error = local_pc_wrapper->pc()->AddTransceiver(track);
   scoped_refptr<RtpTransceiverInterface> audio_transceiver =
@@ -1507,8 +1506,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   scoped_refptr<AudioTrackInterface> track = stream->GetAudioTracks()[0];
 
   std::optional<RtpCodecCapability> pcmu =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::AUDIO,
-                                                   "pcmu");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::AUDIO, "pcmu");
 
   auto transceiver_or_error = local_pc_wrapper->pc()->AddTransceiver(track);
   scoped_refptr<RtpTransceiverInterface> audio_transceiver =
@@ -1555,8 +1553,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   scoped_refptr<VideoTrackInterface> track = stream->GetVideoTracks()[0];
 
   std::optional<RtpCodecCapability> vp9 =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::VIDEO,
-                                                   "vp9");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::VIDEO, "vp9");
 
   auto transceiver_or_error = local_pc_wrapper->pc()->AddTransceiver(track);
   scoped_refptr<RtpTransceiverInterface> video_transceiver =
@@ -1598,8 +1595,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   scoped_refptr<VideoTrackInterface> track = stream->GetVideoTracks()[0];
 
   std::optional<RtpCodecCapability> vp9 =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::VIDEO,
-                                                   "vp9");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::VIDEO, "vp9");
 
   auto transceiver_or_error = local_pc_wrapper->pc()->AddTransceiver(track);
   scoped_refptr<RtpTransceiverInterface> video_transceiver =
@@ -1644,7 +1640,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   scoped_refptr<PeerConnectionTestWrapper> local_pc_wrapper = CreatePc();
 
   RtpCodec dummy_codec;
-  dummy_codec.kind = webrtc::MediaType::AUDIO;
+  dummy_codec.kind = MediaType::AUDIO;
   dummy_codec.name = "FOOBAR";
   dummy_codec.clock_rate = 90000;
   dummy_codec.num_channels = 2;
@@ -1656,7 +1652,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   init.send_encodings.push_back(encoding_parameters);
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::AUDIO, init);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::AUDIO, init);
   EXPECT_FALSE(transceiver_or_error.ok());
   EXPECT_EQ(transceiver_or_error.error().type(),
             RTCErrorType::UNSUPPORTED_OPERATION);
@@ -1667,7 +1663,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   scoped_refptr<PeerConnectionTestWrapper> local_pc_wrapper = CreatePc();
 
   RtpCodec dummy_codec;
-  dummy_codec.kind = webrtc::MediaType::VIDEO;
+  dummy_codec.kind = MediaType::VIDEO;
   dummy_codec.name = "FOOBAR";
   dummy_codec.clock_rate = 90000;
 
@@ -1678,7 +1674,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   init.send_encodings.push_back(encoding_parameters);
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::VIDEO, init);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO, init);
   EXPECT_FALSE(transceiver_or_error.ok());
   EXPECT_EQ(transceiver_or_error.error().type(),
             RTCErrorType::UNSUPPORTED_OPERATION);
@@ -1689,13 +1685,13 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   scoped_refptr<PeerConnectionTestWrapper> local_pc_wrapper = CreatePc();
 
   RtpCodec dummy_codec;
-  dummy_codec.kind = webrtc::MediaType::AUDIO;
+  dummy_codec.kind = MediaType::AUDIO;
   dummy_codec.name = "FOOBAR";
   dummy_codec.clock_rate = 90000;
   dummy_codec.num_channels = 2;
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::AUDIO);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::AUDIO);
   ASSERT_TRUE(transceiver_or_error.ok());
   scoped_refptr<RtpTransceiverInterface> audio_transceiver =
       transceiver_or_error.MoveValue();
@@ -1711,12 +1707,12 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   scoped_refptr<PeerConnectionTestWrapper> local_pc_wrapper = CreatePc();
 
   RtpCodec dummy_codec;
-  dummy_codec.kind = webrtc::MediaType::VIDEO;
+  dummy_codec.kind = MediaType::VIDEO;
   dummy_codec.name = "FOOBAR";
   dummy_codec.clock_rate = 90000;
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::VIDEO);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO);
   ASSERT_TRUE(transceiver_or_error.ok());
   scoped_refptr<RtpTransceiverInterface> video_transceiver =
       transceiver_or_error.MoveValue();
@@ -1734,13 +1730,12 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   ExchangeIceCandidates(local_pc_wrapper, remote_pc_wrapper);
 
   std::optional<RtpCodecCapability> opus =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::AUDIO,
-                                                   "opus");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::AUDIO, "opus");
   ASSERT_TRUE(opus);
 
   std::vector<RtpCodecCapability> not_opus_codecs =
       local_pc_wrapper->pc_factory()
-          ->GetRtpSenderCapabilities(webrtc::MediaType::AUDIO)
+          ->GetRtpSenderCapabilities(MediaType::AUDIO)
           .codecs;
   not_opus_codecs.erase(
       std::remove_if(not_opus_codecs.begin(), not_opus_codecs.end(),
@@ -1750,7 +1745,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
       not_opus_codecs.end());
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::AUDIO);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::AUDIO);
   ASSERT_TRUE(transceiver_or_error.ok());
   scoped_refptr<RtpTransceiverInterface> audio_transceiver =
       transceiver_or_error.MoveValue();
@@ -1773,13 +1768,12 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   ExchangeIceCandidates(local_pc_wrapper, remote_pc_wrapper);
 
   std::optional<RtpCodecCapability> opus =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::AUDIO,
-                                                   "opus");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::AUDIO, "opus");
   ASSERT_TRUE(opus);
 
   std::vector<RtpCodecCapability> not_opus_codecs =
       local_pc_wrapper->pc_factory()
-          ->GetRtpSenderCapabilities(webrtc::MediaType::AUDIO)
+          ->GetRtpSenderCapabilities(MediaType::AUDIO)
           .codecs;
   not_opus_codecs.erase(
       std::remove_if(not_opus_codecs.begin(), not_opus_codecs.end(),
@@ -1789,7 +1783,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
       not_opus_codecs.end());
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::AUDIO);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::AUDIO);
   ASSERT_TRUE(transceiver_or_error.ok());
   scoped_refptr<RtpTransceiverInterface> audio_transceiver =
       transceiver_or_error.MoveValue();
@@ -1840,7 +1834,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   ExchangeIceCandidates(local_pc_wrapper, remote_pc_wrapper);
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::VIDEO);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO);
   ASSERT_TRUE(transceiver_or_error.ok());
   scoped_refptr<RtpTransceiverInterface> video_transceiver =
       transceiver_or_error.MoveValue();
@@ -1901,13 +1895,12 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   ExchangeIceCandidates(local_pc_wrapper, remote_pc_wrapper);
 
   std::optional<RtpCodecCapability> vp8 =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::VIDEO,
-                                                   "vp8");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::VIDEO, "vp8");
   ASSERT_TRUE(vp8);
 
   std::vector<RtpCodecCapability> not_vp8_codecs =
       local_pc_wrapper->pc_factory()
-          ->GetRtpSenderCapabilities(webrtc::MediaType::VIDEO)
+          ->GetRtpSenderCapabilities(MediaType::VIDEO)
           .codecs;
   not_vp8_codecs.erase(
       std::remove_if(not_vp8_codecs.begin(), not_vp8_codecs.end(),
@@ -1917,7 +1910,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
       not_vp8_codecs.end());
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::VIDEO);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO);
   ASSERT_TRUE(transceiver_or_error.ok());
   scoped_refptr<RtpTransceiverInterface> video_transceiver =
       transceiver_or_error.MoveValue();
@@ -1940,13 +1933,12 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   ExchangeIceCandidates(local_pc_wrapper, remote_pc_wrapper);
 
   std::optional<RtpCodecCapability> vp8 =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::VIDEO,
-                                                   "vp8");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::VIDEO, "vp8");
   ASSERT_TRUE(vp8);
 
   std::vector<RtpCodecCapability> not_vp8_codecs =
       local_pc_wrapper->pc_factory()
-          ->GetRtpSenderCapabilities(webrtc::MediaType::VIDEO)
+          ->GetRtpSenderCapabilities(MediaType::VIDEO)
           .codecs;
   not_vp8_codecs.erase(
       std::remove_if(not_vp8_codecs.begin(), not_vp8_codecs.end(),
@@ -1956,7 +1948,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
       not_vp8_codecs.end());
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::VIDEO);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO);
   ASSERT_TRUE(transceiver_or_error.ok());
   scoped_refptr<RtpTransceiverInterface> video_transceiver =
       transceiver_or_error.MoveValue();
@@ -2002,13 +1994,12 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   ExchangeIceCandidates(local_pc_wrapper, remote_pc_wrapper);
 
   std::optional<RtpCodecCapability> opus =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::AUDIO,
-                                                   "opus");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::AUDIO, "opus");
   ASSERT_TRUE(opus);
 
   std::vector<RtpCodecCapability> not_opus_codecs =
       local_pc_wrapper->pc_factory()
-          ->GetRtpSenderCapabilities(webrtc::MediaType::AUDIO)
+          ->GetRtpSenderCapabilities(MediaType::AUDIO)
           .codecs;
   not_opus_codecs.erase(
       std::remove_if(not_opus_codecs.begin(), not_opus_codecs.end(),
@@ -2024,7 +2015,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   init.send_encodings.push_back(encoding_parameters);
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::AUDIO, init);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::AUDIO, init);
   ASSERT_TRUE(transceiver_or_error.ok());
   scoped_refptr<RtpTransceiverInterface> audio_transceiver =
       transceiver_or_error.MoveValue();
@@ -2051,17 +2042,15 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
 
   std::vector<RtpCodecCapability> send_codecs =
       local_pc_wrapper->pc_factory()
-          ->GetRtpSenderCapabilities(webrtc::MediaType::AUDIO)
+          ->GetRtpSenderCapabilities(MediaType::AUDIO)
           .codecs;
 
   std::optional<RtpCodecCapability> opus =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::AUDIO,
-                                                   "opus");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::AUDIO, "opus");
   ASSERT_TRUE(opus);
 
   std::optional<RtpCodecCapability> red =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::AUDIO,
-                                                   "red");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::AUDIO, "red");
   ASSERT_TRUE(red);
 
   RtpTransceiverInit init;
@@ -2071,7 +2060,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   init.send_encodings.push_back(encoding_parameters);
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::AUDIO, init);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::AUDIO, init);
   ASSERT_TRUE(transceiver_or_error.ok());
   scoped_refptr<RtpTransceiverInterface> audio_transceiver =
       transceiver_or_error.MoveValue();
@@ -2106,8 +2095,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   scoped_refptr<PeerConnectionTestWrapper> local_pc_wrapper = CreatePc();
 
   std::optional<RtpCodecCapability> vp8 =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::VIDEO,
-                                                   "vp8");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::VIDEO, "vp8");
   ASSERT_TRUE(vp8);
 
   RtpTransceiverInit init;
@@ -2118,7 +2106,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   init.send_encodings.push_back(encoding_parameters);
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::VIDEO, init);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO, init);
   ASSERT_TRUE(transceiver_or_error.ok());
   scoped_refptr<RtpTransceiverInterface> video_transceiver =
       transceiver_or_error.MoveValue();
@@ -2136,13 +2124,12 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   ExchangeIceCandidates(local_pc_wrapper, remote_pc_wrapper);
 
   std::optional<RtpCodecCapability> vp8 =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::VIDEO,
-                                                   "vp8");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::VIDEO, "vp8");
   ASSERT_TRUE(vp8);
 
   std::vector<RtpCodecCapability> not_vp8_codecs =
       local_pc_wrapper->pc_factory()
-          ->GetRtpSenderCapabilities(webrtc::MediaType::VIDEO)
+          ->GetRtpSenderCapabilities(MediaType::VIDEO)
           .codecs;
   not_vp8_codecs.erase(
       std::remove_if(not_vp8_codecs.begin(), not_vp8_codecs.end(),
@@ -2163,7 +2150,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   init.send_encodings.push_back(encoding_parameters);
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::VIDEO, init);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO, init);
   ASSERT_TRUE(transceiver_or_error.ok());
   scoped_refptr<RtpTransceiverInterface> video_transceiver =
       transceiver_or_error.MoveValue();
@@ -2194,12 +2181,10 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   ExchangeIceCandidates(local_pc_wrapper, remote_pc_wrapper);
 
   std::optional<RtpCodecCapability> vp8 =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::VIDEO,
-                                                   "vp8");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::VIDEO, "vp8");
   ASSERT_TRUE(vp8);
   std::optional<RtpCodecCapability> vp9 =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::VIDEO,
-                                                   "vp9");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::VIDEO, "vp9");
   ASSERT_TRUE(vp9);
 
   RtpTransceiverInit init;
@@ -2215,7 +2200,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   init.send_encodings.push_back(encoding_parameters);
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::VIDEO, init);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO, init);
   ASSERT_FALSE(transceiver_or_error.ok());
   EXPECT_EQ(transceiver_or_error.error().type(),
             RTCErrorType::UNSUPPORTED_OPERATION);
@@ -2226,18 +2211,16 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   // Enable WIP mixed codec simulcast support
   std::string field_trials = "WebRTC-MixedCodecSimulcast/Enabled/";
   scoped_refptr<PeerConnectionTestWrapper> local_pc_wrapper =
-      CreatePc(FieldTrials::CreateNoGlobal(field_trials));
+      CreatePc(field_trials);
   scoped_refptr<PeerConnectionTestWrapper> remote_pc_wrapper =
-      CreatePc(FieldTrials::CreateNoGlobal(field_trials));
+      CreatePc(field_trials);
   ExchangeIceCandidates(local_pc_wrapper, remote_pc_wrapper);
 
   std::optional<RtpCodecCapability> vp8 =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::VIDEO,
-                                                   "vp8");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::VIDEO, "vp8");
   ASSERT_TRUE(vp8);
   std::optional<RtpCodecCapability> vp9 =
-      local_pc_wrapper->FindFirstSendCodecWithName(webrtc::MediaType::VIDEO,
-                                                   "vp9");
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::VIDEO, "vp9");
   ASSERT_TRUE(vp9);
 
   RtpTransceiverInit init;
@@ -2253,7 +2236,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
   init.send_encodings.push_back(encoding_parameters);
 
   auto transceiver_or_error =
-      local_pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::VIDEO, init);
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO, init);
   ASSERT_TRUE(transceiver_or_error.ok());
 }
 
@@ -2269,7 +2252,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest, ScaleToParameterChecking) {
   encoding.scale_resolution_down_to = {.width = 1280, .height = 720};
   init.send_encodings.push_back(encoding);
   auto transceiver_or_error =
-      pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::VIDEO, init);
+      pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO, init);
   EXPECT_FALSE(transceiver_or_error.ok());
   EXPECT_EQ(transceiver_or_error.error().type(),
             RTCErrorType::UNSUPPORTED_OPERATION);
@@ -2279,7 +2262,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest, ScaleToParameterChecking) {
                                                      .height = 0};
   init.send_encodings[1].scale_resolution_down_to = {.width = 0, .height = 720};
   transceiver_or_error =
-      pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::VIDEO, init);
+      pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO, init);
   EXPECT_FALSE(transceiver_or_error.ok());
   EXPECT_EQ(transceiver_or_error.error().type(),
             RTCErrorType::UNSUPPORTED_OPERATION);
@@ -2293,7 +2276,7 @@ TEST_F(PeerConnectionEncodingsIntegrationTest, ScaleToParameterChecking) {
                                                      .height = 720};
   init.send_encodings[1].scale_resolution_down_by = 2.0;
   transceiver_or_error =
-      pc_wrapper->pc()->AddTransceiver(webrtc::MediaType::VIDEO, init);
+      pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO, init);
   ASSERT_TRUE(transceiver_or_error.ok());
 
   // SetParameters: If `scale_resolution_down_to` is specified on any active
@@ -3139,9 +3122,7 @@ TEST_F(PeerConnectionEncodingsFakeCodecsIntegrationTest, H265Singlecast) {
   ExchangeIceCandidates(local_pc_wrapper, remote_pc_wrapper);
 
   scoped_refptr<RtpTransceiverInterface> transceiver =
-      local_pc_wrapper->pc()
-          ->AddTransceiver(webrtc::MediaType::VIDEO)
-          .MoveValue();
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO).MoveValue();
   std::vector<RtpCodecCapability> preferred_codecs =
       GetCapabilitiesAndRestrictToCodec(local_pc_wrapper, "H265");
   transceiver->SetCodecPreferences(preferred_codecs);
@@ -3226,7 +3207,7 @@ TEST_F(PeerConnectionEncodingsFakeCodecsIntegrationTest,
   // H265.
   std::vector<RtpCodecCapability> sender_codecs =
       local_pc_wrapper->pc_factory()
-          ->GetRtpSenderCapabilities(webrtc::MediaType::VIDEO)
+          ->GetRtpSenderCapabilities(MediaType::VIDEO)
           .codecs;
   auto it = std::find_if(sender_codecs.begin(), sender_codecs.end(),
                          [](const RtpCodecCapability codec_capability) {
@@ -3271,16 +3252,14 @@ TEST_F(PeerConnectionEncodingsFakeCodecsIntegrationTest,
   ExchangeIceCandidates(local_pc_wrapper, remote_pc_wrapper);
 
   scoped_refptr<RtpTransceiverInterface> transceiver =
-      local_pc_wrapper->pc()
-          ->AddTransceiver(webrtc::MediaType::VIDEO)
-          .MoveValue();
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::VIDEO).MoveValue();
 
   // Filter on codec name and assert that sender capabilities have codecs for
   // {sendrecv, sendonly} and the receiver capabilities have codecs for
   // {sendrecv, recvonly}.
   std::vector<RtpCodecCapability> send_codecs =
       local_pc_wrapper->pc_factory()
-          ->GetRtpSenderCapabilities(webrtc::MediaType::VIDEO)
+          ->GetRtpSenderCapabilities(MediaType::VIDEO)
           .codecs;
   send_codecs.erase(std::remove_if(send_codecs.begin(), send_codecs.end(),
                                    [](const RtpCodecCapability& codec) {
@@ -3289,7 +3268,7 @@ TEST_F(PeerConnectionEncodingsFakeCodecsIntegrationTest,
                     send_codecs.end());
   std::vector<RtpCodecCapability> recv_codecs =
       local_pc_wrapper->pc_factory()
-          ->GetRtpReceiverCapabilities(webrtc::MediaType::VIDEO)
+          ->GetRtpReceiverCapabilities(MediaType::VIDEO)
           .codecs;
   recv_codecs.erase(std::remove_if(recv_codecs.begin(), recv_codecs.end(),
                                    [](const RtpCodecCapability& codec) {

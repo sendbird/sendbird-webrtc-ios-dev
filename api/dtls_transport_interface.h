@@ -53,7 +53,8 @@ class RTC_EXPORT DtlsTransportInformation {
       std::optional<int> tls_version,
       std::optional<int> ssl_cipher_suite,
       std::optional<int> srtp_cipher_suite,
-      std::unique_ptr<SSLCertChain> remote_ssl_certificates);
+      std::unique_ptr<SSLCertChain> remote_ssl_certificates,
+      std::optional<int> ssl_group_id);
   ABSL_DEPRECATED("Use version with role parameter")
   DtlsTransportInformation(
       DtlsTransportState state,
@@ -75,6 +76,7 @@ class RTC_EXPORT DtlsTransportInformation {
   std::optional<int> tls_version() const { return tls_version_; }
   std::optional<int> ssl_cipher_suite() const { return ssl_cipher_suite_; }
   std::optional<int> srtp_cipher_suite() const { return srtp_cipher_suite_; }
+  std::optional<int> ssl_group_id() const { return ssl_group_id_; }
   // The accessor returns a temporary pointer, it does not release ownership.
   const SSLCertChain* remote_ssl_certificates() const {
     return remote_ssl_certificates_.get();
@@ -87,6 +89,7 @@ class RTC_EXPORT DtlsTransportInformation {
   std::optional<int> ssl_cipher_suite_;
   std::optional<int> srtp_cipher_suite_;
   std::unique_ptr<SSLCertChain> remote_ssl_certificates_;
+  std::optional<int> ssl_group_id_;
 };
 
 class DtlsTransportObserverInterface {
@@ -107,7 +110,7 @@ class DtlsTransportObserverInterface {
 // accessed on that thread, except for functions explicitly marked otherwise.
 // References can be held by other threads, and destruction can therefore
 // be initiated by other threads.
-class DtlsTransportInterface : public webrtc::RefCountInterface {
+class DtlsTransportInterface : public RefCountInterface {
  public:
   // Returns a pointer to the ICE transport that is owned by the DTLS transport.
   virtual scoped_refptr<IceTransportInterface> ice_transport() = 0;

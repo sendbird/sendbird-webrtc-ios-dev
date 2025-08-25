@@ -41,6 +41,7 @@
 #include "pc/jsep_transport_controller.h"
 #include "pc/rtp_transport_internal.h"
 #include "pc/session_description.h"
+#include "rtc_base/async_packet_socket.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/copy_on_write_buffer.h"
 #include "rtc_base/crypto_random.h"
@@ -113,7 +114,7 @@ class ScenarioIceConnectionImpl : public ScenarioIceConnection,
 
 std::unique_ptr<ScenarioIceConnection> ScenarioIceConnection::Create(
     const Environment& env,
-    webrtc::test::NetworkEmulationManagerImpl* net,
+    test::NetworkEmulationManagerImpl* net,
     IceConnectionObserver* observer) {
   return std::make_unique<ScenarioIceConnectionImpl>(env, net, observer);
 }
@@ -146,6 +147,7 @@ ScenarioIceConnectionImpl::ScenarioIceConnectionImpl(
                                       network_thread_,
                                       port_allocator_.get(),
                                       /*async_resolver_factory*/ nullptr,
+                                      /*lna_permission_factory*/ nullptr,
                                       payload_type_picker_,
                                       CreateJsepConfig())) {
   SendTask(network_thread_, [this] {
@@ -155,7 +157,7 @@ ScenarioIceConnectionImpl::ScenarioIceConnectionImpl(
     port_allocator_->Initialize();
     RTC_CHECK(port_allocator_->SetConfiguration(/*stun_servers*/ {},
                                                 /*turn_servers*/ {}, 0,
-                                                webrtc::NO_PRUNE));
+                                                NO_PRUNE));
     jsep_controller_->SetLocalCertificate(certificate_);
   });
 }
@@ -208,7 +210,7 @@ void ScenarioIceConnectionImpl::SendRtcpPacket(
 void ScenarioIceConnectionImpl::SetRemoteSdp(SdpType type,
                                              const std::string& remote_sdp) {
   RTC_DCHECK_RUN_ON(signaling_thread_);
-  remote_description_ = webrtc::CreateSessionDescription(type, remote_sdp);
+  remote_description_ = CreateSessionDescription(type, remote_sdp);
   jsep_controller_->SubscribeIceCandidateGathered(
       [this](const std::string& transport,
              const std::vector<Candidate>& candidate) {
@@ -237,7 +239,7 @@ void ScenarioIceConnectionImpl::SetRemoteSdp(SdpType type,
 void ScenarioIceConnectionImpl::SetLocalSdp(SdpType type,
                                             const std::string& local_sdp) {
   RTC_DCHECK_RUN_ON(signaling_thread_);
-  local_description_ = webrtc::CreateSessionDescription(type, local_sdp);
+  local_description_ = CreateSessionDescription(type, local_sdp);
   auto res = jsep_controller_->SetLocalDescription(
       local_description_->GetType(), local_description_->description(),
       remote_description_ ? remote_description_->description() : nullptr);

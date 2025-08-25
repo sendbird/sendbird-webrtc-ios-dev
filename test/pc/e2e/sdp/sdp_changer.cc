@@ -133,7 +133,7 @@ void SignalingInterceptor::FillSimulcastContext(
     SessionDescriptionInterface* offer) {
   for (auto& content : offer->description()->contents()) {
     MediaContentDescription* media_desc = content.media_description();
-    if (media_desc->type() != webrtc::MediaType::VIDEO) {
+    if (media_desc->type() != MediaType::VIDEO) {
       continue;
     }
     if (media_desc->HasSimulcast()) {
@@ -189,7 +189,7 @@ LocalAndRemoteSdp SignalingInterceptor::PatchOffer(
   for (auto& content : offer->description()->contents()) {
     context_.mids_order.push_back(content.mid());
     MediaContentDescription* media_desc = content.media_description();
-    if (media_desc->type() != webrtc::MediaType::VIDEO) {
+    if (media_desc->type() != MediaType::VIDEO) {
       continue;
     }
     if (content.media_description()->streams().empty()) {
@@ -249,7 +249,7 @@ LocalAndRemoteSdp SignalingInterceptor::PatchVp8Offer(
 
     // Swap mid and rid extensions, so remote peer will understand rid as mid.
     // Also remove rid extension.
-    std::vector<webrtc::RtpExtension> extensions =
+    std::vector<RtpExtension> extensions =
         prototype_media_desc->rtp_header_extensions();
     for (auto ext_it = extensions.begin(); ext_it != extensions.end();) {
       if (ext_it->uri == RtpExtension::kRidUri) {
@@ -268,7 +268,6 @@ LocalAndRemoteSdp SignalingInterceptor::PatchVp8Offer(
       ++ext_it;
     }
 
-    prototype_media_desc->ClearRtpHeaderExtensions();
     prototype_media_desc->set_rtp_header_extensions(extensions);
 
     // We support only single stream inside video section with simulcast
@@ -333,7 +332,7 @@ LocalAndRemoteSdp SignalingInterceptor::PatchVp9Offer(
   }
 
   for (auto& content : offer->description()->contents()) {
-    if (content.media_description()->type() != webrtc::MediaType::VIDEO) {
+    if (content.media_description()->type() != MediaType::VIDEO) {
       // We are interested in only video tracks
       continue;
     }
@@ -381,7 +380,7 @@ LocalAndRemoteSdp SignalingInterceptor::PatchAnswer(
     const VideoCodecConfig& first_codec) {
   for (auto& content : answer->description()->contents()) {
     MediaContentDescription* media_desc = content.media_description();
-    if (media_desc->type() != webrtc::MediaType::VIDEO) {
+    if (media_desc->type() != MediaType::VIDEO) {
       continue;
     }
     if (content.media_description()->direction() !=
@@ -433,8 +432,7 @@ LocalAndRemoteSdp SignalingInterceptor::PatchVp8Answer(
 
     // Patch `media_desc` to make it simulcast answer description.
     // Restore mid/rid rtp header extensions
-    std::vector<webrtc::RtpExtension> extensions =
-        media_desc->rtp_header_extensions();
+    std::vector<RtpExtension> extensions = media_desc->rtp_header_extensions();
     // First remove existing rid/mid header extensions.
     extensions.erase(std::remove_if(extensions.begin(), extensions.end(),
                                     [](const webrtc::RtpExtension& e) {
@@ -448,7 +446,6 @@ LocalAndRemoteSdp SignalingInterceptor::PatchVp8Answer(
     extensions.push_back(info.mid_extension);
     extensions.push_back(info.rid_extension);
     // extensions.push_back(info.rrid_extension);
-    media_desc->ClearRtpHeaderExtensions();
     media_desc->set_rtp_header_extensions(extensions);
 
     // Add StreamParams with rids for receive.
@@ -536,10 +533,10 @@ LocalAndRemoteSdp SignalingInterceptor::PatchVp9Answer(
   return LocalAndRemoteSdp(std::move(answer), std::move(answer_for_remote));
 }
 
-std::vector<std::unique_ptr<IceCandidateInterface>>
+std::vector<std::unique_ptr<IceCandidate>>
 SignalingInterceptor::PatchOffererIceCandidates(
-    ArrayView<const IceCandidateInterface* const> candidates) {
-  std::vector<std::unique_ptr<IceCandidateInterface>> out;
+    ArrayView<const IceCandidate* const> candidates) {
+  std::vector<std::unique_ptr<IceCandidate>> out;
   for (auto* candidate : candidates) {
     auto simulcast_info_it =
         context_.simulcast_infos_by_mid.find(candidate->sdp_mid());
@@ -560,10 +557,10 @@ SignalingInterceptor::PatchOffererIceCandidates(
   return out;
 }
 
-std::vector<std::unique_ptr<IceCandidateInterface>>
+std::vector<std::unique_ptr<IceCandidate>>
 SignalingInterceptor::PatchAnswererIceCandidates(
-    ArrayView<const IceCandidateInterface* const> candidates) {
-  std::vector<std::unique_ptr<IceCandidateInterface>> out;
+    ArrayView<const IceCandidate* const> candidates) {
+  std::vector<std::unique_ptr<IceCandidate>> out;
   for (auto* candidate : candidates) {
     auto simulcast_info_it =
         context_.simulcast_infos_by_rid.find(candidate->sdp_mid());

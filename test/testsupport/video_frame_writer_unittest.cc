@@ -10,16 +10,20 @@
 
 #include "test/testsupport/video_frame_writer.h"
 
-#include <stdint.h>
 #include <stdio.h>
-#include <string.h>
 
+#include <cstdio>
+#include <cstring>
 #include <memory>
 #include <string>
 
 #include "absl/strings/string_view.h"
+#include "api/scoped_refptr.h"
 #include "api/test/video/video_frame_writer.h"
 #include "api/video/i420_buffer.h"
+#include "api/video/resolution.h"
+#include "api/video/video_frame.h"
+#include "api/video/video_frame_buffer.h"
 #include "test/gtest.h"
 #include "test/testsupport/file_utils.h"
 #include "test/testsupport/frame_reader.h"
@@ -56,8 +60,8 @@ scoped_refptr<I420Buffer> CreateI420Buffer(int width, int height) {
   return buffer;
 }
 
-void AssertI420BuffersEq(scoped_refptr<webrtc::I420BufferInterface> actual,
-                         scoped_refptr<webrtc::I420BufferInterface> expected) {
+void AssertI420BuffersEq(scoped_refptr<I420BufferInterface> actual,
+                         scoped_refptr<I420BufferInterface> expected) {
   ASSERT_TRUE(actual);
 
   ASSERT_EQ(actual->width(), expected->width());
@@ -93,8 +97,8 @@ class VideoFrameWriterTest : public ::testing::Test {
   ~VideoFrameWriterTest() override = default;
 
   void SetUp() override {
-    temp_filename_ = webrtc::test::TempFilename(webrtc::test::OutputPath(),
-                                                "video_frame_writer_unittest");
+    temp_filename_ =
+        test::TempFilename(test::OutputPath(), "video_frame_writer_unittest");
     frame_writer_ = CreateFrameWriter();
   }
 

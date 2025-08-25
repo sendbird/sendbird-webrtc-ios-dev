@@ -18,6 +18,7 @@
 #include "absl/memory/memory.h"
 #include "api/environment/environment_factory.h"
 #include "api/units/timestamp.h"
+#include "media/engine/internal_decoder_factory.h"
 #include "modules/rtp_rtcp/source/rtp_packet.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/strings/json.h"
@@ -52,7 +53,7 @@ void RtpReplayer::Replay(
   // Work around: webrtc calls webrtc::Random(clock.TimeInMicroseconds())
   // everywhere and Random expects non-zero seed. Let's set the clock non-zero
   // to make them happy.
-  fake_clock.SetTime(webrtc::Timestamp::Millis(1));
+  fake_clock.SetTime(Timestamp::Millis(1));
 
   // Attempt to create an RtpReader from the input file.
   auto rtp_reader = CreateRtpReader(rtp_dump_data, rtp_dump_size);
@@ -170,7 +171,7 @@ void RtpReplayer::ReplayPackets(
     if (deliver_in_ms > 0) {
       // StatsCounter::ReportMetricToAggregatedCounter is O(elapsed time).
       // Set an upper limit to prevent waste time.
-      clock->AdvanceTime(webrtc::TimeDelta::Millis(
+      clock->AdvanceTime(TimeDelta::Millis(
           std::min(deliver_in_ms, static_cast<int64_t>(100))));
     }
 

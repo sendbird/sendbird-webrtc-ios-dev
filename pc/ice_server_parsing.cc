@@ -22,10 +22,10 @@
 #include "api/candidate.h"
 #include "api/peer_connection_interface.h"
 #include "api/rtc_error.h"
+#include "p2p/base/p2p_constants.h"
 #include "p2p/base/port.h"
 #include "p2p/base/port_allocator.h"
 #include "p2p/base/port_interface.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/ip_address.h"
 #include "rtc_base/logging.h"
@@ -65,7 +65,7 @@ enum class ServiceType {
   INVALID,   // Unknown.
 };
 static_assert(static_cast<size_t>(ServiceType::INVALID) ==
-                  arraysize(kValidIceServiceTypes),
+                  std::size(kValidIceServiceTypes),
               "kValidIceServiceTypes must have as many strings as ServiceType "
               "has values.");
 
@@ -89,7 +89,7 @@ std::tuple<ServiceType, absl::string_view> GetServiceTypeAndHostnameFromUri(
     RTC_LOG(LS_WARNING) << "Empty hostname in ICE URI: " << in_str;
     return {ServiceType::INVALID, ""};
   }
-  for (size_t i = 0; i < arraysize(kValidIceServiceTypes); ++i) {
+  for (size_t i = 0; i < std::size(kValidIceServiceTypes); ++i) {
     if (in_str.compare(0, colonpos, kValidIceServiceTypes[i]) == 0) {
       return {static_cast<ServiceType>(i), in_str.substr(colonpos + 1)};
     }
@@ -275,6 +275,12 @@ RTCError ParseIceServerUrl(const PeerConnectionInterface::IceServer& server,
             RTCErrorType::INVALID_PARAMETER,
             "ICE server parsing failed: TURN server with empty "
             "username or password");
+      }
+      // RFC 8489 limits the size of the STUN username field to 509 characters.
+      if (server.username.size() > kMaxTurnUsernameLength) {
+        LOG_AND_RETURN_ERROR(
+            RTCErrorType::INVALID_PARAMETER,
+            "ICE server parsing failed: TURN server username is too long");
       }
       // If the hostname field is not empty, then the server address must be
       // the resolved IP for that host, the hostname is needed later for TLS

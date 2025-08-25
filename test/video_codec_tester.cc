@@ -82,10 +82,9 @@
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/system/file_wrapper.h"
 #include "rtc_base/task_queue_for_test.h"
+#include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/time_utils.h"
-#include "system_wrappers/include/sleep.h"
-#include "test/testsupport/file_utils.h"
 #include "test/testsupport/frame_reader.h"
 #include "test/testsupport/video_frame_writer.h"
 #include "third_party/libyuv/include/libyuv/compare.h"
@@ -108,7 +107,7 @@ using PacingMode = PacingSettings::PacingMode;
 using VideoCodecStats = VideoCodecTester::VideoCodecStats;
 using DecodeCallback =
     absl::AnyInvocable<void(const VideoFrame& decoded_frame)>;
-using webrtc::test::ImprovementDirection;
+using test::ImprovementDirection;
 
 constexpr Frequency k90kHz = Frequency::Hertz(90000);
 
@@ -276,7 +275,7 @@ class LimitedTaskQueue {
       int64_t wait_ms = (scheduled - now).ms();
       if (wait_ms > 0) {
         RTC_CHECK_LT(wait_ms, 10000) << "Too high wait_ms " << wait_ms;
-        SleepMs(wait_ms);
+        Thread::SleepMs(wait_ms);
       }
       std::move(task)();
       --queue_size_;
@@ -537,7 +536,7 @@ class VideoCodecAnalyzer : public VideoCodecTester::VideoCodecStats {
     }
   }
 
-  std::vector<Frame> Slice(Filter filter, bool merge) const {
+  std::vector<Frame> Slice(Filter filter, bool merge) const override {
     std::vector<Frame> slice;
     for (const auto& [timestamp_rtp, temporal_unit_frames] : frames_) {
       if (temporal_unit_frames.empty()) {
@@ -588,8 +587,8 @@ class VideoCodecAnalyzer : public VideoCodecTester::VideoCodecStats {
       }
 
       Frame superframe = subframes.back();
-      for (const Frame& frame : webrtc::ArrayView<Frame>(subframes).subview(
-               0, subframes.size() - 1)) {
+      for (const Frame& frame :
+           ArrayView<Frame>(subframes).subview(0, subframes.size() - 1)) {
         superframe.decoded |= frame.decoded;
         superframe.encoded |= frame.encoded;
         superframe.frame_size += frame.frame_size;
@@ -615,7 +614,7 @@ class VideoCodecAnalyzer : public VideoCodecTester::VideoCodecStats {
     return slice;
   }
 
-  Stream Aggregate(Filter filter) const {
+  Stream Aggregate(Filter filter) const override {
     std::vector<Frame> frames = Slice(filter, /*merge=*/true);
     Stream stream;
     LeakyBucket leaky_bucket;
@@ -709,7 +708,7 @@ class VideoCodecAnalyzer : public VideoCodecTester::VideoCodecStats {
 
   void LogMetrics(absl::string_view csv_path,
                   std::vector<Frame> frames,
-                  std::map<std::string, std::string> metadata) const {
+                  std::map<std::string, std::string> metadata) const override {
     RTC_LOG(LS_INFO) << "Write metrics to " << csv_path;
     FILE* csv_file = fopen(csv_path.data(), "w");
     const std::string delimiter = ";";
@@ -1189,19 +1188,45 @@ class Encoder : public EncodedImageCallback {
     if (is_simulcast) {
       vc.numberOfSimulcastStreams = num_spatial_layers;
       for (int sidx = 0; sidx < num_spatial_layers; ++sidx) {
-        auto tl0_settings = es.layers_settings.find(
-            LayerId{.spatial_idx = sidx, .temporal_idx = 0});
-        auto tlx_settings = es.layers_settings.find(LayerId{
-            .spatial_idx = sidx, .temporal_idx = num_temporal_layers - 1});
-        DataRate total_layer_bitrate = std::accumulate(
-            tl0_settings, tlx_settings, DataRate::Zero(),
-            [](DataRate acc,
-               const std::pair<const LayerId, LayerSettings> layer) {
-              return acc + layer.second.bitrate;
-            });
+        const Resolution& resolution =
+            es.layers_settings
+                .at(LayerId{.spatial_idx = sidx, .temporal_idx = 0})
+                .resolution;
+        DataRate total_layer_bitrate = DataRate::Zero();
+        for (int tidx = 0; tidx < num_temporal_layers; ++tidx) {
+          total_layer_bitrate +=
+              es.layers_settings
+                  .at(LayerId{.spatial_idx = sidx, .temporal_idx = tidx})
+                  .bitrate;
+        }
         SimulcastStream& ss = vc.simulcastStream[sidx];
-        ss.width = tl0_settings->second.resolution.width;
-        ss.height = tl0_settings->second.resolution.height;
+        ss.width = resolution.width;
+        ss.height = resolution.height;
+        ss.numberOfTemporalLayers = num_temporal_layers;
+        ss.maxBitrate = total_layer_bitrate.kbps();
+        ss.targetBitrate = total_layer_bitrate.kbps();
+        ss.minBitrate = 0;
+        ss.maxFramerate = vc.maxFramerate;
+        ss.qpMax = vc.qpMax;
+        ss.active = true;
+      }
+    } else if (vc.codecType == kVideoCodecVP9 ||
+               vc.codecType == kVideoCodecAV1) {
+      for (int sidx = 0; sidx < num_spatial_layers; ++sidx) {
+        const Resolution& resolution =
+            es.layers_settings
+                .at(LayerId{.spatial_idx = sidx, .temporal_idx = 0})
+                .resolution;
+        DataRate total_layer_bitrate = DataRate::Zero();
+        for (int tidx = 0; tidx < num_temporal_layers; ++tidx) {
+          total_layer_bitrate +=
+              es.layers_settings
+                  .at(LayerId{.spatial_idx = sidx, .temporal_idx = tidx})
+                  .bitrate;
+        }
+        SpatialLayer& ss = vc.spatialLayers[sidx];
+        ss.width = resolution.width;
+        ss.height = resolution.height;
         ss.numberOfTemporalLayers = num_temporal_layers;
         ss.maxBitrate = total_layer_bitrate.kbps();
         ss.targetBitrate = total_layer_bitrate.kbps();

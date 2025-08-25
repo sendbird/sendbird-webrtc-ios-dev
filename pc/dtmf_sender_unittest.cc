@@ -123,7 +123,7 @@ class DtmfSenderTest : public ::testing::Test {
     dtmf_->RegisterObserver(observer_.get());
   }
 
-  ~DtmfSenderTest() {
+  ~DtmfSenderTest() override {
     if (dtmf_) {
       dtmf_->UnregisterObserver();
     }
@@ -306,7 +306,7 @@ TEST_F(DtmfSenderTest, InsertDtmfWhileSenderIsDeleted) {
                    .clock = &fake_clock_}),
               webrtc::IsRtcOk());
   // Delete the sender.
-  dtmf_ = NULL;
+  dtmf_ = nullptr;
   // The queue should be discontinued so no more tone callbacks.
   fake_clock_.AdvanceTime(webrtc::TimeDelta::Millis(200));
   EXPECT_EQ(1U, observer_->tones().size());

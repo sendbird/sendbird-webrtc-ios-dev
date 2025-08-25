@@ -23,6 +23,7 @@
 #include "api/array_view.h"
 #include "api/audio_options.h"
 #include "api/crypto/crypto_options.h"
+#include "api/field_trials.h"
 #include "api/jsep.h"
 #include "api/rtp_headers.h"
 #include "api/rtp_parameters.h"
@@ -45,11 +46,10 @@
 #include "p2p/dtls/fake_dtls_transport.h"
 #include "p2p/test/fake_packet_transport.h"
 #include "pc/dtls_srtp_transport.h"
-#include "pc/jsep_transport.h"
 #include "pc/rtp_transport.h"
 #include "pc/rtp_transport_internal.h"
 #include "pc/session_description.h"
-#include "rtc_base/arraysize.h"
+#include "rtc_base/async_packet_socket.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/byte_order.h"
 #include "rtc_base/checks.h"
@@ -61,18 +61,21 @@
 #include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/unique_id_generator.h"
+#include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "test/scoped_key_value_config.h"
 
 namespace {
 
 using ::testing::AllOf;
 using ::testing::ElementsAre;
 using ::testing::Field;
+using ::webrtc::ArrayView;
+using ::webrtc::CreateTestFieldTrials;
 using ::webrtc::DtlsTransportInternal;
 using ::webrtc::FakeVoiceMediaReceiveChannel;
 using ::webrtc::FakeVoiceMediaSendChannel;
+using ::webrtc::FieldTrials;
 using ::webrtc::RidDescription;
 using ::webrtc::RidDirection;
 using ::webrtc::RtpTransceiverDirection;
@@ -103,14 +106,14 @@ template <class ChannelT,
           class OptionsT>
 class Traits {
  public:
-  typedef ChannelT Channel;
-  typedef MediaSendChannelT MediaSendChannel;
-  typedef MediaReceiveChannelT MediaReceiveChannel;
-  typedef MediaSendChannelInterfaceT MediaSendChannelInterface;
-  typedef MediaReceiveChannelInterfaceT MediaReceiveChannelInterface;
-  typedef ContentT Content;
-  typedef MediaInfoT MediaInfo;
-  typedef OptionsT Options;
+  using Channel = ChannelT;
+  using MediaSendChannel = MediaSendChannelT;
+  using MediaReceiveChannel = MediaReceiveChannelT;
+  using MediaSendChannelInterface = MediaSendChannelInterfaceT;
+  using MediaReceiveChannelInterface = MediaReceiveChannelInterfaceT;
+  using Content = ContentT;
+  using MediaInfo = MediaInfoT;
+  using Options = OptionsT;
 };
 
 class VoiceTraits : public Traits<webrtc::VoiceChannel,
@@ -161,7 +164,7 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
     RTC_DCHECK(network_thread_);
   }
 
-  ~ChannelTest() {
+  ~ChannelTest() override {
     if (network_thread_) {
       SendTask(network_thread_, [this]() {
         network_thread_safety_->SetNotAlive();
@@ -1206,11 +1209,9 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
     EXPECT_TRUE(CheckNoRtp2());
   }
 
-  void SendBundleToBundle(const int* pl_types,
-                          int len,
+  void SendBundleToBundle(ArrayView<const int, 2> pl_types,
                           bool rtcp_mux,
                           bool secure) {
-    ASSERT_EQ(2, len);
     int sequence_number1_1 = 0, sequence_number2_2 = 0;
     // Only pl_type1 was added to the bundle filter for both `channel1_`
     // and `channel2_`.
@@ -1594,7 +1595,7 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
   webrtc::Buffer rtcp_packet_;
   webrtc::CandidatePairInterface* last_selected_candidate_pair_;
   webrtc::UniqueRandomIdGenerator ssrc_generator_;
-  webrtc::test::ScopedKeyValueConfig field_trials_;
+  FieldTrials field_trials_ = CreateTestFieldTrials();
 };
 
 template <>
@@ -1644,14 +1645,14 @@ void ChannelTest<VoiceTraits>::AddLegacyStreamInContent(
 
 class VoiceChannelSingleThreadTest : public ChannelTest<VoiceTraits> {
  public:
-  typedef ChannelTest<VoiceTraits> Base;
+  using Base = ChannelTest<VoiceTraits>;
   VoiceChannelSingleThreadTest()
       : Base(true, kPcmuFrame, kRtcpReport, NetworkIsWorker::Yes) {}
 };
 
 class VoiceChannelDoubleThreadTest : public ChannelTest<VoiceTraits> {
  public:
-  typedef ChannelTest<VoiceTraits> Base;
+  using Base = ChannelTest<VoiceTraits>;
   VoiceChannelDoubleThreadTest()
       : Base(true, kPcmuFrame, kRtcpReport, NetworkIsWorker::No) {}
 };
@@ -1659,7 +1660,7 @@ class VoiceChannelDoubleThreadTest : public ChannelTest<VoiceTraits> {
 class VoiceChannelWithEncryptedRtpHeaderExtensionsSingleThreadTest
     : public ChannelTest<VoiceTraits> {
  public:
-  typedef ChannelTest<VoiceTraits> Base;
+  using Base = ChannelTest<VoiceTraits>;
   VoiceChannelWithEncryptedRtpHeaderExtensionsSingleThreadTest()
       : Base(true,
              kPcmuFrameWithExtensions,
@@ -1670,7 +1671,7 @@ class VoiceChannelWithEncryptedRtpHeaderExtensionsSingleThreadTest
 class VoiceChannelWithEncryptedRtpHeaderExtensionsDoubleThreadTest
     : public ChannelTest<VoiceTraits> {
  public:
-  typedef ChannelTest<VoiceTraits> Base;
+  using Base = ChannelTest<VoiceTraits>;
   VoiceChannelWithEncryptedRtpHeaderExtensionsDoubleThreadTest()
       : Base(true, kPcmuFrameWithExtensions, kRtcpReport, NetworkIsWorker::No) {
   }
@@ -1724,14 +1725,14 @@ void ChannelTest<VideoTraits>::AddLegacyStreamInContent(
 
 class VideoChannelSingleThreadTest : public ChannelTest<VideoTraits> {
  public:
-  typedef ChannelTest<VideoTraits> Base;
+  using Base = ChannelTest<VideoTraits>;
   VideoChannelSingleThreadTest()
       : Base(false, kH264Packet, kRtcpReport, NetworkIsWorker::Yes) {}
 };
 
 class VideoChannelDoubleThreadTest : public ChannelTest<VideoTraits> {
  public:
-  typedef ChannelTest<VideoTraits> Base;
+  using Base = ChannelTest<VideoTraits>;
   VideoChannelDoubleThreadTest()
       : Base(false, kH264Packet, kRtcpReport, NetworkIsWorker::No) {}
 };
@@ -1853,19 +1854,19 @@ TEST_F(VoiceChannelSingleThreadTest, TestOnTransportReadyToSend) {
 }
 
 TEST_F(VoiceChannelSingleThreadTest, SendBundleToBundle) {
-  Base::SendBundleToBundle(kAudioPts, arraysize(kAudioPts), false, false);
+  Base::SendBundleToBundle(kAudioPts, false, false);
 }
 
 TEST_F(VoiceChannelSingleThreadTest, SendBundleToBundleSecure) {
-  Base::SendBundleToBundle(kAudioPts, arraysize(kAudioPts), false, true);
+  Base::SendBundleToBundle(kAudioPts, false, true);
 }
 
 TEST_F(VoiceChannelSingleThreadTest, SendBundleToBundleWithRtcpMux) {
-  Base::SendBundleToBundle(kAudioPts, arraysize(kAudioPts), true, false);
+  Base::SendBundleToBundle(kAudioPts, true, false);
 }
 
 TEST_F(VoiceChannelSingleThreadTest, SendBundleToBundleWithRtcpMuxSecure) {
-  Base::SendBundleToBundle(kAudioPts, arraysize(kAudioPts), true, true);
+  Base::SendBundleToBundle(kAudioPts, true, true);
 }
 
 TEST_F(VoiceChannelSingleThreadTest, DefaultMaxBitrateIsUnlimited) {
@@ -1994,19 +1995,19 @@ TEST_F(VoiceChannelDoubleThreadTest, TestOnTransportReadyToSend) {
 }
 
 TEST_F(VoiceChannelDoubleThreadTest, SendBundleToBundle) {
-  Base::SendBundleToBundle(kAudioPts, arraysize(kAudioPts), false, false);
+  Base::SendBundleToBundle(kAudioPts, false, false);
 }
 
 TEST_F(VoiceChannelDoubleThreadTest, SendBundleToBundleSecure) {
-  Base::SendBundleToBundle(kAudioPts, arraysize(kAudioPts), false, true);
+  Base::SendBundleToBundle(kAudioPts, false, true);
 }
 
 TEST_F(VoiceChannelDoubleThreadTest, SendBundleToBundleWithRtcpMux) {
-  Base::SendBundleToBundle(kAudioPts, arraysize(kAudioPts), true, false);
+  Base::SendBundleToBundle(kAudioPts, true, false);
 }
 
 TEST_F(VoiceChannelDoubleThreadTest, SendBundleToBundleWithRtcpMuxSecure) {
-  Base::SendBundleToBundle(kAudioPts, arraysize(kAudioPts), true, true);
+  Base::SendBundleToBundle(kAudioPts, true, true);
 }
 
 TEST_F(VoiceChannelDoubleThreadTest, DefaultMaxBitrateIsUnlimited) {
@@ -2125,19 +2126,19 @@ TEST_F(VideoChannelSingleThreadTest, TestReceivePrAnswer) {
 }
 
 TEST_F(VideoChannelSingleThreadTest, SendBundleToBundle) {
-  Base::SendBundleToBundle(kVideoPts, arraysize(kVideoPts), false, false);
+  Base::SendBundleToBundle(kVideoPts, false, false);
 }
 
 TEST_F(VideoChannelSingleThreadTest, SendBundleToBundleSecure) {
-  Base::SendBundleToBundle(kVideoPts, arraysize(kVideoPts), false, true);
+  Base::SendBundleToBundle(kVideoPts, false, true);
 }
 
 TEST_F(VideoChannelSingleThreadTest, SendBundleToBundleWithRtcpMux) {
-  Base::SendBundleToBundle(kVideoPts, arraysize(kVideoPts), true, false);
+  Base::SendBundleToBundle(kVideoPts, true, false);
 }
 
 TEST_F(VideoChannelSingleThreadTest, SendBundleToBundleWithRtcpMuxSecure) {
-  Base::SendBundleToBundle(kVideoPts, arraysize(kVideoPts), true, true);
+  Base::SendBundleToBundle(kVideoPts, true, true);
 }
 
 TEST_F(VideoChannelSingleThreadTest, TestOnTransportReadyToSend) {
@@ -2570,19 +2571,19 @@ TEST_F(VideoChannelDoubleThreadTest, TestReceivePrAnswer) {
 }
 
 TEST_F(VideoChannelDoubleThreadTest, SendBundleToBundle) {
-  Base::SendBundleToBundle(kVideoPts, arraysize(kVideoPts), false, false);
+  Base::SendBundleToBundle(kVideoPts, false, false);
 }
 
 TEST_F(VideoChannelDoubleThreadTest, SendBundleToBundleSecure) {
-  Base::SendBundleToBundle(kVideoPts, arraysize(kVideoPts), false, true);
+  Base::SendBundleToBundle(kVideoPts, false, true);
 }
 
 TEST_F(VideoChannelDoubleThreadTest, SendBundleToBundleWithRtcpMux) {
-  Base::SendBundleToBundle(kVideoPts, arraysize(kVideoPts), true, false);
+  Base::SendBundleToBundle(kVideoPts, true, false);
 }
 
 TEST_F(VideoChannelDoubleThreadTest, SendBundleToBundleWithRtcpMuxSecure) {
-  Base::SendBundleToBundle(kVideoPts, arraysize(kVideoPts), true, true);
+  Base::SendBundleToBundle(kVideoPts, true, true);
 }
 
 TEST_F(VideoChannelDoubleThreadTest, TestOnTransportReadyToSend) {

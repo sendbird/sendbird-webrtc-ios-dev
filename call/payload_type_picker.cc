@@ -33,11 +33,11 @@ namespace {
 
 // Due to interoperability issues with old Chrome/WebRTC versions that
 // ignore the [35, 63] range prefer the lower range for new codecs.
-static const int kFirstDynamicPayloadTypeLowerRange = 35;
-static const int kLastDynamicPayloadTypeLowerRange = 63;
+const int kFirstDynamicPayloadTypeLowerRange = 35;
+const int kLastDynamicPayloadTypeLowerRange = 63;
 
-static const int kFirstDynamicPayloadTypeUpperRange = 96;
-static const int kLastDynamicPayloadTypeUpperRange = 127;
+const int kFirstDynamicPayloadTypeUpperRange = 96;
+const int kLastDynamicPayloadTypeUpperRange = 127;
 
 // Note: The only fields we need from a Codec are the type (audio/video),
 // the subtype (vp8/h264/....), the clock rate, the channel count, and the
@@ -45,7 +45,7 @@ static const int kLastDynamicPayloadTypeUpperRange = 127;
 // is only a temporary measure.
 
 struct MapTableEntry {
-  webrtc::SdpAudioFormat format;
+  SdpAudioFormat format;
   int payload_type;
 };
 
@@ -169,7 +169,7 @@ PayloadTypePicker::PayloadTypePicker() {
       // Includes data to reduce collisions (and thus reassignments)
       // TODO(bugs.webrtc.org/400630582): Delete this, it's only for test
       // stability.
-      {{"reserved-do-not-use", 0, 0}, 102},
+      {{"reserved-do-not-use", 1, 0}, 102},
       {{kCnCodecName, 16000, 1}, 105},
       {{kCnCodecName, 32000, 1}, 106},
       {{kOpusCodecName,

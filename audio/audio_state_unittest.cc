@@ -11,6 +11,7 @@
 #include "audio/audio_state.h"
 
 #include <memory>
+#include <numbers>
 #include <utility>
 #include <vector>
 
@@ -57,7 +58,7 @@ struct FakeAsyncAudioProcessingHelper {
     std::unique_ptr<TaskQueueBase, TaskQueueDeleter> CreateTaskQueue(
         absl::string_view /* name */,
         Priority /* priority */) const override {
-      return std::unique_ptr<webrtc::TaskQueueBase, webrtc::TaskQueueDeleter>(
+      return std::unique_ptr<TaskQueueBase, TaskQueueDeleter>(
           new FakeTaskQueue());
     }
   };
@@ -131,13 +132,9 @@ struct ConfigHelper {
 
 class FakeAudioSource : public AudioMixer::Source {
  public:
-  // TODO(aleloi): Valid overrides commented out, because the gmock
-  // methods don't use any override declarations, and we want to avoid
-  // warnings from -Winconsistent-missing-override. See
-  // http://crbug.com/428099.
-  int Ssrc() const /*override*/ { return 0; }
+  int Ssrc() const override { return 0; }
 
-  int PreferredSampleRate() const /*override*/ { return kSampleRate; }
+  int PreferredSampleRate() const override { return kSampleRate; }
 
   MOCK_METHOD(AudioFrameInfo,
               GetAudioFrameWithInfo,
@@ -150,7 +147,7 @@ std::vector<int16_t> Create10msTestData(int sample_rate_hz,
   const int samples_per_channel = sample_rate_hz / 100;
   std::vector<int16_t> audio_data(samples_per_channel * num_channels, 0);
   // Fill the first channel with a 1kHz sine wave.
-  const float inc = (2 * 3.14159265f * 1000) / sample_rate_hz;
+  const float inc = (2 * std::numbers::pi_v<float> * 1000) / sample_rate_hz;
   float w = 0.f;
   for (int i = 0; i < samples_per_channel; ++i) {
     audio_data[i * num_channels] = static_cast<int16_t>(32767.f * std::sin(w));

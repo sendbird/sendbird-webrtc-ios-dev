@@ -18,8 +18,7 @@
 #include <utility>
 
 #include "rtc_base/containers/flat_map.h"
-#include "rtc_base/gunit.h"
-#include "test/gmock.h"
+#include "test/gtest.h"
 
 // This is a copy of
 // https://source.chromium.org/chromium/chromium/src/+/main:base/types/strong_alias_unittest.cc
@@ -282,7 +281,7 @@ TEST(StrongAliasTest, CanWrapComplexStructures) {
 
 TYPED_TEST(StrongAliasTest, CanBeKeysInFlatMap) {
   using FooAlias = StrongAlias<class FooTag, TypeParam>;
-  webrtc::flat_map<FooAlias, std::string> map;
+  flat_map<FooAlias, std::string> map;
 
   FooAlias k1(GetExampleValue<TypeParam>(0));
   FooAlias k2(GetExampleValue<TypeParam>(1));

@@ -88,6 +88,9 @@ using ::testing::Values;
 
 class FakeNetworkManagerWithNoAnyNetwork : public FakeNetworkManager {
  public:
+  FakeNetworkManagerWithNoAnyNetwork()
+      : FakeNetworkManager(Thread::Current()) {}
+
   std::vector<const Network*> GetAnyAddressNetworks() override {
     // This function allocates networks that are owned by the
     // NetworkManager. But some tests assume that they can release
@@ -103,14 +106,13 @@ class PeerConnectionWrapperForBundleTest : public PeerConnectionWrapper {
  public:
   using PeerConnectionWrapper::PeerConnectionWrapper;
 
-  bool AddIceCandidateToMedia(Candidate* candidate,
-                              webrtc::MediaType media_type) {
+  bool AddIceCandidateToMedia(Candidate* candidate, MediaType media_type) {
     auto* desc = pc()->remote_description()->description();
     for (size_t i = 0; i < desc->contents().size(); i++) {
       const auto& content = desc->contents()[i];
       if (content.media_description()->type() == media_type) {
         candidate->set_transport_name(content.mid());
-        std::unique_ptr<IceCandidateInterface> jsep_candidate =
+        std::unique_ptr<IceCandidate> jsep_candidate =
             CreateIceCandidate(content.mid(), i, *candidate);
         return pc()->AddIceCandidate(jsep_candidate.get());
       }
@@ -126,7 +128,7 @@ class PeerConnectionWrapperForBundleTest : public PeerConnectionWrapper {
   VoiceChannel* voice_channel() {
     auto transceivers = GetInternalPeerConnection()->GetTransceiversInternal();
     for (const auto& transceiver : transceivers) {
-      if (transceiver->media_type() == webrtc::MediaType::AUDIO) {
+      if (transceiver->media_type() == MediaType::AUDIO) {
         return static_cast<VoiceChannel*>(transceiver->internal()->channel());
       }
     }
@@ -140,7 +142,7 @@ class PeerConnectionWrapperForBundleTest : public PeerConnectionWrapper {
   VideoChannel* video_channel() {
     auto transceivers = GetInternalPeerConnection()->GetTransceiversInternal();
     for (const auto& transceiver : transceivers) {
-      if (transceiver->media_type() == webrtc::MediaType::VIDEO) {
+      if (transceiver->media_type() == MediaType::VIDEO) {
         return static_cast<VideoChannel*>(transceiver->internal()->channel());
       }
     }
@@ -292,7 +294,7 @@ SdpContentMutator RemoveRtcpMux() {
 }
 
 std::vector<int> GetCandidateComponents(
-    const std::vector<IceCandidateInterface*> candidates) {
+    const std::vector<IceCandidate*> candidates) {
   std::vector<int> components;
   components.reserve(candidates.size());
   for (auto* candidate : candidates) {
@@ -658,16 +660,16 @@ TEST_P(PeerConnectionBundleTest,
   // that messages are executed in the order they were posted.
 
   Candidate audio_candidate1 = CreateLocalUdpCandidate(kAudioAddress1);
-  ASSERT_TRUE(caller->AddIceCandidateToMedia(&audio_candidate1,
-                                             webrtc::MediaType::AUDIO));
+  ASSERT_TRUE(
+      caller->AddIceCandidateToMedia(&audio_candidate1, MediaType::AUDIO));
 
   Candidate video_candidate = CreateLocalUdpCandidate(kVideoAddress);
-  ASSERT_TRUE(caller->AddIceCandidateToMedia(&video_candidate,
-                                             webrtc::MediaType::VIDEO));
+  ASSERT_TRUE(
+      caller->AddIceCandidateToMedia(&video_candidate, MediaType::VIDEO));
 
   Candidate audio_candidate2 = CreateLocalUdpCandidate(kAudioAddress2);
-  ASSERT_TRUE(caller->AddIceCandidateToMedia(&audio_candidate2,
-                                             webrtc::MediaType::AUDIO));
+  ASSERT_TRUE(
+      caller->AddIceCandidateToMedia(&audio_candidate2, MediaType::AUDIO));
 
   EXPECT_THAT(
       WaitUntil(

@@ -10,14 +10,26 @@
 
 #include "rtc_base/async_dns_resolver.h"
 
-#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
+#include "absl/strings/string_view.h"
+#include "api/async_dns_resolver.h"
 #include "api/make_ref_counted.h"
-#include "rtc_base/logging.h"
+#include "api/ref_counted_base.h"
+#include "api/scoped_refptr.h"
+#include "api/sequence_checker.h"
+#include "api/task_queue/pending_task_safety_flag.h"
+#include "api/task_queue/task_queue_base.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/ip_address.h"
+#include "rtc_base/net_helpers.h"
 #include "rtc_base/platform_thread.h"
+#include "rtc_base/socket_address.h"
+#include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/thread_annotations.h"
 
 #if defined(WEBRTC_MAC) || defined(WEBRTC_IOS)
 #include <dispatch/dispatch.h>
@@ -30,7 +42,7 @@ namespace {
 #ifdef __native_client__
 int ResolveHostname(absl::string_view hostname,
                     int family,
-                    std::vector<webrtc::IPAddress>* addresses) {
+                    std::vector<IPAddress>* addresses) {
   RTC_DCHECK_NOTREACHED();
   RTC_LOG(LS_WARNING) << "ResolveHostname() is not implemented for NaCl";
   return -1;
@@ -112,7 +124,7 @@ class AsyncDnsResolver::State : public RefCountedBase {
 
   // Execute the passed function if the state is Active.
   void Finish(absl::AnyInvocable<void()> function) {
-    webrtc::MutexLock lock(&mutex_);
+    MutexLock lock(&mutex_);
     if (status_ != Status::kActive) {
       return;
     }
@@ -120,12 +132,12 @@ class AsyncDnsResolver::State : public RefCountedBase {
     function();
   }
   void Kill() {
-    webrtc::MutexLock lock(&mutex_);
+    MutexLock lock(&mutex_);
     status_ = Status::kDead;
   }
 
  private:
-  webrtc::Mutex mutex_;
+  Mutex mutex_;
   Status status_ RTC_GUARDED_BY(mutex_) = Status::kActive;
 };
 
@@ -148,7 +160,7 @@ void AsyncDnsResolver::Start(const SocketAddress& addr,
   result_.addr_ = addr;
   callback_ = std::move(callback);
   auto thread_function = [this, addr, family, flag = safety_.flag(),
-                          caller_task_queue = webrtc::TaskQueueBase::Current(),
+                          caller_task_queue = TaskQueueBase::Current(),
                           state = state_] {
     std::vector<IPAddress> addresses;
     int error = ResolveHostname(addr.hostname(), family, addresses);

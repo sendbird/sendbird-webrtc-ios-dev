@@ -14,7 +14,11 @@
 #include <memory>
 #include <vector>
 
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "call/rtp_config.h"
+#include "call/video_send_stream.h"
+#include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/metrics.h"
 #include "test/gtest.h"
 
@@ -33,10 +37,10 @@ const int kProcessIntervalMs = 2000;
 class SendDelayStatsTest : public ::testing::Test {
  public:
   SendDelayStatsTest() : clock_(1234), config_(CreateConfig()) {}
-  virtual ~SendDelayStatsTest() {}
+  ~SendDelayStatsTest() override {}
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     stats_.reset(new SendDelayStats(&clock_));
     stats_->AddSsrcs(config_);
   }

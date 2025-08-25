@@ -9,18 +9,25 @@
  */
 #include "test/frame_generator.h"
 
-#include <string.h>
-
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <limits>
 #include <memory>
+#include <optional>
+#include <vector>
 
+#include "api/scoped_refptr.h"
+#include "api/test/frame_generator_interface.h"
 #include "api/video/i010_buffer.h"
 #include "api/video/nv12_buffer.h"
-#include "api/video/video_rotation.h"
+#include "api/video/video_frame_buffer.h"
 #include "common_video/include/video_frame_buffer.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/synchronization/mutex.h"
+#include "system_wrappers/include/clock.h"
 #include "test/frame_utils.h"
 
 namespace webrtc {
@@ -139,7 +146,7 @@ void SquareGenerator::Square::Draw(
     return;
 
   // Optionally draw on alpha plane if given.
-  const webrtc::I420ABufferInterface* yuva_buffer = frame_buffer->GetI420A();
+  const I420ABufferInterface* yuva_buffer = frame_buffer->GetI420A();
   for (int y = y_; y < y_ + length; ++y) {
     uint8_t* pos_y = (const_cast<uint8_t*>(yuva_buffer->DataA()) + x_ +
                       y * yuva_buffer->StrideA());

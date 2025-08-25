@@ -12,9 +12,16 @@
 
 #include <stddef.h>
 
+#include <memory>
 #include <utility>
 
 #include "modules/desktop_capture/cropped_desktop_frame.h"
+#include "modules/desktop_capture/desktop_capture_options.h"
+#include "modules/desktop_capture/desktop_capture_types.h"
+#include "modules/desktop_capture/desktop_capturer.h"
+#include "modules/desktop_capture/desktop_frame.h"
+#include "modules/desktop_capture/desktop_geometry.h"
+#include "modules/desktop_capture/shared_memory.h"
 #include "rtc_base/logging.h"
 
 namespace webrtc {
@@ -22,7 +29,7 @@ namespace webrtc {
 CroppingWindowCapturer::CroppingWindowCapturer(
     const DesktopCaptureOptions& options)
     : options_(options),
-      callback_(NULL),
+      callback_(nullptr),
       window_capturer_(DesktopCapturer::CreateRawWindowCapturer(options)),
       selected_window_(kNullWindowId),
       excluded_window_(kNullWindowId) {}

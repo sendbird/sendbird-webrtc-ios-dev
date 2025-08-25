@@ -122,7 +122,7 @@ typedef char* SockOptArg;
 namespace {
 
 // RFC-3168, Section 5. ECN is the two least significant bits.
-static constexpr uint8_t kEcnMask = 0x03;
+constexpr uint8_t kEcnMask = 0x03;
 
 #if defined(WEBRTC_POSIX)
 
@@ -204,7 +204,7 @@ SocketAddress PhysicalSocket::GetLocalAddress() const {
   int result = ::getsockname(s_, addr, &addrlen);
   SocketAddress address;
   if (result >= 0) {
-    webrtc::SocketAddressFromSockAddrStorage(addr_storage, &address);
+    SocketAddressFromSockAddrStorage(addr_storage, &address);
   } else {
     RTC_LOG(LS_WARNING) << "GetLocalAddress: unable to get local addr, socket="
                         << s_;
@@ -219,7 +219,7 @@ SocketAddress PhysicalSocket::GetRemoteAddress() const {
   int result = ::getpeername(s_, addr, &addrlen);
   SocketAddress address;
   if (result >= 0) {
-    webrtc::SocketAddressFromSockAddrStorage(addr_storage, &address);
+    SocketAddressFromSockAddrStorage(addr_storage, &address);
   } else {
     RTC_LOG(LS_WARNING)
         << "GetRemoteAddress: unable to get remote addr, socket=" << s_;
@@ -239,8 +239,7 @@ int PhysicalSocket::Bind(const SocketAddress& bind_addr) {
       // Since the network binder handled binding the socket to the desired
       // network interface, we don't need to (and shouldn't) include an IP in
       // the bind() call; bind() just needs to assign a port.
-      copied_bind_addr.SetIP(
-          webrtc::GetAnyIP(copied_bind_addr.ipaddr().family()));
+      copied_bind_addr.SetIP(GetAnyIP(copied_bind_addr.ipaddr().family()));
     } else if (result == NetworkBindingResult::NOT_IMPLEMENTED) {
       RTC_LOG(LS_INFO) << "Can't bind socket to network because "
                           "network binding is not implemented for this OS.";
@@ -305,7 +304,7 @@ int PhysicalSocket::DoConnect(const SocketAddress& connect_addr) {
   uint8_t events = DE_READ | DE_WRITE;
   if (err == 0) {
     state_ = CS_CONNECTED;
-  } else if (webrtc::IsBlockingError(GetError())) {
+  } else if (IsBlockingError(GetError())) {
     state_ = CS_CONNECTING;
     events |= DE_CONNECT;
   } else {
@@ -417,7 +416,7 @@ int PhysicalSocket::Send(const void* pv, size_t cb) {
   // We have seen minidumps where this may be false.
   RTC_DCHECK(sent <= static_cast<int>(cb));
   if ((sent > 0 && sent < static_cast<int>(cb)) ||
-      (sent < 0 && webrtc::IsBlockingError(GetError()))) {
+      (sent < 0 && IsBlockingError(GetError()))) {
     EnableEvents(DE_WRITE);
   }
   return sent;
@@ -442,7 +441,7 @@ int PhysicalSocket::SendTo(const void* buffer,
   // We have seen minidumps where this may be false.
   RTC_DCHECK(sent <= static_cast<int>(length));
   if ((sent > 0 && sent < static_cast<int>(length)) ||
-      (sent < 0 && webrtc::IsBlockingError(GetError()))) {
+      (sent < 0 && IsBlockingError(GetError()))) {
     EnableEvents(DE_WRITE);
   }
   return sent;
@@ -465,7 +464,7 @@ int PhysicalSocket::Recv(void* buffer, size_t length, int64_t* timestamp) {
 
   UpdateLastError();
   int error = GetError();
-  bool success = (received >= 0) || webrtc::IsBlockingError(error);
+  bool success = (received >= 0) || IsBlockingError(error);
   if (udp_ || success) {
     EnableEvents(DE_READ);
   }
@@ -483,7 +482,7 @@ int PhysicalSocket::RecvFrom(void* buffer,
 
   UpdateLastError();
   int error = GetError();
-  bool success = (received >= 0) || webrtc::IsBlockingError(error);
+  bool success = (received >= 0) || IsBlockingError(error);
   if (udp_ || success) {
     EnableEvents(DE_READ);
   }
@@ -507,7 +506,7 @@ int PhysicalSocket::RecvFrom(ReceiveBuffer& buffer) {
   }
   UpdateLastError();
   int error = GetError();
-  bool success = (received >= 0) || webrtc::IsBlockingError(error);
+  bool success = (received >= 0) || IsBlockingError(error);
   if (udp_ || success) {
     EnableEvents(DE_READ);
   }
@@ -569,7 +568,7 @@ int PhysicalSocket::DoReadFromSocket(void* buffer,
     }
   }
   if (out_addr) {
-    webrtc::SocketAddressFromSockAddrStorage(addr_storage, out_addr);
+    SocketAddressFromSockAddrStorage(addr_storage, out_addr);
   }
   return received;
 
@@ -616,7 +615,7 @@ Socket* PhysicalSocket::Accept(SocketAddress* out_addr) {
   if (s == INVALID_SOCKET)
     return nullptr;
   if (out_addr != nullptr)
-    webrtc::SocketAddressFromSockAddrStorage(addr_storage, out_addr);
+    SocketAddressFromSockAddrStorage(addr_storage, out_addr);
   return ss_->WrapSocket(s);
 }
 
@@ -1826,7 +1825,7 @@ bool PhysicalSocketServer::WaitPoll(int cmsWait, bool process_io) {
   int64_t msStop = -1;
   if (cmsWait != kForeverMs) {
     msWait = cmsWait;
-    msStop = webrtc::TimeAfter(cmsWait);
+    msStop = TimeAfter(cmsWait);
   }
 
   std::vector<pollfd> pollfds;
@@ -1834,7 +1833,7 @@ bool PhysicalSocketServer::WaitPoll(int cmsWait, bool process_io) {
 
   while (fWait_) {
     {
-      webrtc::CritScope cr(&crit_);
+      CritScope cr(&crit_);
       current_dispatcher_keys_.clear();
       pollfds.clear();
       pollfds.reserve(dispatcher_by_key_.size());
@@ -1868,7 +1867,7 @@ bool PhysicalSocketServer::WaitPoll(int cmsWait, bool process_io) {
       return true;
     } else {
       // We have signaled descriptors
-      webrtc::CritScope cr(&crit_);
+      CritScope cr(&crit_);
       // Iterate only on the dispatchers whose file descriptors were passed into
       // poll; this avoids the ABA problem (a socket being destroyed and a new
       // one created with the same file descriptor).
@@ -1881,7 +1880,7 @@ bool PhysicalSocketServer::WaitPoll(int cmsWait, bool process_io) {
     }
 
     if (cmsWait != kForeverMs) {
-      msWait = webrtc::TimeDiff(msStop, webrtc::TimeMillis());
+      msWait = TimeDiff(msStop, TimeMillis());
       if (msWait < 0) {
         // Return success on timeout.
         return true;
@@ -1897,16 +1896,15 @@ bool PhysicalSocketServer::WaitPoll(int cmsWait, bool process_io) {
 #endif  // WEBRTC_POSIX
 
 #if defined(WEBRTC_WIN)
-bool PhysicalSocketServer::Wait(webrtc::TimeDelta max_wait_duration,
-                                bool process_io) {
+bool PhysicalSocketServer::Wait(TimeDelta max_wait_duration, bool process_io) {
   // We don't support reentrant waiting.
   RTC_DCHECK(!waiting_);
-  ScopedSetTrue s(&waiting_);
+  ScopedSetTrue set(&waiting_);
 
   int cmsWait = ToCmsWait(max_wait_duration);
   int64_t cmsTotal = cmsWait;
   int64_t cmsElapsed = 0;
-  int64_t msStart = webrtc::Time();
+  int64_t msStart = Time();
 
   fWait_ = true;
   while (fWait_) {
@@ -1916,7 +1914,7 @@ bool PhysicalSocketServer::Wait(webrtc::TimeDelta max_wait_duration,
     events.push_back(socket_ev_);
 
     {
-      webrtc::CritScope cr(&crit_);
+      CritScope cr(&crit_);
       // Get a snapshot of all current dispatchers; this is used to avoid the
       // ABA problem (see later comment) and avoids the dispatcher_by_key_
       // iterator being invalidated by calling CheckSignalClose, which may
@@ -1972,7 +1970,7 @@ bool PhysicalSocketServer::Wait(webrtc::TimeDelta max_wait_duration,
       return true;
     } else {
       // Figure out which one it is and call it
-      webrtc::CritScope cr(&crit_);
+      CritScope cr(&crit_);
       int index = dw - WSA_WAIT_EVENT_0;
       if (index > 0) {
         --index;  // The first event is the socket event
@@ -2065,7 +2063,7 @@ bool PhysicalSocketServer::Wait(webrtc::TimeDelta max_wait_duration,
     // Break?
     if (!fWait_)
       break;
-    cmsElapsed = webrtc::TimeSince(msStart);
+    cmsElapsed = TimeSince(msStart);
     if ((cmsWait != kForeverMs) && (cmsElapsed >= cmsWait)) {
       break;
     }

@@ -14,21 +14,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <algorithm>
 #include <memory>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/string_view.h"
 #include "api/media_types.h"
 #include "api/rtp_parameters.h"
 #include "api/rtp_transceiver_direction.h"
-#include "api/rtp_transceiver_interface.h"
 #include "media/base/codec.h"
-#include "media/base/media_channel.h"
 #include "media/base/media_constants.h"
 #include "media/base/rid_description.h"
 #include "media/base/stream_params.h"
@@ -138,22 +135,10 @@ class MediaContentDescription {
   }
   void set_rtp_header_extensions(const RtpHeaderExtensions& extensions) {
     rtp_header_extensions_ = extensions;
-    rtp_header_extensions_set_ = true;
   }
   void AddRtpHeaderExtension(const RtpExtension& ext) {
     rtp_header_extensions_.push_back(ext);
-    rtp_header_extensions_set_ = true;
   }
-  void ClearRtpHeaderExtensions() {
-    rtp_header_extensions_.clear();
-    rtp_header_extensions_set_ = true;
-  }
-  // We can't always tell if an empty list of header extensions is
-  // because the other side doesn't support them, or just isn't hooked up to
-  // signal them. For now we assume an empty list means no signaling, but
-  // provide the ClearRtpHeaderExtensions method to allow "no support" to be
-  // clearly indicated (i.e. when derived from other information).
-  bool rtp_header_extensions_set() const { return rtp_header_extensions_set_; }
   const StreamParamsVec& streams() const { return send_streams_; }
   // TODO(pthatcher): Remove this by giving mediamessage.cc access
   // to MediaContentDescription
@@ -269,7 +254,6 @@ class MediaContentDescription {
   std::string bandwidth_type_ = kApplicationSpecificBandwidth;
 
   std::vector<RtpExtension> rtp_header_extensions_;
-  bool rtp_header_extensions_set_ = false;
   StreamParamsVec send_streams_;
   bool conference_mode_ = false;
   RtpTransceiverDirection direction_ = RtpTransceiverDirection::kSendRecv;
@@ -438,7 +422,7 @@ class RTC_EXPORT ContentInfo {
   std::unique_ptr<MediaContentDescription> description_;
 };
 
-typedef std::vector<std::string> ContentNames;
+using ContentNames = std::vector<std::string>;
 
 // This class provides a mechanism to aggregate different media contents into a
 // group. This group can also be shared with the peers in a pre-defined format.
@@ -468,8 +452,8 @@ class ContentGroup {
   ContentNames content_names_;
 };
 
-typedef std::vector<ContentInfo> ContentInfos;
-typedef std::vector<ContentGroup> ContentGroups;
+using ContentInfos = std::vector<ContentInfo>;
+using ContentGroups = std::vector<ContentGroup>;
 
 // Determines how the MSID will be signaled in the SDP.
 // These can be used as bit flags to indicate both or the special value none.

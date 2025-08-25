@@ -121,7 +121,7 @@ class SendTransport : public Transport,
     time_controller_->Register(this);
   }
 
-  ~SendTransport() { time_controller_->Unregister(this); }
+  ~SendTransport() override { time_controller_->Unregister(this); }
 
   void SetRtpRtcpModule(ModuleRtpRtcpImpl2* receiver) { receiver_ = receiver; }
   void SimulateNetworkDelay(TimeDelta delay) { delay_ = delay; }
@@ -131,7 +131,8 @@ class SendTransport : public Transport,
     ++rtp_packets_sent_;
     return true;
   }
-  bool SendRtcp(ArrayView<const uint8_t> data) override {
+  bool SendRtcp(ArrayView<const uint8_t> data,
+                const PacketOptions& /* options */) override {
     test::RtcpPacketParser parser;
     parser.Parse(data);
     last_nack_list_ = parser.nack()->packet_ids();

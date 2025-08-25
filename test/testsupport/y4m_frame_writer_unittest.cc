@@ -8,10 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <stdint.h>
 #include <stdio.h>
-#include <string.h>
 
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <memory>
 #include <string>
 
@@ -38,8 +39,8 @@ class Y4mFrameWriterTest : public ::testing::Test {
   ~Y4mFrameWriterTest() override = default;
 
   void SetUp() override {
-    temp_filename_ = webrtc::test::TempFilename(webrtc::test::OutputPath(),
-                                                "y4m_frame_writer_unittest");
+    temp_filename_ =
+        test::TempFilename(test::OutputPath(), "y4m_frame_writer_unittest");
     frame_writer_.reset(new Y4mFrameWriterImpl(temp_filename_, kFrameWidth,
                                                kFrameHeight, kFrameRate));
     ASSERT_TRUE(frame_writer_->Init());

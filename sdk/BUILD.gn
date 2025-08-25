@@ -9,6 +9,7 @@
 import("//third_party/libaom/options.gni")
 import("../webrtc.gni")
 if (is_ios) {
+  import("//build/config/apple/mobile_config.gni")
   import("//build/config/ios/ios_sdk.gni")
   import("//build/config/ios/rules.gni")
 }
@@ -36,6 +37,7 @@ rtc_library("media_constraints") {
   deps = [
     "../api:audio_options_api",
     "../api:libjingle_peerconnection_api",
+    "../rtc_base:stringutils",
   ]
 }
 
@@ -167,11 +169,17 @@ if (is_ios || is_mac) {
 
     if (is_ios) {
       sources += [
-        "objc/helpers/RTCCameraPreviewView.h",
-        "objc/helpers/RTCCameraPreviewView.m",
         "objc/helpers/UIDevice+RTCDevice.h",
         "objc/helpers/UIDevice+RTCDevice.mm",
       ]
+
+      if (target_platform != "tvos") {
+        sources += [
+          "objc/helpers/RTCCameraPreviewView.h",
+          "objc/helpers/RTCCameraPreviewView.m",
+        ]
+      }
+
       frameworks += [ "UIKit.framework" ]
     }
   }
@@ -224,6 +232,10 @@ if (is_ios || is_mac) {
       rtc_library("native_api_audio_device_module") {
         visibility = [ "*" ]
 
+        # TODO: bugs.webrtc.org/413413572 - Remove the poison when users of this
+        # api provide Environment explicitly.
+        allow_poison = [ "environment_construction" ]
+
         sources = [
           "objc/native/api/audio_device_module.h",
           "objc/native/api/audio_device_module.mm",
@@ -233,7 +245,10 @@ if (is_ios || is_mac) {
           ":audio_device",
           ":audio_device_module_error_handler",
           "../api:make_ref_counted",
+          "../api:scoped_refptr",
           "../api/audio:audio_device",
+          "../api/environment",
+          "../api/environment:environment_factory",
           "../modules/audio_device:audio_device_generic",
           "../rtc_base:checks",
           "../rtc_base:logging",
@@ -301,8 +316,8 @@ if (is_ios || is_mac) {
           "../api:scoped_refptr",
           "../api:sequence_checker",
           "../api/audio:audio_device",
+          "../api/environment",
           "../api/task_queue",
-          "../api/task_queue:default_task_queue_factory",
           "../api/task_queue:pending_task_safety_flag",
           "../modules/audio_device:audio_device_buffer",
           "../modules/audio_device:audio_device_config",
@@ -314,7 +329,6 @@ if (is_ios || is_mac) {
           "../rtc_base:refcount",
           "../rtc_base:threading",
           "../rtc_base:timeutils",
-          "../system_wrappers:field_trial",
           "../system_wrappers:metrics",
         ]
 
@@ -480,7 +494,6 @@ if (is_ios || is_mac) {
 
     rtc_library("audio_device_objc") {
       visibility = [ "*" ]
-      allow_poison = [ "environment_construction" ]
       sources = [
         "objc/native/src/objc_audio_device.h",
         "objc/native/src/objc_audio_device.mm",
@@ -496,8 +509,8 @@ if (is_ios || is_mac) {
         "../api:scoped_refptr",
         "../api:sequence_checker",
         "../api/audio:audio_device",
+        "../api/environment",
         "../api/task_queue",
-        "../api/task_queue:default_task_queue_factory",
         "../modules/audio_device:audio_device_buffer",
         "../rtc_base:buffer",
         "../rtc_base:checks",
@@ -523,7 +536,6 @@ if (is_ios || is_mac) {
 
     rtc_library("objc_audio_device_module") {
       visibility = [ "*" ]
-      allow_poison = [ "environment_construction" ]
       sources = [
         "objc/native/api/objc_audio_device_module.h",
         "objc/native/api/objc_audio_device_module.mm",
@@ -533,7 +545,9 @@ if (is_ios || is_mac) {
         ":audio_device_api_objc",
         ":audio_device_objc",
         "../api:make_ref_counted",
+        "../api:scoped_refptr",
         "../api/audio:audio_device",
+        "../api/environment",
         "../rtc_base:logging",
       ]
       if (is_mac) {
@@ -1098,6 +1112,7 @@ if (is_ios || is_mac) {
         "../api/audio_codecs:builtin_audio_encoder_factory",
         "../api/crypto:frame_decryptor_interface",
         "../api/crypto:frame_encryptor_interface",
+        "../api/environment:environment_factory",
         "../api/rtc_event_log:rtc_event_log_factory",
         "../api/task_queue:default_task_queue_factory",
         "../api/transport:field_trial_based_config",
@@ -1198,6 +1213,7 @@ if (is_ios || is_mac) {
             ":videoframebuffer_objc",
             ":videosource_objc",
             ":videotoolbox_objc",
+            "../api:array_view",
             "../api:libjingle_peerconnection_api",
             "../api:rtc_error_matchers",
             "../api:scoped_refptr",
@@ -1205,6 +1221,7 @@ if (is_ios || is_mac) {
             "../api/audio:audio_processing",
             "../api/audio_codecs:builtin_audio_decoder_factory",
             "../api/audio_codecs:builtin_audio_encoder_factory",
+            "../api/environment",
             "../api/environment:environment_factory",
             "../api/task_queue:default_task_queue_factory",
             "../api/video:video_frame",
@@ -1215,7 +1232,6 @@ if (is_ios || is_mac) {
             "../media:rtc_media_tests_utils",
             "../modules/video_coding:video_codec_interface",
             "../rtc_base:gunit_helpers",
-            "../rtc_base:macromagic",
             "../rtc_base:refcount",
             "../rtc_base:rtc_event",
             "../rtc_base/system:unused",
@@ -1734,6 +1750,7 @@ if (is_ios || is_mac) {
         "objc/components/video_codec/nalu_rewriter.h",
       ]
       deps = [
+        "../api:array_view",
         "../common_video",
         "../modules/video_coding:webrtc_h264",
         "../rtc_base:buffer",
@@ -1772,6 +1789,8 @@ if (is_ios || is_mac) {
         ":video_toolbox_cc",
         ":videocodec_objc",
         ":videoframebuffer_objc",
+        "../api:array_view",
+        "../api/video:video_rtp_headers",
         "../api/video_codecs:video_codecs_api",
         "../common_video",
         "../modules/video_coding:video_codec_interface",

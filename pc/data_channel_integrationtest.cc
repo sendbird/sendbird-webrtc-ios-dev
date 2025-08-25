@@ -325,10 +325,10 @@ TEST_P(DataChannelIntegrationTest,
   caller()->data_channel()->Close();
 
   EXPECT_THAT(WaitUntil([&] { return caller()->data_observer()->state(); },
-                        Eq(webrtc::DataChannelInterface::kClosed)),
+                        Eq(DataChannelInterface::kClosed)),
               IsRtcOk());
   EXPECT_THAT(WaitUntil([&] { return callee()->data_observer()->state(); },
-                        Eq(webrtc::DataChannelInterface::kClosed)),
+                        Eq(DataChannelInterface::kClosed)),
               IsRtcOk());
 }
 
@@ -359,7 +359,7 @@ TEST_P(DataChannelIntegrationTest, EndToEndCallWithSctpDataChannelFullBuffer) {
 
   std::string data(256 * 1024, 'a');
   for (size_t queued_size = 0;
-       queued_size < webrtc::DataChannelInterface::MaxSendQueueSize();
+       queued_size < DataChannelInterface::MaxSendQueueSize();
        queued_size += data.size()) {
     caller()->data_channel()->SendAsync(DataBuffer(data), nullptr);
   }
@@ -950,7 +950,7 @@ TEST_P(DataChannelIntegrationTest, SctpDataChannelToAudioVideoUpgrade) {
   ASSERT_TRUE(ExpectNewFrames(media_expectations));
 }
 
-static void MakeSpecCompliantSctpOffer(
+void MakeSpecCompliantSctpOffer(
     std::unique_ptr<SessionDescriptionInterface>& desc) {
   SctpDataContentDescription* dcd_offer =
       GetFirstSctpDataContentDescription(desc->description());
@@ -1638,7 +1638,7 @@ class DataChannelIntegrationTestUnifiedPlanFieldTrials
   }
 };
 
-static const char* kTrialsVariants[] = {
+const char* kTrialsVariants[] = {
     "",
     "WebRTC-ForceDtls13/Enabled/",
     "WebRTC-IceHandshakeDtls/Enabled/",
@@ -1771,8 +1771,7 @@ TEST_P(DataChannelIntegrationTestUnifiedPlanFieldTrials,
 
   // Forward turn ice candidate also to callee2.
   auto candidate = caller()->last_gathered_ice_candidate();
-  std::string ice_sdp;
-  EXPECT_TRUE(candidate->ToString(&ice_sdp));
+  std::string ice_sdp = candidate->ToString();
   callee2->ReceiveIceMessage(candidate->sdp_mid(), candidate->sdp_mline_index(),
                              ice_sdp);
 

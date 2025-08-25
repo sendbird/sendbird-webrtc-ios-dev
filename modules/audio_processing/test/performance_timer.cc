@@ -12,15 +12,18 @@
 
 #include <math.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <numeric>
 
 #include "rtc_base/checks.h"
+#include "system_wrappers/include/clock.h"
 
 namespace webrtc {
 namespace test {
 
 PerformanceTimer::PerformanceTimer(int num_frames_to_process)
-    : clock_(webrtc::Clock::GetRealTimeClock()) {
+    : clock_(Clock::GetRealTimeClock()) {
   timestamps_us_.reserve(num_frames_to_process);
 }
 

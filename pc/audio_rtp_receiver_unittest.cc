@@ -49,7 +49,7 @@ class AudioRtpReceiverTest : public ::testing::Test {
     EXPECT_CALL(receive_channel_, SetBaseMinimumPlayoutDelayMs(kSsrc, _));
   }
 
-  ~AudioRtpReceiverTest() {
+  ~AudioRtpReceiverTest() override {
     EXPECT_CALL(receive_channel_, SetOutputVolume(kSsrc, kVolumeMuted));
     receiver_->SetMediaChannel(nullptr);
   }
@@ -83,7 +83,7 @@ TEST_F(AudioRtpReceiverTest, SetOutputVolumeIsCalled) {
 
   receiver_->OnSetVolume(kVolume);
   EXPECT_THAT(WaitUntil([&] { return set_volume_calls.load(); }, Eq(2),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeOut)}),
+                        {.timeout = TimeDelta::Millis(kTimeOut)}),
               IsRtcOk());
 }
 

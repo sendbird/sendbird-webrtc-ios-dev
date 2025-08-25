@@ -12,9 +12,11 @@
 
 #include <time.h>
 
+#include <cstdint>
 #include <memory>
 #include <utility>
 
+#include "api/scoped_refptr.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/ssl_identity.h"
@@ -25,7 +27,7 @@ namespace webrtc {
 
 namespace {
 
-static const char* kTestCertCommonName = "RTCCertificateTest's certificate";
+const char* kTestCertCommonName = "RTCCertificateTest's certificate";
 
 }  // namespace
 
@@ -68,7 +70,7 @@ class RTCCertificateTest : public ::testing::Test {
   // or later.
   scoped_refptr<RTCCertificate> GenerateCertificateWithExpires(
       uint64_t expires_s) const {
-    RTC_CHECK(webrtc::IsValueInRangeForNumericType<time_t>(expires_s));
+    RTC_CHECK(IsValueInRangeForNumericType<time_t>(expires_s));
 
     SSLIdentityParams params;
     params.common_name = kTestCertCommonName;

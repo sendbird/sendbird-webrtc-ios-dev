@@ -17,12 +17,18 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <utility>
 
 #include "api/array_view.h"
+#include "api/units/timestamp.h"
+#include "rtc_base/async_packet_socket.h"
 #include "rtc_base/byte_order.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/network/received_packet.h"
 #include "rtc_base/network/sent_packet.h"
+#include "rtc_base/socket.h"
+#include "rtc_base/socket_address.h"
 #include "rtc_base/time_utils.h"  // for TimeMillis
 
 #if defined(WEBRTC_POSIX)
@@ -266,7 +272,7 @@ int AsyncTCPSocket::Send(const void* pv,
   if (!IsOutBufferEmpty())
     return static_cast<int>(cb);
 
-  PacketLength pkt_len = webrtc::HostToNetwork16(static_cast<PacketLength>(cb));
+  PacketLength pkt_len = HostToNetwork16(static_cast<PacketLength>(cb));
   AppendToOutBuffer(&pkt_len, kPacketLenSize);
   AppendToOutBuffer(pv, cb);
 
@@ -295,7 +301,7 @@ size_t AsyncTCPSocket::ProcessInput(ArrayView<const uint8_t> data) {
     if (bytes_left < kPacketLenSize)
       return processed_bytes;
 
-    PacketLength pkt_len = webrtc::GetBE16(data.data() + processed_bytes);
+    PacketLength pkt_len = GetBE16(data.data() + processed_bytes);
     if (bytes_left < kPacketLenSize + pkt_len)
       return processed_bytes;
 

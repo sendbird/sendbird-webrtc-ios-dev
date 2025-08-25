@@ -10,7 +10,10 @@
 
 #include "modules/audio_coding/codecs/opus/audio_decoder_opus.h"
 
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <utility>
@@ -19,15 +22,18 @@
 #include "api/array_view.h"
 #include "api/audio/audio_frame.h"
 #include "api/audio_codecs/audio_decoder.h"
+#include "api/audio_codecs/audio_encoder.h"
 #include "api/audio_codecs/opus/audio_encoder_opus_config.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "api/field_trials.h"
 #include "modules/audio_coding/codecs/opus/audio_encoder_opus.h"
 #include "modules/audio_coding/test/PCMFile.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/random.h"
-#include "test/explicit_key_value_config.h"
+#include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/testsupport/file_utils.h"
@@ -35,11 +41,10 @@
 namespace webrtc {
 namespace {
 
-using test::ExplicitKeyValueConfig;
-using testing::SizeIs;
+using ::testing::SizeIs;
 
-using DecodeResult = ::webrtc::AudioDecoder::EncodedAudioFrame::DecodeResult;
-using ParseResult = ::webrtc::AudioDecoder::ParseResult;
+using DecodeResult = AudioDecoder::EncodedAudioFrame::DecodeResult;
+using ParseResult = AudioDecoder::ParseResult;
 
 constexpr int kSampleRateHz = 48000;
 
@@ -323,10 +328,9 @@ TEST(AudioDecoderOpusTest,
 }
 
 TEST(AudioDecoderOpusTest, MonoEncoderStereoDecoderOutputsTrivialStereoPlc) {
-  const ExplicitKeyValueConfig trials("WebRTC-Audio-OpusGeneratePlc/Enabled/");
-  EnvironmentFactory env_factory;
-  env_factory.Set(&trials);
-  const Environment env = env_factory.Create();
+  const FieldTrials trials =
+      CreateTestFieldTrials("WebRTC-Audio-OpusGeneratePlc/Enabled/");
+  const Environment env = CreateEnvironment(&trials);
   // Create a mono encoder.
   const AudioEncoderOpusConfig encoder_config =
       GetEncoderConfig(/*num_channels=*/1, /*dtx_enabled=*/false);
@@ -402,10 +406,9 @@ TEST(AudioDecoderOpusTest,
 
 TEST(AudioDecoderOpusTest,
      StereoEncoderStereoDecoderOutputsNonTrivialStereoPlc) {
-  const ExplicitKeyValueConfig trials("WebRTC-Audio-OpusGeneratePlc/Enabled/");
-  EnvironmentFactory env_factory;
-  env_factory.Set(&trials);
-  const Environment env = env_factory.Create();
+  const FieldTrials trials =
+      CreateTestFieldTrials("WebRTC-Audio-OpusGeneratePlc/Enabled/");
+  const Environment env = CreateEnvironment(&trials);
   // Create a stereo encoder.
   const AudioEncoderOpusConfig encoder_config =
       GetEncoderConfig(/*num_channels=*/2, /*dtx_enabled=*/false);

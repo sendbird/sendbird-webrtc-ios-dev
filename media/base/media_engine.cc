@@ -23,6 +23,7 @@
 #include "api/array_view.h"
 #include "api/field_trials_view.h"
 #include "api/rtc_error.h"
+#include "api/rtp_headers.h"
 #include "api/rtp_parameters.h"
 #include "api/rtp_transceiver_direction.h"
 #include "api/video/video_codec_constants.h"
@@ -40,10 +41,9 @@ bool SupportsMode(const Codec& codec,
   if (!scalability_mode.has_value()) {
     return true;
   }
-  return absl::c_any_of(
-      codec.scalability_modes, [&](webrtc::ScalabilityMode mode) {
-        return ScalabilityModeToString(mode) == *scalability_mode;
-      });
+  return absl::c_any_of(codec.scalability_modes, [&](ScalabilityMode mode) {
+    return ScalabilityModeToString(mode) == *scalability_mode;
+  });
 }
 
 }  // namespace
@@ -90,8 +90,6 @@ std::vector<RtpExtension> GetDefaultEnabledRtpHeaderExtensions(
 RTCError CheckScalabilityModeValues(const RtpParameters& rtp_parameters,
                                     ArrayView<Codec> send_codecs,
                                     std::optional<Codec> send_codec) {
-  using webrtc::RTCErrorType;
-
   if (send_codecs.empty()) {
     // This is an audio sender or an extra check in the stack where the codec
     // list is not available and we can't check the scalability_mode values.
@@ -101,7 +99,7 @@ RTCError CheckScalabilityModeValues(const RtpParameters& rtp_parameters,
   for (size_t i = 0; i < rtp_parameters.encodings.size(); ++i) {
     if (rtp_parameters.encodings[i].codec) {
       bool codecFound = false;
-      for (const webrtc::Codec& codec : send_codecs) {
+      for (const Codec& codec : send_codecs) {
         if (IsSameRtpCodecIgnoringLevel(codec,
                                         *rtp_parameters.encodings[i].codec) &&
             SupportsMode(codec, rtp_parameters.encodings[i].scalability_mode)) {
@@ -120,7 +118,7 @@ RTCError CheckScalabilityModeValues(const RtpParameters& rtp_parameters,
     if (rtp_parameters.encodings[i].scalability_mode) {
       if (!send_codec) {
         bool scalabilityModeFound = false;
-        for (const webrtc::Codec& codec : send_codecs) {
+        for (const Codec& codec : send_codecs) {
           for (const auto& scalability_mode : codec.scalability_modes) {
             if (ScalabilityModeToString(scalability_mode) ==
                 *rtp_parameters.encodings[i].scalability_mode) {
@@ -164,8 +162,6 @@ RTCError CheckRtpParametersValues(const RtpParameters& rtp_parameters,
                                   ArrayView<Codec> send_codecs,
                                   std::optional<Codec> send_codec,
                                   const FieldTrialsView& field_trials) {
-  using webrtc::RTCErrorType;
-
   bool has_scale_resolution_down_to = false;
   for (size_t i = 0; i < rtp_parameters.encodings.size(); ++i) {
     if (rtp_parameters.encodings[i].bitrate_priority <= 0) {
@@ -198,7 +194,7 @@ RTCError CheckRtpParametersValues(const RtpParameters& rtp_parameters,
     if (rtp_parameters.encodings[i].num_temporal_layers) {
       if (*rtp_parameters.encodings[i].num_temporal_layers < 1 ||
           *rtp_parameters.encodings[i].num_temporal_layers >
-              webrtc::kMaxTemporalStreams) {
+              kMaxTemporalStreams) {
         LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_RANGE,
                              "Attempted to set RtpParameters "
                              "num_temporal_layers to an invalid number.");
@@ -222,11 +218,25 @@ RTCError CheckRtpParametersValues(const RtpParameters& rtp_parameters,
                              "different encodings.");
       }
     }
+
+    if (rtp_parameters.encodings[i].csrcs.has_value() &&
+        rtp_parameters.encodings[i].csrcs.value().size() > kRtpCsrcSize) {
+      LOG_AND_RETURN_ERROR(
+          RTCErrorType::INVALID_RANGE,
+          "Attempted to set more than the maximum allowed number of CSRCs.")
+    }
+
+    if (i > 0 && rtp_parameters.encodings[i - 1].csrcs !=
+                     rtp_parameters.encodings[i].csrcs) {
+      LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_MODIFICATION,
+                           "Attempted to set different CSRCs for different "
+                           "encodings.");
+    }
   }
 
   if (has_scale_resolution_down_to &&
       absl::c_any_of(rtp_parameters.encodings,
-                     [](const webrtc::RtpEncodingParameters& encoding) {
+                     [](const RtpEncodingParameters& encoding) {
                        return encoding.active &&
                               !encoding.scale_resolution_down_to.has_value();
                      })) {
@@ -252,7 +262,6 @@ RTCError CheckRtpParametersInvalidModificationAndValues(
     ArrayView<Codec> send_codecs,
     std::optional<Codec> send_codec,
     const FieldTrialsView& field_trials) {
-  using webrtc::RTCErrorType;
   if (rtp_parameters.encodings.size() != old_rtp_parameters.encodings.size()) {
     LOG_AND_RETURN_ERROR(
         RTCErrorType::INVALID_MODIFICATION,
@@ -270,16 +279,16 @@ RTCError CheckRtpParametersInvalidModificationAndValues(
         "Attempted to set RtpParameters with modified header extensions");
   }
   if (!absl::c_equal(old_rtp_parameters.encodings, rtp_parameters.encodings,
-                     [](const webrtc::RtpEncodingParameters& encoding1,
-                        const webrtc::RtpEncodingParameters& encoding2) {
+                     [](const RtpEncodingParameters& encoding1,
+                        const RtpEncodingParameters& encoding2) {
                        return encoding1.rid == encoding2.rid;
                      })) {
     LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_MODIFICATION,
                          "Attempted to change RID values in the encodings.");
   }
   if (!absl::c_equal(old_rtp_parameters.encodings, rtp_parameters.encodings,
-                     [](const webrtc::RtpEncodingParameters& encoding1,
-                        const webrtc::RtpEncodingParameters& encoding2) {
+                     [](const RtpEncodingParameters& encoding1,
+                        const RtpEncodingParameters& encoding2) {
                        return encoding1.ssrc == encoding2.ssrc;
                      })) {
     LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_MODIFICATION,

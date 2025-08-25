@@ -24,7 +24,6 @@
 #include "absl/strings/string_view.h"
 #include "api/test/rtc_error_matchers.h"
 #include "api/transport/ecn_marking.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/async_udp_socket.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/gunit.h"
@@ -52,12 +51,12 @@
 
 namespace webrtc {
 
-using webrtc::testing::SSE_CLOSE;
-using webrtc::testing::SSE_ERROR;
-using webrtc::testing::SSE_OPEN;
-using webrtc::testing::SSE_READ;
-using webrtc::testing::SSE_WRITE;
-using webrtc::testing::StreamSink;
+using testing::SSE_CLOSE;
+using testing::SSE_ERROR;
+using testing::SSE_OPEN;
+using testing::SSE_READ;
+using testing::SSE_WRITE;
+using testing::StreamSink;
 
 // Data size to be used in TcpInternal tests.
 static const size_t kTcpInternalDataSize = 1024 * 1024;  // bytes
@@ -253,7 +252,7 @@ void SocketTest::TestSocketSendRecvWithEcnIPV6() {
 // values on Windows, but an empty address of the same family on Linux/MacOS X.
 bool IsUnspecOrEmptyIP(const IPAddress& address) {
 #if !defined(WEBRTC_WIN)
-  return webrtc::IPIsAny(address);
+  return IPIsAny(address);
 #else
   return address.family() == AF_UNSPEC;
 #endif
@@ -294,10 +293,9 @@ void SocketTest::ConnectInternal(const IPAddress& loopback) {
   EXPECT_FALSE(sink.Check(client.get(), SSE_CLOSE));
 
   // Server has pending connection, accept it.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
+  EXPECT_THAT(WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   std::unique_ptr<Socket> accepted(server->Accept(&accept_addr));
   ASSERT_TRUE(accepted);
   EXPECT_FALSE(accept_addr.IsNil());
@@ -309,9 +307,9 @@ void SocketTest::ConnectInternal(const IPAddress& loopback) {
   EXPECT_EQ(client->GetLocalAddress(), accepted->GetRemoteAddress());
 
   // Connected from client perspective, check the addresses are correct.
-  EXPECT_THAT(webrtc::WaitUntil([&] { return client->GetState(); },
-                                ::testing::Eq(Socket::CS_CONNECTED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return client->GetState(); },
+                        ::testing::Eq(Socket::CS_CONNECTED)),
+              IsRtcOk());
   EXPECT_TRUE(sink.Check(client.get(), SSE_OPEN));
   EXPECT_FALSE(sink.Check(client.get(), SSE_CLOSE));
   EXPECT_EQ(client->GetRemoteAddress(), server->GetLocalAddress());
@@ -348,10 +346,9 @@ void SocketTest::ConnectWithDnsLookupInternal(const IPAddress& loopback,
   EXPECT_FALSE(sink.Check(client.get(), SSE_CLOSE));
 
   // Server has pending connection, accept it.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
+  EXPECT_THAT(WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   std::unique_ptr<Socket> accepted(server->Accept(&accept_addr));
   ASSERT_TRUE(accepted);
   EXPECT_FALSE(accept_addr.IsNil());
@@ -363,9 +360,9 @@ void SocketTest::ConnectWithDnsLookupInternal(const IPAddress& loopback,
   EXPECT_EQ(client->GetLocalAddress(), accepted->GetRemoteAddress());
 
   // Connected from client perspective, check the addresses are correct.
-  EXPECT_THAT(webrtc::WaitUntil([&] { return client->GetState(); },
-                                ::testing::Eq(Socket::CS_CONNECTED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return client->GetState(); },
+                        ::testing::Eq(Socket::CS_CONNECTED)),
+              IsRtcOk());
   EXPECT_TRUE(sink.Check(client.get(), SSE_OPEN));
   EXPECT_FALSE(sink.Check(client.get(), SSE_CLOSE));
   EXPECT_EQ(client->GetRemoteAddress(), server->GetLocalAddress());
@@ -394,9 +391,9 @@ void SocketTest::ConnectFailInternal(const IPAddress& loopback) {
   EXPECT_EQ(0, client->Connect(bogus_addr));
 
   // Wait for connection to fail (ECONNREFUSED).
-  EXPECT_THAT(webrtc::WaitUntil([&] { return client->GetState(); },
-                                ::testing::Eq(Socket::CS_CLOSED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return client->GetState(); },
+                        ::testing::Eq(Socket::CS_CLOSED)),
+              IsRtcOk());
   EXPECT_FALSE(sink.Check(client.get(), SSE_OPEN));
   EXPECT_TRUE(sink.Check(client.get(), SSE_ERROR));
   EXPECT_TRUE(client->GetRemoteAddress().IsNil());
@@ -437,9 +434,9 @@ void SocketTest::ConnectWithDnsLookupFailInternal(const IPAddress& loopback) {
     return;
   }
 
-  EXPECT_THAT(webrtc::WaitUntil([&] { return client->GetState(); },
-                                ::testing::Eq(Socket::CS_CLOSED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return client->GetState(); },
+                        ::testing::Eq(Socket::CS_CLOSED)),
+              IsRtcOk());
   EXPECT_FALSE(sink.Check(client.get(), SSE_OPEN));
   EXPECT_TRUE(sink.Check(client.get(), SSE_ERROR));
   EXPECT_TRUE(client->GetRemoteAddress().IsNil());
@@ -486,10 +483,9 @@ void SocketTest::ConnectWhileNotClosedInternal(const IPAddress& loopback) {
 
   // Accept the original connection.
   SocketAddress accept_addr;
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
+  EXPECT_THAT(WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   std::unique_ptr<Socket> accepted(server->Accept(&accept_addr));
   ASSERT_TRUE(accepted);
   EXPECT_FALSE(accept_addr.IsNil());
@@ -498,9 +494,9 @@ void SocketTest::ConnectWhileNotClosedInternal(const IPAddress& loopback) {
   EXPECT_EQ(Socket::CS_CONNECTED, accepted->GetState());
   EXPECT_EQ(server->GetLocalAddress(), accepted->GetLocalAddress());
   EXPECT_EQ(client->GetLocalAddress(), accepted->GetRemoteAddress());
-  EXPECT_THAT(webrtc::WaitUntil([&] { return client->GetState(); },
-                                ::testing::Eq(Socket::CS_CONNECTED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return client->GetState(); },
+                        ::testing::Eq(Socket::CS_CONNECTED)),
+              IsRtcOk());
   EXPECT_EQ(client->GetRemoteAddress(), server->GetLocalAddress());
   EXPECT_EQ(client->GetRemoteAddress(), accepted->GetLocalAddress());
 
@@ -533,16 +529,15 @@ void SocketTest::ServerCloseDuringConnectInternal(const IPAddress& loopback) {
   EXPECT_EQ(0, client->Connect(server->GetLocalAddress()));
 
   // Close down the server while the socket is in the accept queue.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return sink.Check(server.get(), SSE_READ); },
+  EXPECT_THAT(WaitUntil([&] { return sink.Check(server.get(), SSE_READ); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   server->Close();
 
   // This should fail the connection for the client. Clean up.
-  EXPECT_THAT(webrtc::WaitUntil([&] { return client->GetState(); },
-                                ::testing::Eq(Socket::CS_CLOSED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return client->GetState(); },
+                        ::testing::Eq(Socket::CS_CLOSED)),
+              IsRtcOk());
   EXPECT_TRUE(sink.Check(client.get(), SSE_ERROR));
   client->Close();
 }
@@ -567,10 +562,9 @@ void SocketTest::ClientCloseDuringConnectInternal(const IPAddress& loopback) {
   EXPECT_EQ(0, client->Connect(server->GetLocalAddress()));
 
   // Close down the client while the socket is in the accept queue.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return sink.Check(server.get(), SSE_READ); },
+  EXPECT_THAT(WaitUntil([&] { return sink.Check(server.get(), SSE_READ); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   client->Close();
 
   // The connection should still be able to be accepted.
@@ -580,9 +574,9 @@ void SocketTest::ClientCloseDuringConnectInternal(const IPAddress& loopback) {
   EXPECT_EQ(Socket::CS_CONNECTED, accepted->GetState());
 
   // The accepted socket should then close (possibly with err, timing-related)
-  EXPECT_THAT(webrtc::WaitUntil([&] { return accepted->GetState(); },
-                                ::testing::Eq(Socket::CS_CLOSED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return accepted->GetState(); },
+                        ::testing::Eq(Socket::CS_CLOSED)),
+              IsRtcOk());
   EXPECT_TRUE(sink.Check(accepted.get(), SSE_CLOSE) ||
               sink.Check(accepted.get(), SSE_ERROR));
 
@@ -610,18 +604,17 @@ void SocketTest::ServerCloseInternal(const IPAddress& loopback) {
   EXPECT_EQ(0, client->Connect(server->GetLocalAddress()));
 
   // Accept connection.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
+  EXPECT_THAT(WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   std::unique_ptr<Socket> accepted(server->Accept(&accept_addr));
   ASSERT_TRUE(accepted);
   sink.Monitor(accepted.get());
 
   // Both sides are now connected.
-  EXPECT_THAT(webrtc::WaitUntil([&] { return client->GetState(); },
-                                ::testing::Eq(Socket::CS_CONNECTED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return client->GetState(); },
+                        ::testing::Eq(Socket::CS_CONNECTED)),
+              IsRtcOk());
   EXPECT_TRUE(sink.Check(client.get(), SSE_OPEN));
   EXPECT_EQ(client->GetRemoteAddress(), accepted->GetLocalAddress());
   EXPECT_EQ(accepted->GetRemoteAddress(), client->GetLocalAddress());
@@ -632,10 +625,9 @@ void SocketTest::ServerCloseInternal(const IPAddress& loopback) {
   EXPECT_EQ(Socket::CS_CLOSED, accepted->GetState());
 
   // Expect that the client is notified, and has not yet closed.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return sink.Check(client.get(), SSE_READ); },
+  EXPECT_THAT(WaitUntil([&] { return sink.Check(client.get(), SSE_READ); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   EXPECT_FALSE(sink.Check(client.get(), SSE_CLOSE));
   EXPECT_EQ(Socket::CS_CONNECTED, client->GetState());
 
@@ -645,9 +637,9 @@ void SocketTest::ServerCloseInternal(const IPAddress& loopback) {
   EXPECT_EQ('a', buffer[0]);
 
   // Now we should close, but the remote address will remain.
-  EXPECT_THAT(webrtc::WaitUntil([&] { return client->GetState(); },
-                                ::testing::Eq(Socket::CS_CLOSED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return client->GetState(); },
+                        ::testing::Eq(Socket::CS_CLOSED)),
+              IsRtcOk());
   EXPECT_TRUE(sink.Check(client.get(), SSE_CLOSE));
   EXPECT_FALSE(client->GetRemoteAddress().IsAnyIP());
 
@@ -695,18 +687,17 @@ void SocketTest::CloseInClosedCallbackInternal(const IPAddress& loopback) {
   EXPECT_EQ(0, client->Connect(server->GetLocalAddress()));
 
   // Accept connection.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
+  EXPECT_THAT(WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   std::unique_ptr<Socket> accepted(server->Accept(&accept_addr));
   ASSERT_TRUE(accepted);
   sink.Monitor(accepted.get());
 
   // Both sides are now connected.
-  EXPECT_THAT(webrtc::WaitUntil([&] { return client->GetState(); },
-                                ::testing::Eq(Socket::CS_CONNECTED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return client->GetState(); },
+                        ::testing::Eq(Socket::CS_CONNECTED)),
+              IsRtcOk());
   EXPECT_TRUE(sink.Check(client.get(), SSE_OPEN));
   EXPECT_EQ(client->GetRemoteAddress(), accepted->GetLocalAddress());
   EXPECT_EQ(accepted->GetRemoteAddress(), client->GetLocalAddress());
@@ -720,9 +711,9 @@ void SocketTest::CloseInClosedCallbackInternal(const IPAddress& loopback) {
   EXPECT_EQ(Socket::CS_CONNECTED, client->GetState());
 
   // Now we should be closed and invalidated
-  EXPECT_THAT(webrtc::WaitUntil([&] { return client->GetState(); },
-                                ::testing::Eq(Socket::CS_CLOSED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return client->GetState(); },
+                        ::testing::Eq(Socket::CS_CLOSED)),
+              IsRtcOk());
   EXPECT_TRUE(sink.Check(client.get(), SSE_CLOSE));
   EXPECT_TRUE(Socket::CS_CLOSED == client->GetState());
 }
@@ -760,9 +751,8 @@ void SocketTest::DeleteInReadCallbackInternal(const IPAddress& loopback) {
   // event.
   SocketDeleter deleter(std::move(socket2));
   socket1->SignalReadEvent.connect(&deleter, &SocketDeleter::Delete);
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return deleter.deleted(); }, ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return deleter.deleted(); }, ::testing::IsTrue()),
+              IsRtcOk());
 }
 
 void SocketTest::SocketServerWaitInternal(const IPAddress& loopback) {
@@ -780,10 +770,9 @@ void SocketTest::SocketServerWaitInternal(const IPAddress& loopback) {
   EXPECT_EQ(0, server->Listen(5));
 
   EXPECT_EQ(0, client->Connect(server->GetLocalAddress()));
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
+  EXPECT_THAT(WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
 
   std::unique_ptr<Socket> accepted(server->Accept(&accept_addr));
   ASSERT_TRUE(accepted);
@@ -792,9 +781,9 @@ void SocketTest::SocketServerWaitInternal(const IPAddress& loopback) {
   EXPECT_EQ(server->GetLocalAddress(), accepted->GetLocalAddress());
   EXPECT_EQ(client->GetLocalAddress(), accepted->GetRemoteAddress());
 
-  EXPECT_THAT(webrtc::WaitUntil([&] { return client->GetState(); },
-                                ::testing::Eq(Socket::CS_CONNECTED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return client->GetState(); },
+                        ::testing::Eq(Socket::CS_CONNECTED)),
+              IsRtcOk());
   EXPECT_TRUE(sink.Check(client.get(), SSE_OPEN));
   EXPECT_FALSE(sink.Check(client.get(), SSE_CLOSE));
   EXPECT_EQ(client->GetRemoteAddress(), server->GetLocalAddress());
@@ -814,10 +803,9 @@ void SocketTest::SocketServerWaitInternal(const IPAddress& loopback) {
   EXPECT_FALSE(sink.Check(accepted.get(), SSE_READ));
 
   // But should signal when process_io is true.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return (sink.Check(accepted.get(), SSE_READ)); },
+  EXPECT_THAT(WaitUntil([&] { return (sink.Check(accepted.get(), SSE_READ)); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   EXPECT_LT(0, accepted->Recv(buf, 1024, nullptr));
 }
 
@@ -843,18 +831,17 @@ void SocketTest::TcpInternal(const IPAddress& loopback,
   EXPECT_EQ(0, receiver->Connect(server->GetLocalAddress()));
 
   // Accept connection which will be used for sending.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
+  EXPECT_THAT(WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   std::unique_ptr<Socket> sender(server->Accept(&accept_addr));
   ASSERT_TRUE(sender);
   sink.Monitor(sender.get());
 
   // Both sides are now connected.
-  EXPECT_THAT(webrtc::WaitUntil([&] { return receiver->GetState(); },
-                                ::testing::Eq(Socket::CS_CONNECTED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return receiver->GetState(); },
+                        ::testing::Eq(Socket::CS_CONNECTED)),
+              IsRtcOk());
   EXPECT_TRUE(sink.Check(receiver.get(), SSE_OPEN));
   EXPECT_EQ(receiver->GetRemoteAddress(), sender->GetLocalAddress());
   EXPECT_EQ(sender->GetRemoteAddress(), receiver->GetLocalAddress());
@@ -907,10 +894,10 @@ void SocketTest::TcpInternal(const IPAddress& loopback,
     while (recv_buffer.size() < sent_size) {
       if (!readable) {
         // Wait until data is available.
-        EXPECT_THAT(webrtc::WaitUntil(
-                        [&] { return sink.Check(receiver.get(), SSE_READ); },
-                        ::testing::IsTrue()),
-                    webrtc::IsRtcOk());
+        EXPECT_THAT(
+            WaitUntil([&] { return sink.Check(receiver.get(), SSE_READ); },
+                      ::testing::IsTrue()),
+            IsRtcOk());
         readable = true;
         recv_called = false;
       }
@@ -939,10 +926,9 @@ void SocketTest::TcpInternal(const IPAddress& loopback,
     // Once all that we've sent has been received, expect to be able to send
     // again.
     if (!writable) {
-      ASSERT_THAT(
-          webrtc::WaitUntil([&] { return sink.Check(sender.get(), SSE_WRITE); },
+      ASSERT_THAT(WaitUntil([&] { return sink.Check(sender.get(), SSE_WRITE); },
                             ::testing::IsTrue()),
-          webrtc::IsRtcOk());
+                  IsRtcOk());
       writable = true;
       send_called = false;
     }
@@ -955,9 +941,9 @@ void SocketTest::TcpInternal(const IPAddress& loopback,
 
   // Close down.
   sender->Close();
-  EXPECT_THAT(webrtc::WaitUntil([&] { return receiver->GetState(); },
-                                ::testing::Eq(Socket::CS_CLOSED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return receiver->GetState(); },
+                        ::testing::Eq(Socket::CS_CLOSED)),
+              IsRtcOk());
   EXPECT_TRUE(sink.Check(receiver.get(), SSE_CLOSE));
   receiver->Close();
 }
@@ -982,57 +968,53 @@ void SocketTest::SingleFlowControlCallbackInternal(const IPAddress& loopback) {
   EXPECT_EQ(0, client->Connect(server->GetLocalAddress()));
 
   // Accept connection.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
+  EXPECT_THAT(WaitUntil([&] { return (sink.Check(server.get(), SSE_READ)); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   std::unique_ptr<Socket> accepted(server->Accept(&accept_addr));
   ASSERT_TRUE(accepted);
   sink.Monitor(accepted.get());
 
   // Both sides are now connected.
-  EXPECT_THAT(webrtc::WaitUntil([&] { return client->GetState(); },
-                                ::testing::Eq(Socket::CS_CONNECTED)),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(WaitUntil([&] { return client->GetState(); },
+                        ::testing::Eq(Socket::CS_CONNECTED)),
+              IsRtcOk());
   EXPECT_TRUE(sink.Check(client.get(), SSE_OPEN));
   EXPECT_EQ(client->GetRemoteAddress(), accepted->GetLocalAddress());
   EXPECT_EQ(accepted->GetRemoteAddress(), client->GetLocalAddress());
 
   // Expect a writable callback from the connect.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return sink.Check(accepted.get(), SSE_WRITE); },
+  EXPECT_THAT(WaitUntil([&] { return sink.Check(accepted.get(), SSE_WRITE); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
 
   // Fill the socket buffer.
   char buf[1024 * 16] = {0};
   int sends = 0;
-  while (++sends && accepted->Send(&buf, arraysize(buf)) != -1) {
+  while (++sends && accepted->Send(&buf, std::size(buf)) != -1) {
   }
   EXPECT_TRUE(accepted->IsBlocking());
 
   // Wait until data is available.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return sink.Check(client.get(), SSE_READ); },
+  EXPECT_THAT(WaitUntil([&] { return sink.Check(client.get(), SSE_READ); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
 
   // Pull data.
   for (int i = 0; i < sends; ++i) {
-    client->Recv(buf, arraysize(buf), nullptr);
+    client->Recv(buf, std::size(buf), nullptr);
   }
 
   // Expect at least one additional writable callback.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return sink.Check(accepted.get(), SSE_WRITE); },
+  EXPECT_THAT(WaitUntil([&] { return sink.Check(accepted.get(), SSE_WRITE); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
 
   // Adding data in response to the writeable callback shouldn't cause infinite
   // callbacks.
   int extras = 0;
   for (int i = 0; i < 100; ++i) {
-    accepted->Send(&buf, arraysize(buf));
+    accepted->Send(&buf, std::size(buf));
     Thread::Current()->ProcessMessages(1);
     if (sink.Check(accepted.get(), SSE_WRITE)) {
       extras++;
@@ -1046,7 +1028,7 @@ void SocketTest::SingleFlowControlCallbackInternal(const IPAddress& loopback) {
 }
 
 void SocketTest::UdpInternal(const IPAddress& loopback) {
-  SocketAddress empty = webrtc::EmptySocketAddressWithFamily(loopback.family());
+  SocketAddress empty = EmptySocketAddressWithFamily(loopback.family());
   // Test basic bind and connect behavior.
   Socket* socket = socket_factory_->CreateSocket(loopback.family(), SOCK_DGRAM);
   EXPECT_EQ(Socket::CS_CLOSED, socket->GetState());
@@ -1092,7 +1074,7 @@ void SocketTest::UdpInternal(const IPAddress& loopback) {
 }
 
 void SocketTest::UdpReadyToSend(const IPAddress& loopback) {
-  SocketAddress empty = webrtc::EmptySocketAddressWithFamily(loopback.family());
+  SocketAddress empty = EmptySocketAddressWithFamily(loopback.family());
   // RFC 5737 - The blocks 192.0.2.0/24 (TEST-NET-1) ... are provided for use in
   // documentation.
   // RFC 3849 - 2001:DB8::/32 as a documentation-only prefix.
@@ -1133,9 +1115,9 @@ void SocketTest::UdpReadyToSend(const IPAddress& loopback) {
   }
   EXPECT_EQ(expected_error, error);
   EXPECT_FALSE(client->ready_to_send());
-  EXPECT_THAT(webrtc::WaitUntil([&] { return client->ready_to_send(); },
-                                ::testing::IsTrue()),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return client->ready_to_send(); }, ::testing::IsTrue()),
+      IsRtcOk());
   RTC_LOG(LS_INFO) << "Got SignalReadyToSend";
 }
 
@@ -1244,10 +1226,9 @@ void SocketTest::SocketRecvTimestamp(const IPAddress& loopback) {
   socket->SendTo("foo", 3, address);
 
   // Wait until data is available.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
+  EXPECT_THAT(WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   Buffer buffer;
   Socket::ReceiveBuffer receive_buffer_1(buffer);
   ASSERT_GT(socket->RecvFrom(receive_buffer_1), 0);
@@ -1258,10 +1239,9 @@ void SocketTest::SocketRecvTimestamp(const IPAddress& loopback) {
   int64_t send_time_2 = TimeMicros();
   socket->SendTo("bar", 3, address);
   // Wait until data is available.
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
+  EXPECT_THAT(WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   Socket::ReceiveBuffer receive_buffer_2(buffer);
   ASSERT_GT(socket->RecvFrom(receive_buffer_2), 0);
 
@@ -1274,7 +1254,7 @@ void SocketTest::SocketRecvTimestamp(const IPAddress& loopback) {
 }
 
 void SocketTest::UdpSocketRecvTimestampUseRtcEpoch(const IPAddress& loopback) {
-  SocketAddress empty = webrtc::EmptySocketAddressWithFamily(loopback.family());
+  SocketAddress empty = EmptySocketAddressWithFamily(loopback.family());
   std::unique_ptr<Socket> socket(
       socket_factory_->CreateSocket(loopback.family(), SOCK_DGRAM));
   ASSERT_EQ(socket->Bind(SocketAddress(loopback, 0)), 0);
@@ -1311,10 +1291,9 @@ void SocketTest::SocketSendRecvWithEcn(const IPAddress& loopback) {
   Socket::ReceiveBuffer receive_buffer(buffer);
 
   socket->SendTo("foo", 3, address);
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
+  EXPECT_THAT(WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   ASSERT_GT(socket->RecvFrom(receive_buffer), 0);
   EXPECT_EQ(receive_buffer.ecn, EcnMarking::kNotEct);
 
@@ -1322,28 +1301,25 @@ void SocketTest::SocketSendRecvWithEcn(const IPAddress& loopback) {
   socket->SetOption(Socket::OPT_RECV_ECN, 1);
 
   socket->SendTo("bar", 3, address);
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
+  EXPECT_THAT(WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   ASSERT_GT(socket->RecvFrom(receive_buffer), 0);
   EXPECT_EQ(receive_buffer.ecn, EcnMarking::kEct1);
 
   socket->SetOption(Socket::OPT_SEND_ECN, 2);  // Ect(0)
   socket->SendTo("bar", 3, address);
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
+  EXPECT_THAT(WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   ASSERT_GT(socket->RecvFrom(receive_buffer), 0);
   EXPECT_EQ(receive_buffer.ecn, EcnMarking::kEct0);
 
   socket->SetOption(Socket::OPT_SEND_ECN, 3);  // Ce
   socket->SendTo("bar", 3, address);
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
+  EXPECT_THAT(WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
                         ::testing::IsTrue()),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   ASSERT_GT(socket->RecvFrom(receive_buffer), 0);
   EXPECT_EQ(receive_buffer.ecn, EcnMarking::kCe);
 }

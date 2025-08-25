@@ -42,11 +42,9 @@
 #include "api/rtp_sender_interface.h"
 #include "api/rtp_transceiver_direction.h"
 #include "api/scoped_refptr.h"
-#include "api/task_queue/default_task_queue_factory.h"
 #include "api/test/rtc_error_matchers.h"
 #include "api/transport/bitrate_settings.h"
 #include "api/transport/enums.h"
-#include "api/transport/field_trial_based_config.h"
 #include "api/units/time_delta.h"
 #include "api/video_codecs/video_decoder_factory_template.h"
 #include "api/video_codecs/video_decoder_factory_template_dav1d_adapter.h"
@@ -100,30 +98,30 @@
 namespace webrtc {
 namespace {
 
-static const char kStreamId1[] = "local_stream_1";
-static const char kStreamId2[] = "local_stream_2";
-static const char kStreamId3[] = "local_stream_3";
-static const int kDefaultStunPort = 3478;
-static const char kStunAddressOnly[] = "stun:address";
-static const char kStunInvalidPort[] = "stun:address:-1";
-static const char kStunAddressPortAndMore1[] = "stun:address:port:more";
-static const char kStunAddressPortAndMore2[] = "stun:address:port more";
-static const char kTurnIceServerUri[] = "turn:turn.example.org";
-static const char kTurnUsername[] = "user";
-static const char kTurnPassword[] = "password";
-static const char kTurnHostname[] = "turn.example.org";
-static const uint32_t kTimeout = 10000U;
+const char kStreamId1[] = "local_stream_1";
+const char kStreamId2[] = "local_stream_2";
+const char kStreamId3[] = "local_stream_3";
+const int kDefaultStunPort = 3478;
+const char kStunAddressOnly[] = "stun:address";
+const char kStunInvalidPort[] = "stun:address:-1";
+const char kStunAddressPortAndMore1[] = "stun:address:port:more";
+const char kStunAddressPortAndMore2[] = "stun:address:port more";
+const char kTurnIceServerUri[] = "turn:turn.example.org";
+const char kTurnUsername[] = "user";
+const char kTurnPassword[] = "password";
+const char kTurnHostname[] = "turn.example.org";
+const uint32_t kTimeout = 10000U;
 
-static const char kStreams[][8] = {"stream1", "stream2"};
-static const char kAudioTracks[][32] = {"audiotrack0", "audiotrack1"};
-static const char kVideoTracks[][32] = {"videotrack0", "videotrack1"};
+const char kStreams[][8] = {"stream1", "stream2"};
+const char kAudioTracks[][32] = {"audiotrack0", "audiotrack1"};
+const char kVideoTracks[][32] = {"videotrack0", "videotrack1"};
 
-static const char kRecvonly[] = "recvonly";
-static const char kSendrecv[] = "sendrecv";
+const char kRecvonly[] = "recvonly";
+const char kSendrecv[] = "sendrecv";
 
 // Reference SDP with a MediaStream with label "stream1" and audio track with
 // id "audio_1" and a video track with id "video_1;
-static const char kSdpStringWithStream1PlanB[] =
+const char kSdpStringWithStream1PlanB[] =
     "v=0\r\n"
     "o=- 0 0 IN IP4 127.0.0.1\r\n"
     "s=-\r\n"
@@ -153,7 +151,7 @@ static const char kSdpStringWithStream1PlanB[] =
 // Same string as above but with the MID changed to the Unified Plan default and
 // a=msid added. This is needed so that this SDP can be used as an answer for a
 // Unified Plan offer.
-static const char kSdpStringWithStream1UnifiedPlan[] =
+const char kSdpStringWithStream1UnifiedPlan[] =
     "v=0\r\n"
     "o=- 0 0 IN IP4 127.0.0.1\r\n"
     "s=-\r\n"
@@ -183,7 +181,7 @@ static const char kSdpStringWithStream1UnifiedPlan[] =
 
 // Reference SDP with a MediaStream with label "stream1" and audio track with
 // id "audio_1";
-static const char kSdpStringWithStream1AudioTrackOnly[] =
+const char kSdpStringWithStream1AudioTrackOnly[] =
     "v=0\r\n"
     "o=- 0 0 IN IP4 127.0.0.1\r\n"
     "s=-\r\n"
@@ -203,7 +201,7 @@ static const char kSdpStringWithStream1AudioTrackOnly[] =
 // Reference SDP with two MediaStreams with label "stream1" and "stream2. Each
 // MediaStreams have one audio track and one video track.
 // This uses MSID.
-static const char kSdpStringWithStream1And2PlanB[] =
+const char kSdpStringWithStream1And2PlanB[] =
     "v=0\r\n"
     "o=- 0 0 IN IP4 127.0.0.1\r\n"
     "s=-\r\n"
@@ -235,7 +233,7 @@ static const char kSdpStringWithStream1And2PlanB[] =
     "a=ssrc:2 msid:stream1 videotrack0\r\n"
     "a=ssrc:4 cname:stream2\r\n"
     "a=ssrc:4 msid:stream2 videotrack1\r\n";
-static const char kSdpStringWithStream1And2UnifiedPlan[] =
+const char kSdpStringWithStream1And2UnifiedPlan[] =
     "v=0\r\n"
     "o=- 0 0 IN IP4 127.0.0.1\r\n"
     "s=-\r\n"
@@ -287,7 +285,7 @@ static const char kSdpStringWithStream1And2UnifiedPlan[] =
     "a=ssrc:4 msid:stream2 videotrack1\r\n";
 
 // Reference SDP without MediaStreams. Msid is not supported.
-static const char kSdpStringWithoutStreams[] =
+const char kSdpStringWithoutStreams[] =
     "v=0\r\n"
     "o=- 0 0 IN IP4 127.0.0.1\r\n"
     "s=-\r\n"
@@ -312,7 +310,7 @@ static const char kSdpStringWithoutStreams[] =
     "a=rtpmap:120 VP8/90000\r\n";
 
 // Reference SDP without MediaStreams. Msid is supported.
-static const char kSdpStringWithMsidWithoutStreams[] =
+const char kSdpStringWithMsidWithoutStreams[] =
     "v=0\r\n"
     "o=- 0 0 IN IP4 127.0.0.1\r\n"
     "s=-\r\n"
@@ -338,7 +336,7 @@ static const char kSdpStringWithMsidWithoutStreams[] =
     "a=rtpmap:120 VP8/90000\r\n";
 
 // Reference SDP without MediaStreams and audio only.
-static const char kSdpStringWithoutStreamsAudioOnly[] =
+const char kSdpStringWithoutStreamsAudioOnly[] =
     "v=0\r\n"
     "o=- 0 0 IN IP4 127.0.0.1\r\n"
     "s=-\r\n"
@@ -354,7 +352,7 @@ static const char kSdpStringWithoutStreamsAudioOnly[] =
     "a=rtpmap:111 OPUS/48000/2\r\n";
 
 // Reference SENDONLY SDP without MediaStreams. Msid is not supported.
-static const char kSdpStringSendOnlyWithoutStreams[] =
+const char kSdpStringSendOnlyWithoutStreams[] =
     "v=0\r\n"
     "o=- 0 0 IN IP4 127.0.0.1\r\n"
     "s=-\r\n"
@@ -380,14 +378,14 @@ static const char kSdpStringSendOnlyWithoutStreams[] =
     "a=rtcp-mux\r\n"
     "a=rtpmap:120 VP8/90000\r\n";
 
-static const char kSdpStringInit[] =
+const char kSdpStringInit[] =
     "v=0\r\n"
     "o=- 0 0 IN IP4 127.0.0.1\r\n"
     "s=-\r\n"
     "t=0 0\r\n"
     "a=msid-semantic: WMS\r\n";
 
-static const char kSdpStringAudio[] =
+const char kSdpStringAudio[] =
     "m=audio 1 RTP/AVPF 111\r\n"
     "a=ice-ufrag:e5785931\r\n"
     "a=ice-pwd:36fb7878390db89481c1d46daa4278d8\r\n"
@@ -398,7 +396,7 @@ static const char kSdpStringAudio[] =
     "a=rtcp-mux\r\n"
     "a=rtpmap:111 OPUS/48000/2\r\n";
 
-static const char kSdpStringVideo[] =
+const char kSdpStringVideo[] =
     "m=video 1 RTP/AVPF 120\r\n"
     "a=ice-ufrag:e5785931\r\n"
     "a=ice-pwd:36fb7878390db89481c1d46daa4278d8\r\n"
@@ -409,19 +407,19 @@ static const char kSdpStringVideo[] =
     "a=rtcp-mux\r\n"
     "a=rtpmap:120 VP8/90000\r\n";
 
-static const char kSdpStringMs1Audio0[] =
+const char kSdpStringMs1Audio0[] =
     "a=ssrc:1 cname:stream1\r\n"
     "a=ssrc:1 msid:stream1 audiotrack0\r\n";
 
-static const char kSdpStringMs1Video0[] =
+const char kSdpStringMs1Video0[] =
     "a=ssrc:2 cname:stream1\r\n"
     "a=ssrc:2 msid:stream1 videotrack0\r\n";
 
-static const char kSdpStringMs1Audio1[] =
+const char kSdpStringMs1Audio1[] =
     "a=ssrc:3 cname:stream1\r\n"
     "a=ssrc:3 msid:stream1 audiotrack1\r\n";
 
-static const char kSdpStringMs1Video1[] =
+const char kSdpStringMs1Video1[] =
     "a=ssrc:4 cname:stream1\r\n"
     "a=ssrc:4 msid:stream1 videotrack1\r\n";
 
@@ -585,7 +583,7 @@ class MockTrackObserver : public ObserverInterface {
     notifier_->RegisterObserver(this);
   }
 
-  ~MockTrackObserver() { Unregister(); }
+  ~MockTrackObserver() override { Unregister(); }
 
   void Unregister() {
     if (notifier_) {
@@ -612,8 +610,6 @@ class PeerConnectionFactoryForTest : public PeerConnectionFactory {
     dependencies.worker_thread = Thread::Current();
     dependencies.network_thread = Thread::Current();
     dependencies.signaling_thread = Thread::Current();
-    dependencies.task_queue_factory = CreateDefaultTaskQueueFactory();
-    dependencies.trials = std::make_unique<FieldTrialBasedConfig>();
     // Use fake audio device module since we're only testing the interface
     // level, and using a real one could make tests flaky when run in parallel.
     dependencies.adm = FakeAudioCaptureModule::Create();
@@ -834,7 +830,7 @@ class PeerConnectionInterfaceBaseTest : public ::testing::Test {
   }
 
   scoped_refptr<RtpReceiverInterface> GetFirstReceiverOfType(
-      webrtc::MediaType media_type) {
+      MediaType media_type) {
     for (auto receiver : pc_->GetReceivers()) {
       if (receiver->media_type() == media_type) {
         return receiver;
@@ -856,7 +852,7 @@ class PeerConnectionInterfaceBaseTest : public ::testing::Test {
     }
     EXPECT_THAT(
         WaitUntil([&] { return observer->called(); }, ::testing::IsTrue(),
-                  {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                  {.timeout = TimeDelta::Millis(kTimeout)}),
         IsRtcOk());
     *desc = observer->MoveDescription();
     return observer->result();
@@ -884,7 +880,7 @@ class PeerConnectionInterfaceBaseTest : public ::testing::Test {
     if (pc_->signaling_state() != PeerConnectionInterface::kClosed) {
       EXPECT_THAT(
           WaitUntil([&] { return observer->called(); }, ::testing::IsTrue(),
-                    {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                    {.timeout = TimeDelta::Millis(kTimeout)}),
           IsRtcOk());
     }
     return observer->result();
@@ -910,7 +906,7 @@ class PeerConnectionInterfaceBaseTest : public ::testing::Test {
       return false;
     EXPECT_THAT(
         WaitUntil([&] { return observer->called(); }, ::testing::IsTrue(),
-                  {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                  {.timeout = TimeDelta::Millis(kTimeout)}),
         IsRtcOk());
     return observer->called();
   }
@@ -921,7 +917,7 @@ class PeerConnectionInterfaceBaseTest : public ::testing::Test {
     pc_->GetStats(callback.get());
     EXPECT_THAT(
         WaitUntil([&] { return callback->called(); }, ::testing::IsTrue(),
-                  {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                  {.timeout = TimeDelta::Millis(kTimeout)}),
         IsRtcOk());
     return callback->called();
   }
@@ -1029,7 +1025,7 @@ class PeerConnectionInterfaceBaseTest : public ::testing::Test {
     // Wait for the ice_complete message, so that SDP will have candidates.
     EXPECT_THAT(WaitUntil([&] { return observer_.ice_gathering_complete_; },
                           ::testing::IsTrue(),
-                          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                          {.timeout = TimeDelta::Millis(kTimeout)}),
                 IsRtcOk());
   }
 
@@ -1062,13 +1058,13 @@ class PeerConnectionInterfaceBaseTest : public ::testing::Test {
     // Verify that both OnAddStream and OnAddTrack are called.
     EXPECT_THAT(WaitUntil([&] { return observer_.GetLastAddedStreamId(); },
                           ::testing::Eq(stream_id),
-                          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                          {.timeout = TimeDelta::Millis(kTimeout)}),
                 IsRtcOk());
     EXPECT_THAT(
         WaitUntil(
             [&] { return observer_.CountAddTrackEventsForStream(stream_id); },
             ::testing::Eq(expected_num_tracks),
-            {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+            {.timeout = TimeDelta::Millis(kTimeout)}),
         IsRtcOk());
   }
 
@@ -1186,7 +1182,7 @@ class PeerConnectionInterfaceBaseTest : public ::testing::Test {
     pc_->CreateOffer(observer.get(), offer_answer_options);
     EXPECT_THAT(
         WaitUntil([&] { return observer->called(); }, ::testing::IsTrue(),
-                  {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                  {.timeout = TimeDelta::Millis(kTimeout)}),
         IsRtcOk());
     return observer->MoveDescription();
   }
@@ -1767,12 +1763,12 @@ TEST_P(PeerConnectionInterfaceTest, IceCandidates) {
 
   EXPECT_THAT(WaitUntil([&] { return observer_.last_candidate(); },
                         ::testing::Ne(nullptr),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        {.timeout = TimeDelta::Millis(kTimeout)}),
               IsRtcOk());
-  EXPECT_THAT(WaitUntil([&] { return observer_.ice_gathering_complete_; },
-                        ::testing::IsTrue(),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
-              IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return observer_.ice_gathering_complete_; },
+                ::testing::IsTrue(), {.timeout = TimeDelta::Millis(kTimeout)}),
+      IsRtcOk());
 
   EXPECT_TRUE(pc_->AddIceCandidate(observer_.last_candidate()));
 }
@@ -1915,7 +1911,7 @@ TEST_P(PeerConnectionInterfaceTest, GetStatsForSpecificTrack) {
 // Test that we can get stats on a video track.
 TEST_P(PeerConnectionInterfaceTest, GetStatsForVideoTrack) {
   InitiateCall();
-  auto video_receiver = GetFirstReceiverOfType(webrtc::MediaType::VIDEO);
+  auto video_receiver = GetFirstReceiverOfType(MediaType::VIDEO);
   ASSERT_TRUE(video_receiver);
   EXPECT_TRUE(DoGetStats(video_receiver->track().get()));
 }
@@ -2068,7 +2064,7 @@ TEST_P(PeerConnectionInterfaceTest, DISABLED_TestRejectSctpDataChannelInAnswer)
   RTCConfiguration rtc_config;
   CreatePeerConnection(rtc_config);
 
-  auto offer_channel = pc_->CreateDataChannelOrError("offer_channel", NULL);
+  auto offer_channel = pc_->CreateDataChannelOrError("offer_channel", nullptr);
 
   CreateOfferAsLocalDescription();
 
@@ -2441,19 +2437,19 @@ TEST_P(PeerConnectionInterfaceTest, CloseAndTestStreamsAndStates) {
     EXPECT_EQ(2u, pc_->GetTransceivers().size());
   }
 
-  auto audio_receiver = GetFirstReceiverOfType(webrtc::MediaType::AUDIO);
-  auto video_receiver = GetFirstReceiverOfType(webrtc::MediaType::VIDEO);
+  auto audio_receiver = GetFirstReceiverOfType(MediaType::AUDIO);
+  auto video_receiver = GetFirstReceiverOfType(MediaType::VIDEO);
   if (sdp_semantics_ == SdpSemantics::kPlanB_DEPRECATED) {
     ASSERT_TRUE(audio_receiver);
     ASSERT_TRUE(video_receiver);
     // Track state may be updated asynchronously.
     EXPECT_THAT(WaitUntil([&] { return audio_receiver->track()->state(); },
                           ::testing::Eq(MediaStreamTrackInterface::kEnded),
-                          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                          {.timeout = TimeDelta::Millis(kTimeout)}),
                 IsRtcOk());
     EXPECT_THAT(WaitUntil([&] { return video_receiver->track()->state(); },
                           ::testing::Eq(MediaStreamTrackInterface::kEnded),
-                          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                          {.timeout = TimeDelta::Millis(kTimeout)}),
                 IsRtcOk());
   } else {
     ASSERT_FALSE(audio_receiver);
@@ -2478,7 +2474,7 @@ TEST_F(PeerConnectionInterfaceTestPlanB, CloseAndTestMethods) {
   pc_->RemoveStream(local_stream.get());
   EXPECT_FALSE(pc_->AddStream(local_stream.get()));
 
-  EXPECT_FALSE(pc_->CreateDataChannelOrError("test", NULL).ok());
+  EXPECT_FALSE(pc_->CreateDataChannelOrError("test", nullptr).ok());
 
   EXPECT_TRUE(pc_->local_description() != nullptr);
   EXPECT_TRUE(pc_->remote_description() != nullptr);
@@ -2575,11 +2571,11 @@ TEST_F(PeerConnectionInterfaceTestPlanB,
   // Track state may be updated asynchronously.
   EXPECT_THAT(WaitUntil([&] { return audio_track2->state(); },
                         ::testing::Eq(MediaStreamTrackInterface::kEnded),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        {.timeout = TimeDelta::Millis(kTimeout)}),
               IsRtcOk());
   EXPECT_THAT(WaitUntil([&] { return video_track2->state(); },
                         ::testing::Eq(MediaStreamTrackInterface::kEnded),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        {.timeout = TimeDelta::Millis(kTimeout)}),
               IsRtcOk());
 }
 
@@ -2591,9 +2587,9 @@ TEST_P(PeerConnectionInterfaceTest, RejectMediaContent) {
   // First create and set a remote offer, then reject its video content in our
   // answer.
   CreateAndSetRemoteOffer(kSdpStringWithStream1PlanB);
-  auto audio_receiver = GetFirstReceiverOfType(webrtc::MediaType::AUDIO);
+  auto audio_receiver = GetFirstReceiverOfType(MediaType::AUDIO);
   ASSERT_TRUE(audio_receiver);
-  auto video_receiver = GetFirstReceiverOfType(webrtc::MediaType::VIDEO);
+  auto video_receiver = GetFirstReceiverOfType(MediaType::VIDEO);
   ASSERT_TRUE(video_receiver);
 
   scoped_refptr<MediaStreamTrackInterface> remote_audio =
@@ -2626,11 +2622,11 @@ TEST_P(PeerConnectionInterfaceTest, RejectMediaContent) {
   // Track state may be updated asynchronously.
   EXPECT_THAT(WaitUntil([&] { return remote_audio->state(); },
                         ::testing::Eq(MediaStreamTrackInterface::kEnded),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        {.timeout = TimeDelta::Millis(kTimeout)}),
               IsRtcOk());
   EXPECT_THAT(WaitUntil([&] { return remote_video->state(); },
                         ::testing::Eq(MediaStreamTrackInterface::kEnded),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        {.timeout = TimeDelta::Millis(kTimeout)}),
               IsRtcOk());
 }
 
@@ -3617,34 +3613,34 @@ TEST_F(PeerConnectionInterfaceTestPlanB,
   scoped_refptr<VideoTrackInterface> video_track(
       CreateVideoTrack("video_track"));
   stream->AddTrack(audio_track);
-  EXPECT_THAT(WaitUntil([&] { return observer_.renegotiation_needed_; },
-                        ::testing::IsTrue(),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
-              IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return observer_.renegotiation_needed_; },
+                ::testing::IsTrue(), {.timeout = TimeDelta::Millis(kTimeout)}),
+      IsRtcOk());
   observer_.renegotiation_needed_ = false;
 
   CreateOfferReceiveAnswer();
   stream->AddTrack(video_track);
-  EXPECT_THAT(WaitUntil([&] { return observer_.renegotiation_needed_; },
-                        ::testing::IsTrue(),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
-              IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return observer_.renegotiation_needed_; },
+                ::testing::IsTrue(), {.timeout = TimeDelta::Millis(kTimeout)}),
+      IsRtcOk());
   observer_.renegotiation_needed_ = false;
 
   CreateOfferReceiveAnswer();
   stream->RemoveTrack(audio_track);
-  EXPECT_THAT(WaitUntil([&] { return observer_.renegotiation_needed_; },
-                        ::testing::IsTrue(),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
-              IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return observer_.renegotiation_needed_; },
+                ::testing::IsTrue(), {.timeout = TimeDelta::Millis(kTimeout)}),
+      IsRtcOk());
   observer_.renegotiation_needed_ = false;
 
   CreateOfferReceiveAnswer();
   stream->RemoveTrack(video_track);
-  EXPECT_THAT(WaitUntil([&] { return observer_.renegotiation_needed_; },
-                        ::testing::IsTrue(),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
-              IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return observer_.renegotiation_needed_; },
+                ::testing::IsTrue(), {.timeout = TimeDelta::Millis(kTimeout)}),
+      IsRtcOk());
   observer_.renegotiation_needed_ = false;
 }
 
@@ -3702,7 +3698,7 @@ TEST_P(PeerConnectionInterfaceTest,
   std::vector<scoped_refptr<RtpSenderInterface>> rtp_senders =
       pc_->GetSenders();
   ASSERT_EQ(rtp_senders.size(), 1u);
-  ASSERT_EQ(rtp_senders[0]->media_type(), webrtc::MediaType::VIDEO);
+  ASSERT_EQ(rtp_senders[0]->media_type(), MediaType::VIDEO);
   scoped_refptr<RtpSenderInterface> video_rtp_sender = rtp_senders[0];
   RtpParameters parameters = video_rtp_sender->GetParameters();
   ASSERT_NE(parameters.degradation_preference,

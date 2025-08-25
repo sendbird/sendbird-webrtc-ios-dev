@@ -33,6 +33,7 @@
 #include "api/candidate.h"
 #include "api/crypto/crypto_options.h"
 #include "api/data_channel_interface.h"
+#include "api/dtls_transport_interface.h"
 #include "api/field_trials.h"
 #include "api/field_trials_view.h"
 #include "api/ice_transport_interface.h"
@@ -93,6 +94,7 @@
 #include "rtc_base/time_utils.h"
 #include "rtc_base/virtual_socket_server.h"
 #include "system_wrappers/include/metrics.h"
+#include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/wait_until.h"
@@ -651,7 +653,7 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
     }
     return Candidate();
   }
-  const IceCandidateInterface* last_gathered_ice_candidate() const {
+  const IceCandidate* last_gathered_ice_candidate() const {
     return last_gathered_ice_candidate_.get();
   }
   const IceCandidateErrorEvent& error_event() const { return error_event_; }
@@ -739,18 +741,16 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
   }
 
   std::optional<int> tls_version() {
-    return network_thread_->BlockingCall([&] {
-      return pc()
-          ->GetSctpTransport()
-          ->dtls_transport()
-          ->Information()
-          .tls_version();
-    });
+    return dtls_transport_information().tls_version();
   }
 
   std::optional<DtlsTransportTlsRole> dtls_transport_role() {
+    return dtls_transport_information().role();
+  }
+
+  DtlsTransportInformation dtls_transport_information() {
     return network_thread_->BlockingCall([&] {
-      return pc()->GetSctpTransport()->dtls_transport()->Information().role();
+      return pc()->GetSctpTransport()->dtls_transport()->Information();
     });
   }
 
@@ -1069,7 +1069,7 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
     ice_candidate_pair_change_history_.push_back(event);
   }
 
-  void OnIceCandidate(const IceCandidateInterface* candidate) override {
+  void OnIceCandidate(const IceCandidate* candidate) override {
     RTC_LOG(LS_INFO) << debug_name_ << ": OnIceCandidate";
 
     if (remote_async_dns_resolver_) {
@@ -1095,8 +1095,7 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
     // Check if we expected to have a candidate.
     EXPECT_GT(candidates_expected_, 1);
     candidates_expected_--;
-    std::string ice_sdp;
-    EXPECT_TRUE(candidate->ToString(&ice_sdp));
+    std::string ice_sdp = candidate->ToString();
     if (signaling_message_receiver_ == nullptr || !signal_ice_candidates_) {
       // Remote party may be deleted.
       return;
@@ -1156,7 +1155,7 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
   SignalingMessageReceiver* signaling_message_receiver_ = nullptr;
   int signaling_delay_ms_ = 0;
   bool signal_ice_candidates_ = true;
-  std::unique_ptr<IceCandidateInterface> last_gathered_ice_candidate_;
+  std::unique_ptr<IceCandidate> last_gathered_ice_candidate_;
   IceCandidateErrorEvent error_event_;
 
   // Store references to the video sources we've created, so that we can stop
@@ -1385,12 +1384,12 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
     if (caller_) {
       caller_->set_signaling_message_receiver(nullptr);
       caller_->pc()->Close();
-      delete SetCallerPcWrapperAndReturnCurrent(nullptr);
+      caller_.reset();
     }
     if (callee_) {
       callee_->set_signaling_message_receiver(nullptr);
       callee_->pc()->Close();
-      delete SetCalleePcWrapperAndReturnCurrent(nullptr);
+      callee_.reset();
     }
 
     // If turn servers were created for the test they need to be destroyed on
@@ -1403,6 +1402,12 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
 
   bool SignalingStateStable() {
     return caller_->SignalingStateStable() && callee_->SignalingStateStable();
+  }
+
+  bool PeerConnectionStateIs(
+      PeerConnectionInterface::PeerConnectionState state) {
+    return caller_->pc()->peer_connection_state() == state &&
+           callee_->pc()->peer_connection_state() == state;
   }
 
   bool DtlsConnected() {
@@ -1464,11 +1469,12 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
     if (it != field_trials_overrides_.end()) {
       field_trials = it->second;
     }
-    if (!client->Init(options, &modified_config, std::move(dependencies),
-                      fss_.get(), network_thread_.get(), worker_thread_.get(),
-                      FieldTrials::CreateNoGlobal(field_trials),
-                      std::move(event_log_factory), reset_encoder_factory,
-                      reset_decoder_factory, create_media_engine)) {
+    if (!client->Init(
+            options, &modified_config, std::move(dependencies), fss_.get(),
+            network_thread_.get(), worker_thread_.get(),
+            std::make_unique<FieldTrials>(CreateTestFieldTrials(field_trials)),
+            std::move(event_log_factory), reset_encoder_factory,
+            reset_decoder_factory, create_media_engine)) {
       return nullptr;
     }
     return client;
@@ -1720,9 +1726,9 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
   // Set the `caller_` to the `wrapper` passed in and return the
   // original `caller_`.
   PeerConnectionIntegrationWrapper* SetCallerPcWrapperAndReturnCurrent(
-      PeerConnectionIntegrationWrapper* wrapper) {
+      std::unique_ptr<PeerConnectionIntegrationWrapper> wrapper) {
     PeerConnectionIntegrationWrapper* old = caller_.release();
-    caller_.reset(wrapper);
+    caller_ = std::move(wrapper);
     return old;
   }
 
@@ -1731,9 +1737,9 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
   // Set the `callee_` to the `wrapper` passed in and return the
   // original `callee_`.
   PeerConnectionIntegrationWrapper* SetCalleePcWrapperAndReturnCurrent(
-      PeerConnectionIntegrationWrapper* wrapper) {
+      std::unique_ptr<PeerConnectionIntegrationWrapper> wrapper) {
     PeerConnectionIntegrationWrapper* old = callee_.release();
-    callee_.reset(wrapper);
+    callee_ = std::move(wrapper);
     return old;
   }
 

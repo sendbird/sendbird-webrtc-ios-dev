@@ -15,6 +15,7 @@
 
 #include "absl/strings/string_view.h"
 #include "api/scoped_refptr.h"
+#include "api/video/corruption_detection_filter_settings.h"
 #include "api/video/i420_buffer.h"
 #include "api/video/video_frame_buffer.h"
 #include "rtc_base/checks.h"
@@ -27,7 +28,7 @@ namespace {
 
 constexpr float kDefaultSampleFraction = 0.5;
 
-}
+}  // namespace
 
 FramePairCorruptionScorer::FramePairCorruptionScorer(
     absl::string_view codec_name,

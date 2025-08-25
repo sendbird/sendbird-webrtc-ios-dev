@@ -18,7 +18,6 @@
 #include "api/video_codecs/video_decoder.h"
 #include "api/video_codecs/video_decoder_factory.h"
 #include "media/base/media_constants.h"
-#include "system_wrappers/include/field_trial.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -27,8 +26,6 @@ namespace {
 using ::testing::Contains;
 using ::testing::Field;
 using ::testing::Not;
-
-using ::webrtc::field_trial::InitFieldTrialsFromString;
 
 #ifdef RTC_ENABLE_VP9
 constexpr bool kVp9Enabled = true;
@@ -115,7 +112,7 @@ TEST(InternalDecoderFactoryTest, H265IsNotEnabled) {
 TEST(InternalDecoderFactoryTest, Av1) {
   InternalDecoderFactory factory;
   EXPECT_THAT(factory.GetSupportedFormats(),
-              Contains(Field(&SdpVideoFormat::name, webrtc::kAv1CodecName)));
+              Contains(Field(&SdpVideoFormat::name, kAv1CodecName)));
 }
 #endif
 

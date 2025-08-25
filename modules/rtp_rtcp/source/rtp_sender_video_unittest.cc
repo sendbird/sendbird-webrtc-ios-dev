@@ -10,6 +10,7 @@
 
 #include "modules/rtp_rtcp/source/rtp_sender_video.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -65,7 +66,6 @@
 #include "modules/video_coding/codecs/h264/include/h264_globals.h"
 #include "modules/video_coding/codecs/vp8/include/vp8_globals.h"
 #include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/rate_limiter.h"
 #include "rtc_base/thread.h"
@@ -115,7 +115,7 @@ constexpr int kMaxPacketLength = 1500;
 constexpr Timestamp kStartTime = Timestamp::Millis(123456789);
 constexpr TimeDelta kDefaultExpectedRetransmissionTime = TimeDelta::Millis(125);
 
-class LoopbackTransportTest : public webrtc::Transport {
+class LoopbackTransportTest : public Transport {
  public:
   LoopbackTransportTest() {
     receivers_extensions_.Register<TransmissionOffset>(
@@ -147,7 +147,10 @@ class LoopbackTransportTest : public webrtc::Transport {
     EXPECT_TRUE(sent_packets_.back().Parse(data));
     return true;
   }
-  bool SendRtcp(ArrayView<const uint8_t> /* data */) override { return false; }
+  bool SendRtcp(ArrayView<const uint8_t> /* data */,
+                const PacketOptions& /* options */) override {
+    return false;
+  }
   const RtpPacketReceived& last_sent_packet() { return sent_packets_.back(); }
   int packets_sent() { return sent_packets_.size(); }
   const std::vector<RtpPacketReceived>& sent_packets() const {
@@ -510,10 +513,10 @@ TEST_F(RtpSenderVideoTest, ConditionalRetransmit) {
   // Fill averaging window to prevent rounding errors.
   constexpr int kNumRepetitions =
       RTPSenderVideo::kTLRateWindowSize / kFrameInterval;
-  constexpr int kPattern[] = {0, 2, 1, 2};
+  constexpr std::array kPattern = {0, 2, 1, 2};
   auto& vp8_header = header.video_type_header.emplace<RTPVideoHeaderVP8>();
-  for (size_t i = 0; i < arraysize(kPattern) * kNumRepetitions; ++i) {
-    vp8_header.temporalIdx = kPattern[i % arraysize(kPattern)];
+  for (size_t i = 0; i < kPattern.size() * kNumRepetitions; ++i) {
+    vp8_header.temporalIdx = kPattern[i % kPattern.size()];
     rtp_sender_video_->AllowRetransmission(header, kSettings, kRtt);
     fake_clock_.AdvanceTime(kFrameInterval);
   }
@@ -561,10 +564,10 @@ TEST_F(RtpSenderVideoTest, ConditionalRetransmitLimit) {
   // Fill averaging window to prevent rounding errors.
   constexpr int kNumRepetitions =
       RTPSenderVideo::kTLRateWindowSize / kFrameInterval;
-  constexpr int kPattern[] = {0, 2, 2, 2};
+  constexpr std::array kPattern = {0, 2, 2, 2};
   auto& vp8_header = header.video_type_header.emplace<RTPVideoHeaderVP8>();
-  for (size_t i = 0; i < arraysize(kPattern) * kNumRepetitions; ++i) {
-    vp8_header.temporalIdx = kPattern[i % arraysize(kPattern)];
+  for (size_t i = 0; i < kPattern.size() * kNumRepetitions; ++i) {
+    vp8_header.temporalIdx = kPattern[i % kPattern.size()];
 
     rtp_sender_video_->AllowRetransmission(header, kSettings, kRtt);
     fake_clock_.AdvanceTime(kFrameInterval);
@@ -1574,8 +1577,7 @@ class RtpSenderVideoWithFrameTransformerTest : public ::testing::Test {
 std::unique_ptr<EncodedImage> CreateDefaultEncodedImage() {
   const uint8_t data[] = {1, 2, 3, 4};
   auto encoded_image = std::make_unique<EncodedImage>();
-  encoded_image->SetEncodedData(
-      webrtc::EncodedImageBuffer::Create(data, sizeof(data)));
+  encoded_image->SetEncodedData(EncodedImageBuffer::Create(data, sizeof(data)));
   return encoded_image;
 }
 
@@ -1613,6 +1615,55 @@ TEST_F(RtpSenderVideoWithFrameTransformerTest,
   rtp_sender_video->SendEncodedImage(kPayloadType, kType, kTimestamp,
                                      *encoded_image, video_header,
                                      kDefaultExpectedRetransmissionTime);
+}
+
+TEST_F(RtpSenderVideoTest, SendEncodedImageIncludesProvidedCsrcs) {
+  std::vector<uint32_t> expected_csrcs = {1, 2, 3};
+  std::unique_ptr<EncodedImage> encoded_image = CreateDefaultEncodedImage();
+  RTPVideoHeader video_header;
+  video_header.frame_type = VideoFrameType::kVideoFrameKey;
+
+  ASSERT_TRUE(rtp_sender_video_->SendEncodedImage(
+      0, kType, kTimestamp, *encoded_image, video_header,
+      kDefaultExpectedRetransmissionTime, expected_csrcs));
+
+  ASSERT_GT(transport_.packets_sent(), 0);
+  std::vector<uint32_t> csrcs = transport_.last_sent_packet().Csrcs();
+  EXPECT_EQ(csrcs, expected_csrcs);
+}
+
+TEST_F(RtpSenderVideoWithFrameTransformerTest,
+       SendEncodedImageIncludesProvidedCsrcs) {
+  auto mock_frame_transformer =
+      make_ref_counted<NiceMock<MockFrameTransformer>>();
+  scoped_refptr<TransformedFrameCallback> callback;
+  EXPECT_CALL(*mock_frame_transformer, RegisterTransformedFrameSinkCallback)
+      .WillOnce(SaveArg<0>(&callback));
+  std::unique_ptr<RTPSenderVideo> rtp_sender_video =
+      CreateSenderWithFrameTransformer(mock_frame_transformer);
+  ASSERT_TRUE(callback);
+  ON_CALL(*mock_frame_transformer, Transform)
+      .WillByDefault(
+          [&callback](std::unique_ptr<TransformableFrameInterface> frame) {
+            callback->OnTransformedFrame(std::move(frame));
+          });
+
+  auto encoded_image = CreateDefaultEncodedImage();
+  std::vector<uint32_t> expected_csrcs = {1, 2, 3};
+  RTPVideoHeader video_header;
+  video_header.frame_type = VideoFrameType::kVideoFrameKey;
+  auto encoder_queue = time_controller_.GetTaskQueueFactory()->CreateTaskQueue(
+      "encoder_queue", TaskQueueFactory::Priority::NORMAL);
+  encoder_queue->PostTask([&] {
+    rtp_sender_video->SendEncodedImage(
+        kPayloadType, kType, kTimestamp, *encoded_image, video_header,
+        kDefaultExpectedRetransmissionTime, expected_csrcs);
+  });
+  time_controller_.AdvanceTime(TimeDelta::Zero());
+
+  ASSERT_GT(transport_.packets_sent(), 0);
+  std::vector<uint32_t> csrcs = transport_.last_sent_packet().Csrcs();
+  EXPECT_EQ(csrcs, expected_csrcs);
 }
 
 #if RTC_DCHECK_IS_ON && GTEST_HAS_DEATH_TEST && !defined(WEBRTC_ANDROID)

@@ -14,10 +14,15 @@
 #include <X11/extensions/XTest.h>
 
 #include <algorithm>
+#include <cstddef>
+#include <string>
+#include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/scoped_refptr.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/synchronization/mutex.h"
 
 namespace webrtc {
 
@@ -34,7 +39,7 @@ SharedXDisplay::~SharedXDisplay() {
 scoped_refptr<SharedXDisplay> SharedXDisplay::Create(
     absl::string_view display_name) {
   Display* display = XOpenDisplay(
-      display_name.empty() ? NULL : std::string(display_name).c_str());
+      display_name.empty() ? nullptr : std::string(display_name).c_str());
   if (!display) {
     RTC_LOG(LS_ERROR) << "Unable to open display";
     return nullptr;

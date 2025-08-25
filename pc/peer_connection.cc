@@ -36,7 +36,6 @@
 #include "api/dtls_transport_interface.h"
 #include "api/environment/environment.h"
 #include "api/jsep.h"
-#include "api/jsep_ice_candidate.h"
 #include "api/make_ref_counted.h"
 #include "api/media_stream_interface.h"
 #include "api/media_types.h"
@@ -124,7 +123,7 @@
 namespace webrtc {
 
 namespace {
-static const int REPORT_USAGE_PATTERN_DELAY_MS = 60000;
+const int REPORT_USAGE_PATTERN_DELAY_MS = 60000;
 
 class CodecLookupHelperForPeerConnection : public CodecLookupHelper {
  public:
@@ -528,6 +527,7 @@ PeerConnection::PeerConnection(
       async_dns_resolver_factory_(
           std::move(dependencies.async_dns_resolver_factory)),
       port_allocator_(std::move(dependencies.allocator)),
+      lna_permission_factory_(std::move(dependencies.lna_permission_factory)),
       ice_transport_factory_(std::move(dependencies.ice_transport_factory)),
       tls_cert_verifier_(std::move(dependencies.tls_cert_verifier)),
       call_(std::move(call)),
@@ -691,6 +691,10 @@ JsepTransportController* PeerConnection::InitializeTransportController_n(
   config.crypto_options = configuration.crypto_options.has_value()
                               ? *configuration.crypto_options
                               : options_.crypto_options;
+
+  // Maybe enable PQC from FieldTrials
+  config.crypto_options.ephemeral_key_exchange_cipher_groups.Update(
+      &context_->env().field_trials());
   config.transport_observer = this;
   config.rtcp_handler = InitializeRtcpCallback();
   config.un_demuxable_packet_handler = InitializeUnDemuxablePacketHandler();
@@ -713,10 +717,10 @@ JsepTransportController* PeerConnection::InitializeTransportController_n(
         }
       };
 
-  transport_controller_.reset(
-      new JsepTransportController(env_, network_thread(), port_allocator_.get(),
-                                  async_dns_resolver_factory_.get(),
-                                  payload_type_picker_, std::move(config)));
+  transport_controller_.reset(new JsepTransportController(
+      env_, network_thread(), port_allocator_.get(),
+      async_dns_resolver_factory_.get(), lna_permission_factory_.get(),
+      payload_type_picker_, std::move(config)));
 
   transport_controller_->SubscribeIceConnectionState(
       [this](::webrtc::IceConnectionState s) {
@@ -1559,16 +1563,14 @@ RTCError PeerConnection::SetConfiguration(
   return RTCError::OK();
 }
 
-bool PeerConnection::AddIceCandidate(
-    const IceCandidateInterface* ice_candidate) {
+bool PeerConnection::AddIceCandidate(const IceCandidate* ice_candidate) {
   RTC_DCHECK_RUN_ON(signaling_thread());
   ClearStatsCache();
   return sdp_handler_->AddIceCandidate(ice_candidate);
 }
 
-void PeerConnection::AddIceCandidate(
-    std::unique_ptr<IceCandidateInterface> candidate,
-    std::function<void(RTCError)> callback) {
+void PeerConnection::AddIceCandidate(std::unique_ptr<IceCandidate> candidate,
+                                     std::function<void(RTCError)> callback) {
   RTC_DCHECK_RUN_ON(signaling_thread());
   sdp_handler_->AddIceCandidate(std::move(candidate),
                                 [this, callback](RTCError result) {
@@ -2032,8 +2034,7 @@ void PeerConnection::OnIceGatheringChange(
   Observer()->OnIceGatheringChange(ice_gathering_state_);
 }
 
-void PeerConnection::OnIceCandidate(
-    std::unique_ptr<IceCandidateInterface> candidate) {
+void PeerConnection::OnIceCandidate(std::unique_ptr<IceCandidate> candidate) {
   if (IsClosed()) {
     return;
   }
@@ -2416,8 +2417,8 @@ void PeerConnection::OnTransportControllerCandidatesGathered(
   for (Candidates::const_iterator citer = candidates.begin();
        citer != candidates.end(); ++citer) {
     // Use transport_name as the candidate media id.
-    std::unique_ptr<JsepIceCandidate> candidate(
-        new JsepIceCandidate(transport_name, sdp_mline_index, *citer));
+    std::unique_ptr<IceCandidate> candidate(
+        new IceCandidate(transport_name, sdp_mline_index, *citer));
     sdp_handler_->AddLocalIceCandidate(candidate.get());
     OnIceCandidate(std::move(candidate));
   }
@@ -2502,9 +2503,16 @@ std::optional<std::string> PeerConnection::SetupDataChannelTransport_n(
   DataChannelTransportInterface* transport =
       transport_controller_->GetDataChannelTransport(*sctp_mid_n_);
   if (!transport) {
+#ifndef WEBRTC_HAVE_SCTP
+    RTC_LOG(LS_ERROR) << "Data channel transport is not available"
+                      << " as WebRTC has been compiled without SCTP support "
+                         "(WEBRTC_HAVE_SCTP), mid="
+                      << mid;
+#else
     RTC_LOG(LS_ERROR)
         << "Data channel transport is not available for data channels, mid="
         << mid;
+#endif
     sctp_mid_n_ = std::nullopt;
     return std::nullopt;
   }
@@ -2547,7 +2555,7 @@ bool PeerConnection::ValidateBundleSettings(
   for (ContentInfos::const_iterator citer = contents.begin();
        citer != contents.end(); ++citer) {
     const ContentInfo* content = (&*citer);
-    RTC_DCHECK(content != NULL);
+    RTC_DCHECK(content != nullptr);
     auto it = bundle_groups_by_mid.find(content->mid());
     if (it != bundle_groups_by_mid.end() &&
         !(content->rejected || content->bundle_only) &&

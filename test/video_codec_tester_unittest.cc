@@ -103,8 +103,8 @@ scoped_refptr<I420Buffer> CreateYuvBuffer(uint8_t y = 0,
 
 // TODO(ssilkin): Wrap this into a class that removes file in dtor.
 std::string CreateYuvFile(int width, int height, int num_frames) {
-  std::string path = webrtc::test::TempFilename(webrtc::test::OutputPath(),
-                                                "video_codec_tester_unittest");
+  std::string path =
+      test::TempFilename(test::OutputPath(), "video_codec_tester_unittest");
   FILE* file = fopen(path.c_str(), "wb");
   for (int frame_num = 0; frame_num < num_frames; ++frame_num) {
     // For purposes of testing quality estimation, we need Y, U, V values in
@@ -169,7 +169,7 @@ class TestVideoEncoder : public MockVideoEncoder {
 
 class TestVideoDecoder : public MockVideoDecoder {
  public:
-  int32_t Decode(const EncodedImage& encoded_frame, int64_t) {
+  int32_t Decode(const EncodedImage& encoded_frame, int64_t) override {
     uint8_t y = (encoded_frame.size() + 0) & 255;
     uint8_t u = (encoded_frame.size() + 2) & 255;
     uint8_t v = (encoded_frame.size() + 4) & 255;
@@ -184,7 +184,8 @@ class TestVideoDecoder : public MockVideoDecoder {
     return WEBRTC_VIDEO_CODEC_OK;
   }
 
-  int32_t RegisterDecodeCompleteCallback(DecodedImageCallback* callback) {
+  int32_t RegisterDecodeCompleteCallback(
+      DecodedImageCallback* callback) override {
     callback_ = callback;
     return WEBRTC_VIDEO_CODEC_OK;
   }
@@ -228,10 +229,11 @@ class VideoCodecTesterTest : public ::testing::Test {
         explicit DecoderWrapper(TestVideoDecoder* decoder)
             : decoder_(decoder) {}
         int32_t Decode(const EncodedImage& encoded_frame,
-                       int64_t render_time_ms) {
+                       int64_t render_time_ms) override {
           return decoder_->Decode(encoded_frame, render_time_ms);
         }
-        int32_t RegisterDecodeCompleteCallback(DecodedImageCallback* callback) {
+        int32_t RegisterDecodeCompleteCallback(
+            DecodedImageCallback* callback) override {
           return decoder_->RegisterDecodeCompleteCallback(callback);
         }
         TestVideoDecoder* decoder_;

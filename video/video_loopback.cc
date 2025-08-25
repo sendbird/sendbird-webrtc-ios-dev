@@ -11,7 +11,6 @@
 
 #include <stdio.h>
 
-#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -26,7 +25,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "system_wrappers/include/field_trial.h"
-#include "test/field_trial.h"
 #include "test/gtest.h"
 #include "test/run_test.h"
 #include "test/test_flags.h"
@@ -422,7 +420,7 @@ void Loopback() {
   SL_descriptors.push_back(SL1());
   SL_descriptors.push_back(SL2());
 
-  VideoQualityTest fixture(nullptr);
+  VideoQualityTest fixture;
   fixture.FillScalabilitySettings(
       &params, 0, stream_descriptors, NumStreams(), SelectedStream(),
       NumSpatialLayers(), SelectedSL(), InterLayerPred(), SL_descriptors);
@@ -443,9 +441,9 @@ int RunLoopbackTest(int argc, char* argv[]) {
   // InitFieldTrialsFromString stores the char*, so the char array must outlive
   // the application.
   const std::string field_trials = absl::GetFlag(FLAGS_force_fieldtrials);
-  webrtc::field_trial::InitFieldTrialsFromString(field_trials.c_str());
+  field_trial::InitFieldTrialsFromString(field_trials.c_str());
 
-  webrtc::test::RunTest(webrtc::Loopback);
+  test::RunTest(Loopback);
   return 0;
 }
 }  // namespace webrtc

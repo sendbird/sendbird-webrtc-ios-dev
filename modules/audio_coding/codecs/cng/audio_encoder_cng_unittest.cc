@@ -10,11 +10,21 @@
 
 #include "modules/audio_coding/codecs/cng/audio_encoder_cng.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
-#include <vector>
+#include <optional>
+#include <utility>
 
+#include "api/array_view.h"
+#include "api/audio_codecs/audio_encoder.h"
+#include "api/units/time_delta.h"
+#include "common_audio/vad/include/vad.h"
 #include "common_audio/vad/mock/mock_vad.h"
+#include "rtc_base/buffer.h"
 #include "rtc_base/numerics/safe_conversions.h"
+#include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/mock_audio_encoder.h"
 #include "test/testsupport/rtc_expect_death.h"
@@ -31,9 +41,9 @@ using ::testing::SetArgPointee;
 namespace webrtc {
 
 namespace {
-static const size_t kMaxNumSamples = 48 * 10 * 2;  // 10 ms @ 48 kHz stereo.
-static const size_t kMockReturnEncodedBytes = 17;
-static const int kCngPayloadType = 18;
+const size_t kMaxNumSamples = 48 * 10 * 2;  // 10 ms @ 48 kHz stereo.
+const size_t kMockReturnEncodedBytes = 17;
+const int kCngPayloadType = 18;
 }  // namespace
 
 class AudioEncoderCngTest : public ::testing::Test {

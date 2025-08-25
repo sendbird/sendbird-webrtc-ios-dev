@@ -10,15 +10,33 @@
 
 #include "modules/audio_coding/neteq/tools/neteq_test.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
+#include <optional>
+#include <utility>
 
+#include "absl/strings/string_view.h"
+#include "api/array_view.h"
+#include "api/audio/audio_frame.h"
+#include "api/audio_codecs/audio_decoder_factory.h"
+#include "api/audio_codecs/audio_format.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
 #include "api/field_trials.h"
 #include "api/neteq/default_neteq_factory.h"
+#include "api/neteq/neteq.h"
+#include "api/neteq/neteq_factory.h"
+#include "api/scoped_refptr.h"
+#include "api/test/neteq_simulator.h"
 #include "api/units/timestamp.h"
+#include "modules/audio_coding/neteq/tools/audio_sink.h"
+#include "modules/audio_coding/neteq/tools/neteq_input.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
+#include "rtc_base/checks.h"
 #include "system_wrappers/include/clock.h"
 
 namespace webrtc {
@@ -74,9 +92,8 @@ NetEqTest::NetEqTest(const NetEq::Config& config,
                      absl::string_view field_trials)
     : input_(std::move(input)),
       clock_(Timestamp::Millis(input_->NextEventTime().value_or(0))),
-      env_(CreateEnvironment(
-          &clock_,
-          FieldTrials::CreateNoGlobal(std::string(field_trials)))),
+      env_(CreateEnvironment(&clock_,
+                             std::make_unique<FieldTrials>(field_trials))),
       neteq_(
           neteq_factory
               ? neteq_factory->Create(env_, config, std::move(decoder_factory))

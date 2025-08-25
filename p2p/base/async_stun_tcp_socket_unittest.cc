@@ -81,7 +81,7 @@ class AsyncStunTCPSocketTest : public ::testing::Test,
   AsyncStunTCPSocketTest()
       : vss_(new VirtualSocketServer()), thread_(vss_.get()) {}
 
-  virtual void SetUp() { CreateSockets(); }
+  void SetUp() override { CreateSockets(); }
 
   void CreateSockets() {
     std::unique_ptr<Socket> server =
@@ -97,7 +97,7 @@ class AsyncStunTCPSocketTest : public ::testing::Test,
         client, kClientAddr, listen_socket_->GetLocalAddress()));
     send_socket_->SignalSentPacket.connect(
         this, &AsyncStunTCPSocketTest::OnSentPacket);
-    ASSERT_TRUE(send_socket_.get() != NULL);
+    ASSERT_TRUE(send_socket_.get() != nullptr);
     vss_->ProcessMessagesUntilIdle();
   }
 

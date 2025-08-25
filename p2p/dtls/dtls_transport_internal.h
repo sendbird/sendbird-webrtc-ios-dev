@@ -64,6 +64,9 @@ class DtlsTransportInternal : public PacketTransportInternal {
 
   // Finds out which TLS/DTLS version is running.
   virtual bool GetSslVersionBytes(int* version) const = 0;
+  // Return the the ID of the group used by the adapters most recently
+  // completed handshake, or 0 if not applicable (e.g. before the handshake).
+  virtual uint16_t GetSslGroupId() const = 0;
   // Finds out which DTLS-SRTP cipher was negotiated.
   // TODO(zhihuang): Remove this once all dependencies implement this.
   virtual bool GetSrtpCryptoSuite(int* cipher) const = 0;
@@ -112,7 +115,7 @@ class DtlsTransportInternal : public PacketTransportInternal {
   // Expose the underneath IceTransport.
   virtual IceTransportInternal* ice_transport() = 0;
 
-  // F: void(DtlsTransportInternal*, const webrtc::DtlsTransportState)
+  // F: void(DtlsTransportInternal*, const DtlsTransportState)
   template <typename F>
   void SubscribeDtlsTransportState(F&& callback) {
     dtls_transport_state_callback_list_.AddReceiver(std::forward<F>(callback));
@@ -134,7 +137,7 @@ class DtlsTransportInternal : public PacketTransportInternal {
   }
 
   // Emitted whenever the Dtls handshake failed on some transport channel.
-  // F: void(webrtc::SSLHandshakeError)
+  // F: void(SSLHandshakeError)
   template <typename F>
   void SubscribeDtlsHandshakeError(F&& callback) {
     dtls_handshake_error_callback_list_.AddReceiver(std::forward<F>(callback));

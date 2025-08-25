@@ -16,6 +16,7 @@
 
 #include "api/adaptation/resource.h"
 #include "api/scoped_refptr.h"
+#include "api/task_queue/task_queue_base.h"
 #include "call/adaptation/video_stream_input_state_provider.h"
 #include "rtc_base/task_utils/repeating_task.h"
 #include "rtc_base/thread_annotations.h"
@@ -51,7 +52,7 @@ class PixelLimitResource : public Resource {
   TaskQueueBase* const task_queue_;
   VideoStreamInputStateProvider* const input_state_provider_;
   std::optional<int> max_pixels_ RTC_GUARDED_BY(task_queue_);
-  webrtc::ResourceListener* listener_ RTC_GUARDED_BY(task_queue_);
+  ResourceListener* listener_ RTC_GUARDED_BY(task_queue_);
   RepeatingTaskHandle repeating_task_ RTC_GUARDED_BY(task_queue_);
 };
 
