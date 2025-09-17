@@ -20,8 +20,6 @@
 
 namespace webrtc {
 
-class AudioSourceSink;
-
 // If `bypass_voice_processing` is true, WebRTC will attempt to disable hardware
 // audio processing on iOS.
 // Warning: Setting `bypass_voice_processing` will have unpredictable
@@ -29,13 +27,7 @@ class AudioSourceSink;
 // most scenarios.
 scoped_refptr<AudioDeviceModule> CreateAudioDeviceModule(
     const Environment& env,
-    bool bypass_voice_processing = false,
-    AudioSourceSink* audioSink = nullptr);
-
-[[deprecated("Pass `env` explicitly instead of relying on the default")]]
-scoped_refptr<AudioDeviceModule> CreateAudioDeviceModule(
-    bool bypass_voice_processing = false,
-    AudioSourceSink* audioSink = nullptr);
+    bool bypass_voice_processing = false);
 
 // If `muted_speech_event_handler` is exist, audio unit will catch speech
 // activity while muted.
@@ -45,15 +37,7 @@ scoped_refptr<AudioDeviceModule> CreateMutedDetectAudioDeviceModule(
     const Environment& env,
     AudioDeviceModule::MutedSpeechEventHandler muted_speech_event_handler,
     ADMErrorHandler error_handler,
-    bool bypass_voice_processing = false,
-    AudioSourceSink* audioSink = nullptr);
-
-[[deprecated("Pass `env` explicitly instead of relying on the default")]]
-scoped_refptr<AudioDeviceModule> CreateMutedDetectAudioDeviceModule(
-    AudioDeviceModule::MutedSpeechEventHandler muted_speech_event_handler,
-    ADMErrorHandler error_handler,
-    bool bypass_voice_processing = false,
-    AudioSourceSink* audioSink = nullptr);
+    bool bypass_voice_processing = false);
 
 }  // namespace webrtc
 
