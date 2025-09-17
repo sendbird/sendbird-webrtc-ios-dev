@@ -14,6 +14,7 @@
 #include "api/make_ref_counted.h"
 #include "rtc_base/logging.h"
 #include "sdk/objc/native/src/audio/audio_device_module_ios.h"
+#import "sdk/objc/native/src/audio/audio_source_sink.h"
 
 #ifndef WEBRTC_IOS
 #error This file shouldn't be compiled on platforms other than IOS.
@@ -22,23 +23,25 @@
 namespace webrtc {
 
 scoped_refptr<AudioDeviceModule> CreateAudioDeviceModule(
-    const Environment& env, bool bypass_voice_processing) {
+    const Environment& env, bool bypass_voice_processing, webrtc::AudioSourceSink* audioSink) {
   RTC_DLOG(LS_INFO) << __FUNCTION__;
   return make_ref_counted<ios_adm::AudioDeviceModuleIOS>(
       env,
       bypass_voice_processing,
       /*muted_speech_event_handler=*/nullptr,
-      /*error_handler=*/nullptr);
+      /*error_handler=*/nullptr,
+      audioSink);
 }
 
 scoped_refptr<AudioDeviceModule> CreateMutedDetectAudioDeviceModule(
     const Environment& env,
     AudioDeviceModule::MutedSpeechEventHandler muted_speech_event_handler,
     ADMErrorHandler error_handler,
-    bool bypass_voice_processing) {
+    bool bypass_voice_processing,
+    webrtc::AudioSourceSink* audioSink) {
   RTC_DLOG(LS_INFO) << __FUNCTION__;
   return make_ref_counted<ios_adm::AudioDeviceModuleIOS>(
-      env, bypass_voice_processing, muted_speech_event_handler, error_handler);
+      env, bypass_voice_processing, muted_speech_event_handler, error_handler, audioSink);
 }
 
 }  // namespace webrtc
