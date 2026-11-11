@@ -821,6 +821,14 @@ void PeerConnectionDelegateAdapter::OnRemoveTrack(
   return _peerConnection->SetBitrate(params).ok();
 }
 
+- (void)setAudioPlayout:(BOOL)playout {
+  _peerConnection->SetAudioPlayout(playout);
+}
+
+- (void)setAudioRecording:(BOOL)recording {
+  _peerConnection->SetAudioRecording(recording);
+}
+
 - (BOOL)startRtcEventLogWithFilePath:(NSString *)filePath
                       maxSizeInBytes:(int64_t)maxSizeInBytes {
   RTC_DCHECK(filePath.length);

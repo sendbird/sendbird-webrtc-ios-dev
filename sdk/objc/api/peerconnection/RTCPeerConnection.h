@@ -361,6 +361,16 @@ RTC_OBJC_EXPORT
                       maxSizeInBytes:(int64_t)maxSizeInBytes;
 - (void)stopRtcEventLog;
 
+/** Enables or disables audio playout/recording. When enabled while the audio
+ *  device is not playing/recording, WebRTC initializes and starts it again.
+ *  Same as PeerConnectionInterface::SetAudioPlayout/SetAudioRecording
+ *  (Android: PeerConnection.setAudioPlayout/setAudioRecording).
+ *  Blocks until WebRTC's worker thread handles it, so call it off the main
+ *  thread.
+ */
+- (void)setAudioPlayout:(BOOL)playout;
+- (void)setAudioRecording:(BOOL)recording;
+
 @end
 
 @interface RTC_OBJC_TYPE (RTCPeerConnection)
