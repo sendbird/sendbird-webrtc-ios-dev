@@ -362,11 +362,22 @@ RTC_OBJC_EXPORT
 - (void)stopRtcEventLog;
 
 /** Enables or disables audio playout/recording. When enabled while the audio
- *  device is not playing/recording, WebRTC initializes and starts it again.
+ *  device is not playing/recording, WebRTC initializes and starts it again,
+ *  for example after the audio unit failed to start.
  *  Same as PeerConnectionInterface::SetAudioPlayout/SetAudioRecording
  *  (Android: PeerConnection.setAudioPlayout/setAudioRecording).
- *  Blocks until WebRTC's worker thread handles it, so call it off the main
- *  thread.
+ *
+ *  - The setting applies to the audio state shared by every peer connection
+ *    created from the same RTCPeerConnectionFactory, not only to this one.
+ *    For example, setAudioPlayout:NO also stops playout for the others.
+ *  - NO stays in effect: after NO, a newly added audio stream does not start
+ *    the audio device until YES is called again.
+ *  - Blocks until WebRTC's worker thread handles it, so call it off the main
+ *    thread. Do not call it from
+ *    -audioSession:audioUnitStartFailedWithError:, which runs on the worker
+ *    thread inside the failed start; dispatch to another queue instead, and
+ *    restore the audio session category (playAndRecord) before calling YES,
+ *    or the start fails again.
  */
 - (void)setAudioPlayout:(BOOL)playout;
 - (void)setAudioRecording:(BOOL)recording;
